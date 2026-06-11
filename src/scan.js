@@ -78,4 +78,4 @@ function scan(target, { counter, glob, includeAll = false } = {}) {
   return { files, total, counter: counter.name };
 }
 
-module.exports = { scan, globToRegExp, SKIP_DIRS, TEXT_EXT };
+module.exports = { scan, walk, globToRegExp, SKIP_DIRS, TEXT_EXT };

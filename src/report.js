@@ -32,4 +32,35 @@ function delta(before, after) {
   return `${fmt(before)} → ${fmt(after)} tokens  (${saved >= 0 ? '-' : '+'}${fmt(Math.abs(saved))}, ${pct.toFixed(1)}%)`;
 }
 
-module.exports = { scanTable, delta, fmt, bar };
+function skillReport(a) {
+  const L = [];
+  const t = a.tiers;
+  L.push(`skill: ${a.name || '(no name)'}    counter: ${a.counter}`);
+  L.push('');
+  L.push('CONTEXT COST (progressive disclosure — how an agent actually loads it)');
+  L.push(`  ${'Tier 0  always-on'.padEnd(20)} ${fmt(t.alwaysOn).padStart(6)} tok   name+description — in context EVERY turn, every session`);
+  L.push(`  ${'Tier 1  on-invoke'.padEnd(20)} ${fmt(t.onInvoke).padStart(6)} tok   SKILL.md body — loaded when the skill triggers`);
+  L.push(`  ${'Tier 2  on-demand'.padEnd(20)} ${fmt(t.onDemand).padStart(6)} tok   reference docs — only if a pointer is followed`);
+  for (const f of t.onDemandDocs) L.push(`  ${' '.repeat(20)} ${fmt(f.tokens).padStart(6)} tok     └ ${f.path}`);
+  L.push(`  ${'─'.repeat(44)}`);
+  L.push(`  ${'fully expanded'.padEnd(20)} ${fmt(a.fullyExpanded).padStart(6)} tok   worst case: invoked + every reachable doc read`);
+
+  const nc = a.notContext;
+  const codeTotal = nc.code.reduce((s, f) => s + f.tokens, 0);
+  if (nc.code.length || nc.humanDocs.length || nc.orphanDocs.length) {
+    L.push('');
+    L.push('NOT CONTEXT (in the repo, never loaded into the window)');
+    if (nc.code.length) L.push(`  ${'code/assets (run)'.padEnd(20)} ${fmt(codeTotal).padStart(6)} tok   ${nc.code.length} files — executed or ignored, not read`);
+    for (const f of nc.humanDocs) L.push(`  ${'human doc'.padEnd(20)} ${fmt(f.tokens).padStart(6)} tok   ${f.path}  (for people, not agents)`);
+    for (const f of nc.orphanDocs) L.push(`  ${'⚠ orphan doc'.padEnd(20)} ${fmt(f.tokens).padStart(6)} tok   ${f.path}  (no SKILL.md path reaches it — agents won't read it)`);
+  }
+
+  L.push('');
+  // guidance focused on the highest-leverage tier
+  if (t.alwaysOn > 120) L.push(`! Tier 0 is ${fmt(t.alwaysOn)} tok. The description loads every turn — keep it tight (aim <~100). This is the highest-leverage place to cut.`);
+  if (nc.orphanDocs.length) L.push(`! ${nc.orphanDocs.length} orphan doc(s): either link them from SKILL.md or delete — as-is they cost repo weight but never help an agent.`);
+  L.push('See references/optimization-guide.md; preserve every load-bearing instruction.');
+  return L.join('\n');
+}
+
+module.exports = { scanTable, skillReport, delta, fmt, bar };

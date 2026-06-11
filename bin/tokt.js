@@ -6,6 +6,7 @@
  *   tokt count "text"                 count a string
  *   tokt count --file path            count a file
  *   tokt scan <dir|file> [opts]       per-file token table + total
+ *   tokt skill <dir>                  progressive-disclosure cost of a skill
  *   tokt audit <file>                 flag likely token bloat
  *
  * Options:
@@ -21,7 +22,8 @@ const fs = require('fs');
 const { resolveCounter } = require('../src/counters');
 const { scan } = require('../src/scan');
 const { audit } = require('../src/audit');
-const { scanTable, fmt } = require('../src/report');
+const { analyzeSkill } = require('../src/skill');
+const { scanTable, skillReport, fmt } = require('../src/report');
 
 function parse(argv) {
   const o = { _: [] };
@@ -45,6 +47,7 @@ function usage() {
 
   tokt count "text"            tokt count --file <path>
   tokt scan <dir|file>         [--glob "**/*.md"] [--top 20] [--all]
+  tokt skill <dir>             progressive-disclosure cost (name/desc → body → refs)
   tokt audit <file>
 
   --model  opus-4.8|sonnet-4.6|haiku-4.5|gpt-5.5|gpt-5.4|gemini|heuristic
@@ -73,6 +76,13 @@ function main() {
     const res = scan(target, { counter, glob: o.glob, includeAll: o.all });
     if (o.json) return console.log(JSON.stringify(res, null, 2));
     return console.log(scanTable(res, { top: o.top || 0 }));
+  }
+
+  if (cmd === 'skill') {
+    const target = o._[1] || '.';
+    const res = analyzeSkill(target, counter);
+    if (o.json) return console.log(JSON.stringify(res, null, 2));
+    return console.log(skillReport(res));
   }
 
   if (cmd === 'audit') {

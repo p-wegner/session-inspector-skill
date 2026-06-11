@@ -28,6 +28,9 @@ node bin/tokt.js count --file path/to/doc.md
 node bin/tokt.js scan ./docs --model opus-4.8
 node bin/tokt.js scan . --glob "**/*.md" --top 20
 
+# analyze a SKILL/agent dir the way agents pay for it (progressive disclosure)
+node bin/tokt.js skill path/to/skill-dir
+
 # optimization report: flags redundancy, filler, restating, dead sections
 node bin/tokt.js audit path/to/SKILL.md
 ```
@@ -44,6 +47,24 @@ Counting is **approximate by design** for cross-model relative comparison
 billing-grade Claude counts, pass `--exact` to use the Anthropic
 `count_tokens` API (needs `ANTHROPIC_API_KEY`; see `references/tokenizers.md`).
 
+## Analyzing skills (progressive disclosure)
+Agents don't pay for a skill's files equally — `tokt skill <dir>` models the real
+tiers instead of a flat sum:
+- **Tier 0 — always-on:** the frontmatter `name` + `description`. Injected into
+  the system prompt **every turn of every session**, for every registered skill.
+  Highest leverage — a token here is paid thousands of times. Keep `description`
+  tight (aim <~100 tokens).
+- **Tier 1 — on-invoke:** the `SKILL.md` body. Loaded once when the skill triggers.
+- **Tier 2 — on-demand:** reference docs the agent reads **only when SKILL.md (or
+  another reachable doc) points at them**. Reachability is transitive.
+- **Not context:** code/assets (executed, never read into the window) and
+  **orphan docs** — reference files no SKILL.md path reaches, so an agent never
+  discovers them. Either link them or delete them. (README/LICENSE are recognized
+  as human-facing, not flagged.)
+
+When optimizing a skill, cut Tier 0 first (every-turn cost), then Tier 1, and
+move rarely-needed detail from Tier 1 down into a Tier 2 reference doc.
+
 ## Optimization workflow (the point of the skill)
 When asked to shrink a doc/skill without losing performance:
 1. `scan` / `audit` to get a baseline count + ranked hotspots.
@@ -58,7 +79,9 @@ When asked to shrink a doc/skill without losing performance:
 - `src/counters/` — pluggable counters; `index.js` resolves model → counter.
   Each exports `count(text) -> number`. Add a model family = add one file.
 - `src/scan.js` — walk a path/glob, count per file, aggregate, rank.
-- `src/report.js` — formatting (tables, deltas, audit findings).
+- `src/skill.js` — parse a skill's frontmatter, tier its files by progressive
+  disclosure, resolve transitive doc reachability.
+- `src/report.js` — formatting (tables, tier breakdown, deltas, audit findings).
 - `references/` — tokenizer landscape + optimization guidance (read before
   recommending a tokenizer or doing a rewrite).
 

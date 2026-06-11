@@ -5,6 +5,7 @@ const assert = require('assert');
 const { resolveCounter, familyOf } = require('../src/counters');
 const { scan } = require('../src/scan');
 const { audit } = require('../src/audit');
+const { analyzeSkill, parseFrontmatter } = require('../src/skill');
 
 let pass = 0;
 function ok(name, fn) { try { fn(); console.log('  ✓', name); pass++; } catch (e) { console.error('  ✗', name, '\n   ', e.message); process.exitCode = 1; } }
@@ -42,6 +43,25 @@ ok('audit flags duplicate lines', () => {
   const dup = 'this is a sufficiently long repeated line of text\n'.repeat(3);
   const res = audit(dup, resolveCounter('heuristic'));
   assert.ok(res.findings.some(f => f.kind === 'duplicate-lines'), 'found dupes');
+});
+
+ok('frontmatter parse: name + description + body split', () => {
+  const { name, description, body } = parseFrontmatter('---\nname: foo\ndescription: a thing it does\n---\nBody here mentions refs/x.md');
+  assert.strictEqual(name, 'foo');
+  assert.strictEqual(description, 'a thing it does');
+  assert.ok(body.startsWith('Body here'));
+});
+
+ok('analyzeSkill tiers this repo + flags reachability', () => {
+  const a = analyzeSkill(__dirname + '/..', resolveCounter('gpt-5.5'));
+  assert.strictEqual(a.name, 'token-budget');
+  assert.ok(a.tiers.alwaysOn > 0 && a.tiers.onInvoke > a.tiers.alwaysOn, 'body > desc');
+  // references/*.md are linked from SKILL.md → on-demand, not orphaned
+  assert.ok(a.tiers.onDemandDocs.some(f => f.path.includes('optimization-guide')), 'guide reachable');
+  // README is a human doc, never a scary orphan
+  assert.ok(a.notContext.humanDocs.some(f => /readme/i.test(f.path)), 'README = human doc');
+  assert.strictEqual(a.notContext.orphanDocs.length, 0, 'no true orphans');
+  assert.strictEqual(a.fullyExpanded, a.tiers.alwaysOn + a.tiers.onInvoke + a.tiers.onDemand, 'expanded = sum of tiers');
 });
 
 console.log(`\n${pass} checks passed`);
