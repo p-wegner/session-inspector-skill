@@ -21,7 +21,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { walk, MAX_FILE_BYTES, TEXT_EXT } = require('./scan');
+const { walk, gitIgnored, toPosix, MAX_FILE_BYTES, TEXT_EXT } = require('./scan');
 
 // read a file only if it's under the size cap; oversized (generated/minified)
 // files return '' so they neither hang the tokenizer nor inflate counts
@@ -92,7 +92,11 @@ function analyzeSkill(dir, counter) {
   const { body, name, description } = parseFrontmatter(raw);
 
   // inventory every file in the skill (relative, posix), excluding SKILL.md itself
-  const all = [...walk(dir)]
+  // and anything the repo gitignores (working/generated files aren't skill content)
+  const walked = [...walk(dir)];
+  const ignored = gitIgnored(dir, walked);
+  const all = walked
+    .filter(f => !ignored.has(toPosix(f)))
     .map(f => path.relative(dir, f).split(path.sep).join('/'))
     .filter(r => r !== skillRel);
   const docs = all.filter(r => DOC_EXT.has(path.extname(r).toLowerCase()));
