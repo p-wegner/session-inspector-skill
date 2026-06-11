@@ -8,7 +8,7 @@ function bar(frac, width = 20) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function scanTable({ files, total, counter }, { top = 0 } = {}) {
+function scanTable({ files, total, counter, skippedLarge = [] }, { top = 0 } = {}) {
   const rows = top > 0 ? files.slice(0, top) : files;
   const wPath = Math.max(4, ...rows.map(f => f.path.length));
   const lines = [];
@@ -22,6 +22,13 @@ function scanTable({ files, total, counter }, { top = 0 } = {}) {
   if (top > 0 && files.length > top) {
     const rest = files.slice(top).reduce((s, f) => s + f.tokens, 0);
     lines.push(`${fmt(rest).padStart(9)}  ${' '.repeat(22)}  …${files.length - top} more files`);
+  }
+  if (skippedLarge.length) {
+    const mb = (b) => `${(b / 1048576).toFixed(1)}MB`;
+    lines.push('');
+    lines.push(`skipped ${skippedLarge.length} large file(s) (>2MB, likely generated/minified — not tokenized):`);
+    for (const f of skippedLarge.slice(0, 5)) lines.push(`  ${mb(f.bytes).padStart(8)}  ${f.path}`);
+    if (skippedLarge.length > 5) lines.push(`  …and ${skippedLarge.length - 5} more`);
   }
   return lines.join('\n');
 }
