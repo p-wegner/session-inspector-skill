@@ -21,7 +21,16 @@
 
 const fs = require('fs');
 const path = require('path');
-const { walk } = require('./scan');
+const { walk, MAX_FILE_BYTES, TEXT_EXT } = require('./scan');
+
+// read a file only if it's under the size cap; oversized (generated/minified)
+// files return '' so they neither hang the tokenizer nor inflate counts
+function readCapped(abs) {
+  try {
+    if (fs.statSync(abs).size > MAX_FILE_BYTES) return '';
+    return fs.readFileSync(abs, 'utf8');
+  } catch { return ''; }
+}
 
 const DOC_EXT = new Set(['.md', '.mdx', '.txt', '.rst']);
 // conventionally human/repo docs — not agent context, and not a problem when unlinked
@@ -98,7 +107,8 @@ function analyzeSkill(dir, counter) {
         if (reachable.has(rel)) continue;
         reachable.add(rel);
         if (DOC_EXT.has(path.extname(rel).toLowerCase())) {
-          try { next.push({ rel, text: fs.readFileSync(path.join(dir, rel), 'utf8') }); } catch {}
+          const text = readCapped(path.join(dir, rel));
+          if (text) next.push({ rel, text });
         }
       }
     }
@@ -106,7 +116,11 @@ function analyzeSkill(dir, counter) {
   }
 
   const tok = (t) => counter.count(t);
-  const read = (rel) => { try { return fs.readFileSync(path.join(dir, rel), 'utf8'); } catch { return ''; } };
+  const read = (rel) => readCapped(path.join(dir, rel));
+  // tokens only make sense for text; binaries/images are assets (don't tokenize —
+  // it's meaningless and tokenizing big blobs is the main bottleneck)
+  const isText = (rel) => { const e = path.extname(rel).toLowerCase(); return TEXT_EXT.has(e) || DOC_EXT.has(e); };
+  const tokFile = (rel) => (isText(rel) ? tok(read(rel)) : 0);
 
   // Tier 0 — always-on. Approximate the harness injection: name + description.
   const alwaysOn = tok(`name: ${name}\ndescription: ${description}`);
@@ -119,7 +133,7 @@ function analyzeSkill(dir, counter) {
     .map(r => ({ path: r, tokens: tok(read(r)) }))
     .sort((a, b) => b.tokens - a.tokens);
 
-  const entries = (list) => list.map(r => ({ path: r, tokens: tok(read(r)) })).sort((a, b) => b.tokens - a.tokens);
+  const entries = (list) => list.map(r => ({ path: r, tokens: tokFile(r) })).sort((a, b) => b.tokens - a.tokens);
   // Not context: code/assets are never read into the window (reachable or not);
   // human docs are conventional (README/LICENSE…); orphan docs are the real warning.
   const code = entries(all.filter(r => !DOC_EXT.has(path.extname(r).toLowerCase())));

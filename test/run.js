@@ -39,6 +39,13 @@ ok('scan this repo finds files + nonzero total', () => {
   assert.ok(res.files[0].tokens >= res.files[res.files.length - 1].tokens, 'sorted desc');
 });
 
+ok('scan size-caps large files and reports them (no silent drop)', () => {
+  // tiny cap → this repo's own .js files exceed it → reported, not tokenized
+  const res = scan(__dirname + '/..', { counter: resolveCounter('heuristic'), glob: '**/*.js', maxBytes: 200 });
+  assert.ok(res.skippedLarge.length > 0, 'reported skipped large files');
+  assert.ok(res.skippedLarge[0].bytes > 200, 'skipped entries carry size');
+});
+
 ok('audit flags duplicate lines', () => {
   const dup = 'this is a sufficiently long repeated line of text\n'.repeat(3);
   const res = audit(dup, resolveCounter('heuristic'));
