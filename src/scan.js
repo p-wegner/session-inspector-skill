@@ -7,6 +7,28 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
+
+const toPosix = (p) => p.replace(/\\/g, '/');
+
+// Set of git-ignored paths under `root` (one batched call), as POSIX-slash
+// strings — callers compare with toPosix(file). Empty if git is missing or
+// `root` isn't a repo, so behavior degrades to "count all". Lets scans/skill
+// analysis skip build output + working files the user already chose to ignore,
+// instead of flagging them as orphan docs.
+// (Paths are normalized to forward slashes: Windows git C-quotes backslash
+// paths in the output, which would never match the raw inputs.)
+function gitIgnored(root, absPaths) {
+  if (!absPaths.length) return new Set();
+  try {
+    const out = execFileSync('git', ['-C', root, 'check-ignore', '--stdin'],
+      { input: absPaths.map(toPosix).join('\n'), encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] });
+    return new Set(out.split(/\r?\n/).filter(Boolean));
+  } catch (e) {
+    // exit 1 (nothing ignored) or 128 (not a repo) → throws; salvage any stdout
+    return new Set(e && e.stdout ? String(e.stdout).split(/\r?\n/).filter(Boolean) : []);
+  }
+}
 
 // directories never worth counting (deps, build output, VCS, generated artifacts,
 // and git worktrees — which duplicate the whole tree and swamp real source)
@@ -71,7 +93,12 @@ function scan(target, { counter, glob, includeAll = false, maxBytes = MAX_FILE_B
   const root = stat.isDirectory() ? target : path.dirname(target);
   const re = glob ? globToRegExp(glob) : null;
 
-  const candidates = stat.isFile() ? [target] : [...walk(target)];
+  let candidates = stat.isFile() ? [target] : [...walk(target)];
+  // drop files the repo already gitignores (build output, working/generated files)
+  if (!stat.isFile()) {
+    const ignored = gitIgnored(root, candidates);
+    if (ignored.size) candidates = candidates.filter(f => !ignored.has(toPosix(f)));
+  }
   const files = [];
   const skippedLarge = [];
   let total = 0;
@@ -99,4 +126,4 @@ function scan(target, { counter, glob, includeAll = false, maxBytes = MAX_FILE_B
   return { files, total, counter: counter.name, skippedLarge };
 }
 
-module.exports = { scan, walk, globToRegExp, SKIP_DIRS, TEXT_EXT, MAX_FILE_BYTES };
+module.exports = { scan, walk, gitIgnored, toPosix, globToRegExp, SKIP_DIRS, TEXT_EXT, MAX_FILE_BYTES };
