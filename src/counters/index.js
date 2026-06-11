@@ -1,18 +1,20 @@
 'use strict';
 /*
- * Counter registry. A counter is `{ count(text) -> number, name, exact }`.
+ * Counter registry. A counter is `{ name, count(text)->number, estimate, note?,
+ * exact?(text,model)->Promise<number> }`.
  *
- * resolveCounter(model, { exact }) returns the best available counter for a
- * model family, degrading gracefully to the dependency-free heuristic if a
- * concrete tokenizer (or its npm dep) isn't installed.
+ * Architecture follows the 2026 research verdict (references/tokenizers.md):
+ * ONE shared local normalizer — o200k_base — is the offline metric for every
+ * family (it's exact for OpenAI and a good relative proxy for Claude/Gemini,
+ * which have no portable local tokenizer). Optional per-provider `exact` API
+ * paths give billing-grade counts when online (--exact).
  *
- * The CLI only ever talks to this module — adding a model family means adding
- * one file here, not touching bin/tokt.js.
+ * Adding a model family = add one file + a FAMILY entry. The CLI only talks to
+ * this module.
  */
 
 const heuristic = require('./heuristic-counter');
 
-// model alias -> family key
 const FAMILY = {
   'opus-4.8': 'claude', 'sonnet-4.6': 'claude', 'haiku-4.5': 'claude',
   'fable-5': 'claude', 'claude': 'claude',
@@ -22,32 +24,29 @@ const FAMILY = {
 };
 
 function familyOf(model) {
-  if (!model) return 'openai'; // sensible default: o200k_base ~ closest shared estimate
+  if (!model) return 'openai'; // default: o200k_base — best shared cross-model estimate
   return FAMILY[String(model).toLowerCase()] || 'heuristic';
 }
 
-// lazy so a missing optional dep never crashes an unrelated model
 function tryLoad(path) {
   try { return require(path); } catch { return null; }
 }
 
-function resolveCounter(model, opts = {}) {
-  const family = familyOf(model);
-
-  if (family === 'openai') {
-    const c = tryLoad('./tiktoken-counter');
-    if (c) return c;
-  }
-  if (family === 'claude') {
-    const c = tryLoad('./claude-counter');
-    if (c && (!opts.exact || c.exact)) return c;
-    // fall through to estimate if exact requested but unavailable
-  }
-  if (family === 'gemini') {
-    const c = tryLoad('./gemini-counter');
-    if (c) return c;
-  }
-  return heuristic.forFamily(family);
+// the shared local metric: o200k_base when gpt-tokenizer is installed, else the
+// dependency-free heuristic. Everything else is built on top of this.
+function normalizer() {
+  return tryLoad('./tiktoken-counter') || heuristic.forFamily('openai');
 }
 
-module.exports = { resolveCounter, familyOf, FAMILY };
+function resolveCounter(model /*, opts */) {
+  const family = familyOf(model);
+  if (family === 'heuristic') return heuristic.forFamily('heuristic');
+
+  const base = normalizer();
+  if (family === 'openai') return base; // exact for OpenAI when tiktoken present
+  if (family === 'claude') return require('./claude-counter').make(base);
+  if (family === 'gemini') return require('./gemini-counter').make(base);
+  return base;
+}
+
+module.exports = { resolveCounter, familyOf, normalizer, FAMILY };

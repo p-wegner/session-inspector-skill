@@ -45,6 +45,20 @@ ok('audit flags duplicate lines', () => {
   assert.ok(res.findings.some(f => f.kind === 'duplicate-lines'), 'found dupes');
 });
 
+ok('claude/gemini counters: o200k normalized offline + exact API hook', () => {
+  for (const m of ['opus-4.8', 'gemini']) {
+    const c = resolveCounter(m);
+    assert.ok(c.estimate === true, `${m} marked as estimate`);
+    assert.ok(typeof c.note === 'string' && c.note.length, `${m} has caveat note`);
+    assert.ok(typeof c.exact === 'function', `${m} exposes async exact()`);
+    // offline number must match the shared o200k_base normalizer
+    const txt = 'The quick brown fox jumps over the lazy dog.';
+    assert.strictEqual(c.count(txt), resolveCounter('gpt-5.5').count(txt), `${m} == o200k normalized`);
+  }
+  // openai is exact, no caveat
+  assert.strictEqual(resolveCounter('gpt-5.5').estimate, false);
+});
+
 ok('frontmatter parse: name + description + body split', () => {
   const { name, description, body } = parseFrontmatter('---\nname: foo\ndescription: a thing it does\n---\nBody here mentions refs/x.md');
   assert.strictEqual(name, 'foo');

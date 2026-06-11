@@ -36,16 +36,21 @@ node bin/tokt.js audit path/to/SKILL.md
 ```
 
 ## Model selection
-`--model` picks the counter (see `src/counters/index.js`):
-- `opus-4.8`, `sonnet-4.6`, `haiku-4.5` → Claude family counter
-- `gpt-5.5`, `gpt-5.4` → OpenAI encoding counter
-- `gemini` → Gemini counter
-- `heuristic` → no-dependency chars/token estimate (always available fallback)
+One shared **offline normalizer — `o200k_base`** (via `gpt-tokenizer`) is the
+local metric for every family. It's *exact* for OpenAI and a good *relative*
+proxy for Claude/Gemini, which have **no portable local tokenizer** (see
+`references/tokenizers.md`). `--model` mainly changes which caveat/exact path applies:
+- `gpt-5.5`, `gpt-5.4` → o200k_base, **exact** offline for OpenAI.
+- `opus-4.8`, `sonnet-4.6`, `haiku-4.5`, `fable-5` → o200k_base estimate; Claude
+  has no public local tokenizer. Keep ~15–20% headroom near a hard limit.
+- `gemini` → o200k_base estimate (Gemini's local tokenizer is Python-only).
+- `heuristic` → no-dependency chars/token estimate (used automatically if
+  `gpt-tokenizer` isn't installed).
 
-Counting is **approximate by design** for cross-model relative comparison
-(finding the biggest consumers, measuring before/after a rewrite). For exact
-billing-grade Claude counts, pass `--exact` to use the Anthropic
-`count_tokens` API (needs `ANTHROPIC_API_KEY`; see `references/tokenizers.md`).
+Counting is **relative by design** — ideal for ranking the biggest consumers and
+measuring before/after a rewrite. For billing-grade exact counts, add `--exact`
+(only on `count`): Claude → `count_tokens` API (`ANTHROPIC_API_KEY`), Gemini →
+`countTokens` API (`GEMINI_API_KEY`). Without a key it degrades to the estimate.
 
 ## Analyzing skills (progressive disclosure)
 Agents don't pay for a skill's files equally — `tokt skill <dir>` models the real
@@ -76,8 +81,9 @@ When asked to shrink a doc/skill without losing performance:
 
 ## Architecture
 - `bin/tokt.js` — CLI (count / scan / audit).
-- `src/counters/` — pluggable counters; `index.js` resolves model → counter.
-  Each exports `count(text) -> number`. Add a model family = add one file.
+- `src/counters/` — pluggable counters; `index.js` resolves model → counter
+  over the shared o200k_base normalizer. Each exposes `count(text) -> number`
+  (+ optional async `exact`). Add a model family = add one file.
 - `src/scan.js` — walk a path/glob, count per file, aggregate, rank.
 - `src/skill.js` — parse a skill's frontmatter, tier its files by progressive
   disclosure, resolve transitive doc reachability.
@@ -85,6 +91,6 @@ When asked to shrink a doc/skill without losing performance:
 - `references/` — tokenizer landscape + optimization guidance (read before
   recommending a tokenizer or doing a rewrite).
 
-> **NOTE:** the exact bundled tokenizer is being finalized from a deep-research
-> pass (see `references/tokenizers.md`). The counter interface is stable; the
-> concrete tokenizer drops into `src/counters/` without touching the CLI.
+> Tokenizer choices are settled (June 2026 research) in `references/tokenizers.md`:
+> o200k_base as the shared offline normalizer; Claude/Gemini exact via their
+> count APIs (`--exact`). Read it before swapping a tokenizer.

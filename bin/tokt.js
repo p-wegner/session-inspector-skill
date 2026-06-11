@@ -55,25 +55,39 @@ function usage() {
   --json   machine-readable output`);
 }
 
-function main() {
+// show the counter's caveat once, on stderr, so it doesn't pollute stdout/JSON
+function showNote(counter, o) {
+  if (!o.json && counter.note) console.error(`note: ${counter.note}`);
+}
+
+async function main() {
   const o = parse(process.argv.slice(2));
   const cmd = o._[0];
   if (o.help || !cmd) return usage();
 
-  const counter = resolveCounter(o.model, { exact: o.exact });
+  const counter = resolveCounter(o.model);
 
   if (cmd === 'count') {
     let text = o.file ? fs.readFileSync(o.file, 'utf8') : o._.slice(1).join(' ');
     if (!text) { console.error('nothing to count (pass text or --file)'); process.exit(1); }
-    const n = counter.count(text);
-    if (o.json) return console.log(JSON.stringify({ tokens: n, counter: counter.name }));
-    return console.log(`${fmt(n)} tokens  (${counter.name})`);
+    let n, label = counter.name;
+    if (o.exact && counter.exact) {
+      try { n = await counter.exact(text, o.model); label = `exact:api (${o.model || 'default'})`; }
+      catch (e) { console.error(`exact count failed (${e.message}); using local estimate`); }
+    } else if (o.exact) {
+      console.error(`note: --exact has no API counter for this model; using local estimate`);
+    }
+    if (n == null) { n = counter.count(text); showNote(counter, o); }
+    if (o.json) return console.log(JSON.stringify({ tokens: n, counter: label }));
+    return console.log(`${fmt(n)} tokens  (${label})`);
   }
 
   if (cmd === 'scan') {
     const target = o._[1];
     if (!target) { console.error('scan needs a path'); process.exit(1); }
+    if (o.exact) console.error('note: --exact applies to `count` only; scan uses the local estimate (avoids per-file API calls)');
     const res = scan(target, { counter, glob: o.glob, includeAll: o.all });
+    showNote(counter, o);
     if (o.json) return console.log(JSON.stringify(res, null, 2));
     return console.log(scanTable(res, { top: o.top || 0 }));
   }
@@ -81,6 +95,7 @@ function main() {
   if (cmd === 'skill') {
     const target = o._[1] || '.';
     const res = analyzeSkill(target, counter);
+    showNote(counter, o);
     if (o.json) return console.log(JSON.stringify(res, null, 2));
     return console.log(skillReport(res));
   }
@@ -106,4 +121,4 @@ function main() {
   process.exit(1);
 }
 
-main();
+main().catch((e) => { console.error('error:', e.message); process.exit(1); });

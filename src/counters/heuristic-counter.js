@@ -21,7 +21,7 @@ const CHARS_PER_TOKEN = {
 function makeCounter(ratio, name) {
   return {
     name,
-    exact: false,
+    estimate: true,
     count(text) {
       if (!text) return 0;
       // blend char-based and whitespace-token-based estimates for stability

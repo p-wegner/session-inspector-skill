@@ -14,6 +14,6 @@
   "dependencies": {
     "gpt-tokenizer": "^2.9.0"
   },
-  "comment-dependencies": "gpt-tokenizer = pure-JS, offline o200k_base (covers GPT-5.x). Claude/Gemini exact counters are optional/API and loaded lazily. Final tokenizer choice pending references/tokenizers.md.",
+  "comment-dependencies": "gpt-tokenizer = pure-JS, offline o200k_base (covers GPT-5.x) — the shared local normalizer for all families. Claude/Gemini exact counters use raw HTTPS to their count APIs (no SDK dep). See references/tokenizers.md.",
   "license": "UNLICENSED"
 }

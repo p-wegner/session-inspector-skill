@@ -15,7 +15,7 @@ const { encode } = require('gpt-tokenizer/model/gpt-4o');
 
 module.exports = {
   name: 'tiktoken:o200k_base',
-  exact: true, // exact for OpenAI o200k_base models; an estimate for others
+  estimate: false, // exact for OpenAI o200k_base models; a proxy for others
   count(text) {
     if (!text) return 0;
     return encode(text).length;

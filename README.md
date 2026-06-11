@@ -47,5 +47,7 @@ references/optimization-guide.md   how to cut tokens without losing behavior
 ```
 
 ## Status
-Scaffold. OpenAI/shared estimate works today (o200k_base via gpt-tokenizer);
-Claude/Gemini exact counters land after the tokenizer research pass.
+Working. Shared offline normalizer is **o200k_base** (`gpt-tokenizer`) — exact
+for OpenAI, a relative proxy for Claude/Gemini (which have no portable local
+tokenizer). Optional `--exact` hits the Claude `count_tokens` / Gemini
+`countTokens` APIs. Tokenizer rationale: `references/tokenizers.md`.
