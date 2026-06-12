@@ -67,3 +67,7 @@ so both harnesses share one implementation.
   standalone with nothing but Node.
 - Source of truth for the non-portable version lives in
   `agentic-kanban/.claude/skills/session-inspector` + `agentic-kanban/scripts`.
+
+## License
+
+[MIT](LICENSE)
