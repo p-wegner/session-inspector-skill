@@ -38,6 +38,7 @@ references/
   copilot-recipes.md              # Copilot events.jsonl format + recipes
   aggregate-tools.md              # usage for the fleet-wide fan-out scripts
   session-sync.md                 # full setup/config/API for cross-machine sync
+  statusline.md                   # show the current session locator in the Claude Code statusline
 scripts/
   analyze-claude-session.mjs      # single Claude session  → structured summary
   analyze-codex-session.mjs       # single Codex session   → structured summary
