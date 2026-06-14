@@ -51,6 +51,7 @@ scripts/
   sync-query.mjs                  # CLI browse/search/fetch over the synced set
   lib/
     sessions.mjs                  # shared discovery, metadata, git-remote project identity
+    parse.mjs                     # shared full-transcript parsers (tools/files/tokens/last-msg) — used by analyzers AND the hub UI
     config.mjs                    # host-agnostic URL/port/device/data-dir resolution
 ```
 

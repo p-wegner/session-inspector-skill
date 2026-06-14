@@ -22,6 +22,7 @@
  *   GET  /api/sessions?device=&provider=&project=&q=&deep=1&since=&until=&limit=   -> [record]
  *   GET  /api/sessions/get?key=<device/provider/sessionId>   -> {record, content}
  *   GET  /api/sessions/raw?key=...                -> text/plain transcript
+ *   GET  /api/sessions/summary?key=...            -> {record, summary, lines}  (full parse: tools, files, tokens, last assistant msg)
  *   GET  /api/meta                                -> {devices, providers, projects, count}
  *   GET  /                                        web UI
  */
@@ -31,6 +32,7 @@ import { createHash } from "crypto";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { dataDir, DEFAULT_PORT, flag } from "./lib/config.mjs";
+import { summarize } from "./lib/parse.mjs";
 
 const argv = process.argv.slice(2);
 const PORT = Number(flag(argv, "--port") || process.env.SESSION_SYNC_PORT || DEFAULT_PORT);
@@ -171,6 +173,20 @@ function handleGet(url, res, raw) {
   sendJson(res, 200, { record: r, content });
 }
 
+function handleSummary(url, res) {
+  const key = url.searchParams.get("key");
+  const r = index[key];
+  if (!r) return sendJson(res, 404, { error: "not found" });
+  let content = "";
+  try { content = readFileSync(storePath(r.device, r.provider, r.sessionId), "utf-8"); }
+  catch { return sendJson(res, 410, { error: "transcript missing on disk" }); }
+  let summary = null;
+  try { summary = summarize(r.provider, content); }
+  catch (e) { return sendJson(res, 500, { error: `parse failed: ${String(e.message || e)}` }); }
+  if (!summary) return sendJson(res, 422, { error: `no parser for provider ${r.provider}` });
+  sendJson(res, 200, { record: r, summary, lines: content.split("\n").filter((l) => l.trim()).length });
+}
+
 function handleMeta(res) {
   const devices = new Set(), providers = new Set(), projects = new Set();
   for (const r of Object.values(index)) {
@@ -202,6 +218,7 @@ const server = createServer(async (req, res) => {
     if (path === "/api/sessions") return handleSearch(url, res);
     if (path === "/api/sessions/get") return handleGet(url, res, false);
     if (path === "/api/sessions/raw") return handleGet(url, res, true);
+    if (path === "/api/sessions/summary") return handleSummary(url, res);
     if (path === "/" || path === "/index.html") return sendText(res, 200, HTML, "text/html; charset=utf-8");
     sendJson(res, 404, { error: "not found" });
   } catch (e) {
@@ -240,6 +257,21 @@ pre{white-space:pre-wrap;word-break:break-word;background:var(--panel);border:1p
 .muted{color:var(--mut)}.count{color:var(--mut);margin-left:auto}
 button{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:5px;padding:5px 9px;cursor:pointer}
 button:hover{border-color:var(--acc)}
+.stats{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 9px;font-size:11px}
+.stat b{color:var(--acc);font-weight:600}.stat.warn b{color:var(--warn)}
+.sec{margin-top:12px}.sec>h3{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 5px;font-weight:600}
+.tools{display:flex;flex-wrap:wrap;gap:5px}
+.chip{display:inline-flex;gap:5px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:2px 9px;font-size:11px}
+.chip .n{color:var(--mut)}.chip.bad{border-color:#5a3a3a}.chip.bad .f{color:#e06c75}
+.files{display:flex;flex-direction:column;gap:2px;font-size:11px}
+.files .fr{color:#7fb069}.files .fe{color:var(--warn)}.files .fw{color:var(--acc)}
+.cmds{font-size:11px;color:var(--mut)}.cmds .c{display:block;white-space:pre-wrap;word-break:break-all;padding:1px 0}.cmds .x{color:var(--warn)}
+.asst{background:#141a14;border:1px solid #2a3a2a}
+.errpre{background:#1a1414;border-color:#3a2626}
+details>summary{cursor:pointer;color:var(--mut);margin:8px 0 4px;list-style:none}
+details>summary::-webkit-details-marker{display:none}details>summary:before{content:"▸ ";color:var(--acc)}
+details[open]>summary:before{content:"▾ "}
 </style></head><body>
 <header>
   <h1>Session Sync</h1>
@@ -280,25 +312,78 @@ async function search(){
   </div>\`).join('')||'<p class="muted" style="padding:12px">No matches.</p>';
   document.querySelectorAll('.row').forEach(el=>el.onclick=()=>open(el));
 }
+function fmtDur(sec){if(sec==null||sec<0)return'?';if(sec<60)return sec+'s';const m=Math.floor(sec/60),s=sec%60;if(m<60)return m+'m '+s+'s';return Math.floor(m/60)+'h '+(m%60)+'m';}
+function fmtTok(n){if(!n)return'0';if(n>=1e6)return(n/1e6).toFixed(1)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return''+n;}
+function stat(label,val,warn){return\`<span class="stat\${warn?' warn':''}">\${label} <b>\${val}</b></span>\`;}
+function fileList(arr,cls,label){if(!arr||!arr.length)return'';return\`<div class="sec"><h3>\${label} (\${arr.length})</h3><div class="files">\${arr.slice(0,40).map(f=>\`<span class="\${cls}">\${esc(f)}</span>\`).join('')}\${arr.length>40?'<span class=muted>… +'+(arr.length-40)+' more</span>':''}</div></div>\`;}
+
 async function open(el){
   document.querySelectorAll('.row').forEach(e=>e.classList.remove('sel'));el.classList.add('sel');
   const key=el.dataset.key;
-  const {record:r,content}=await j('/api/sessions/get?key='+key);
+  $('#detail').innerHTML='<p class="muted">Parsing…</p>';
+  let data; try{data=await j('/api/sessions/summary?key='+key);}catch{data=null;}
+  if(!data||data.error){ // fall back to raw record if parse failed
+    const {record:r}=await j('/api/sessions/get?key='+key);
+    return renderBasic(r,key,data&&data.error);
+  }
+  const {record:r,summary:s,lines}=data;
+  const failPct=s.toolCalls?Math.round(100*s.failedToolCalls/s.toolCalls):0;
+  const x=s.extra||{};
+  const toolChips=(s.toolUsePatterns||[]).slice(0,24).map(t=>
+    \`<span class="chip\${t.failed?' bad':''}">\${esc(t.tool)} <span class="n">\${t.count}</span>\${t.failed?\` <span class="f">⚠\${t.failed}</span>\`:''}</span>\`).join('');
+  const repeated=(s.repeatedCommands||[]).slice(0,8).map(c=>
+    \`<span class="c"><span class="x">\${c.count}×</span> \${esc(c.command)}</span>\`).join('');
+  const errs=(s.errors||[]).slice(0,6).map(e=>esc(e.replace(/\\s+/g,' '))).join('\\n');
+
   $('#detail').innerHTML=\`<div id="meta">
     <div><b>project</b>\${esc(r.project)} <span class=muted>\${esc(r.projectKey)}</span></div>
+    <div><b>agent</b><span class="badge \${r.provider}">\${r.provider}</span> \${esc(s.model||r.model)}\${x.cliVersion?' <span class=muted>v'+esc(x.cliVersion)+'</span>':''}\${x.copilotVersion?' <span class=muted>v'+esc(x.copilotVersion)+'</span>':''}</div>
+    <div><b>device</b>\${esc(r.device)}\${x.branch?' · '+esc(x.branch):''}</div>
+    <div><b>cwd</b>\${esc(s.cwd||r.cwd)}</div>
+    <div><b>modified</b>\${(r.mtime||'').replace('T',' ').slice(0,19)}</div>
+  </div>
+  <div class="stats">
+    \${stat('dur',fmtDur(s.durationSec))}
+    \${stat('turns',s.turns||0)}
+    \${stat('tools',s.toolCalls||0)}
+    \${s.failedToolCalls?stat('failed',s.failedToolCalls+' ('+failPct+'%)',true):''}
+    \${(s.inputTokens||s.outputTokens)?stat('tokens',fmtTok(s.inputTokens)+'→'+fmtTok(s.outputTokens)):''}
+    \${s.cacheReadTokens?stat('cache',fmtTok(s.cacheReadTokens)):''}
+    \${s.totalCostUsd?stat('cost','$'+s.totalCostUsd.toFixed(2)):''}
+    \${s.stopReason?stat('stop',esc(s.stopReason)):''}
+    \${(x.linesAdded||x.linesRemoved)?stat('diff','+'+x.linesAdded+'/-'+x.linesRemoved,true):''}
+    \${stat('lines',lines)}
+  </div>
+  <div style="margin:2px 0 6px"><button id="dl">download raw</button> <button id="rawtoggle">view transcript</button> <span class=muted style="font-size:11px">\${esc(key)}</span></div>
+
+  \${toolChips?\`<div class="sec"><h3>tool usage</h3><div class="tools">\${toolChips}</div></div>\`:''}
+  \${repeated?\`<div class="sec"><h3>repeated commands (wasted-turn signal)</h3><div class="cmds">\${repeated}</div></div>\`:''}
+  \${fileList(s.filesEdited,'fe','files edited')}
+  \${fileList(s.filesWritten,'fw','files written')}
+  \${fileList(s.filesRead,'fr','files read')}
+  \${(x.webSearches&&x.webSearches.length)?\`<div class="sec"><h3>web searches</h3><div class="cmds">\${x.webSearches.map(q=>'<span class="c">🔍 '+esc(q)+'</span>').join('')}</div></div>\`:''}
+  \${errs?\`<div class="sec"><h3>error excerpts (\${s.errors.length})</h3><pre class="errpre">\${errs}</pre></div>\`:''}
+
+  <div class="sec"><h3>last assistant message</h3><pre class="asst">\${esc(s.lastAssistant)||'<span class=muted>— (no assistant text)</span>'}</pre></div>
+  <div class="sec"><h3>first prompt</h3><pre>\${esc(s.firstUser)||esc(r.firstPrompt)||'<span class=muted>—</span>'}</pre></div>
+  \${(s.lastUser&&s.lastUser!==s.firstUser)?\`<div class="sec"><h3>last prompt</h3><pre>\${esc(s.lastUser)}</pre></div>\`:''}
+  <details id="rawwrap"><summary>raw transcript (\${lines} lines)</summary><pre id="rawpre" style="max-height:50vh;overflow:auto">loading…</pre></details>\`;
+
+  let rawCache=null;
+  const loadRaw=async()=>{if(rawCache==null){rawCache=await (await fetch('/api/sessions/raw?key='+key)).text();$('#rawpre').textContent=rawCache;}return rawCache;};
+  $('#rawwrap').addEventListener('toggle',e=>{if(e.target.open)loadRaw();});
+  $('#rawtoggle').onclick=async()=>{$('#rawwrap').open=true;await loadRaw();$('#rawwrap').scrollIntoView({behavior:'smooth'});};
+  $('#dl').onclick=async()=>{const c=await loadRaw();const b=new Blob([c],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=r.sessionId+'.jsonl';a.click();};
+}
+function renderBasic(r,key,err){
+  $('#detail').innerHTML=\`<div id="meta">
+    <div><b>project</b>\${esc(r.project)}</div>
     <div><b>agent</b><span class="badge \${r.provider}">\${r.provider}</span> \${esc(r.model)}</div>
     <div><b>device</b>\${esc(r.device)}</div>
     <div><b>cwd</b>\${esc(r.cwd)}</div>
-    <div><b>session</b>\${esc(r.sessionId)}</div>
-    <div><b>modified</b>\${(r.mtime||'').replace('T',' ').slice(0,19)}</div>
-    <div><b>size</b>\${r.lines} lines · \${(r.bytes/1024).toFixed(0)}KB</div>
-    <div style="margin-top:6px"><button id="dl">download raw</button> <span class=muted>\${esc(key)}</span></div>
-  </div>
-  <div class="muted" style="margin:8px 0 4px">first prompt</div><pre>\${esc(r.firstPrompt)||'<span class=muted>—</span>'}</pre>
-  <div class="muted" style="margin:8px 0 4px">last prompt</div><pre>\${esc(r.lastPrompt)||'<span class=muted>—</span>'}</pre>
-  <div class="muted" style="margin:8px 0 4px">raw transcript (\${content.split('\\n').length} lines)</div>
-  <pre style="max-height:50vh;overflow:auto">\${esc(content)}</pre>\`;
-  $('#dl').onclick=()=>{const b=new Blob([content],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=r.sessionId+'.jsonl';a.click();};
+  </div>\${err?'<p class="muted">parse unavailable: '+esc(err)+'</p>':''}
+  <div class="sec"><h3>first prompt</h3><pre>\${esc(r.firstPrompt)||'<span class=muted>—</span>'}</pre></div>
+  <div class="sec"><h3>last prompt</h3><pre>\${esc(r.lastPrompt)||'<span class=muted>—</span>'}</pre></div>\`;
 }
 let t;['#q','#project'].forEach(s=>$(s).oninput=()=>{clearTimeout(t);t=setTimeout(search,250);});
 ['#device','#provider','#deep'].forEach(s=>$(s).onchange=search);

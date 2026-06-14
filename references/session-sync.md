@@ -72,7 +72,23 @@ node scripts/sync-push.mjs --force          # re-evaluate every file (ignore loc
 Open `http://<server>:<port>/`. Single page: keyword box (with a **deep** toggle
 that greps full transcript text, not just metadata), device/agent/project filters,
 a result list (provider badge · project · first-prompt preview · time · size), and
-a detail pane (metadata, first/last prompt, raw transcript, download-raw).
+a detail pane.
+
+The detail pane parses the full transcript on demand (server-side, via
+`scripts/lib/parse.mjs` — the same parser the `analyze-*-session.mjs` CLIs use) and
+shows the kanban-style session summary:
+
+- **stats row** — duration, turns, tool calls (+ failed %), tokens in→out, cache-read,
+  cost, stop reason, and for Copilot the `+/-` diff lines.
+- **tool usage** — per-tool call counts with failure badges.
+- **repeated commands** — the wasted-turn signal (same command run ≥2×).
+- **files** edited / written / read (Claude from `Read`/`Edit`/`Write` tool calls,
+  Codex from applied patches, Copilot from `codeChanges`).
+- **web searches** (Codex) and **error excerpts** (failed tool results).
+- **last assistant message** — what the agent actually said last (not just the
+  last *prompt*), plus first/last user prompt.
+- **raw transcript** — collapsed by default, fetched lazily so opening a session
+  is cheap even for multi-MB files.
 
 ## Browsing — CLI (`sync-query.mjs`)
 
@@ -100,6 +116,7 @@ POST /api/sessions                                upload one session (envelope: 
 GET  /api/sessions?device=&provider=&project=&q=&deep=1&since=&until=&limit=   -> [record]
 GET  /api/sessions/get?key=<device/provider/sessionId>   -> {record, content}
 GET  /api/sessions/raw?key=...                    -> text/plain transcript
+GET  /api/sessions/summary?key=...                -> {record, summary, lines}  (full parse: tools, files, tokens, last assistant message)
 ```
 
 `key` = `device/provider/sessionId`. Timestamps are ISO; `since`/`until` compare
