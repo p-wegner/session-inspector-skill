@@ -162,19 +162,57 @@ function logs() {
 
 function installWin() {
   mkdirSync(DATA, { recursive: true });
-  // Hidden launcher: wscript runs the server with no console window (style 0).
-  // In a VBS string literal backslashes are literal and an embedded double
-  // quote is written by doubling it (""), so wrap each path in "" .. "" .
+  // Hidden launcher: wscript runs the server with no console window (style 0)
+  // and WAITS on it (3rd arg True), then exits with node's exit code. Waiting is
+  // what lets Task Scheduler see the task as "running" while the hub is alive and
+  // "failed" when the hub crashes — which is what RestartOnFailure (below) needs.
+  // In a VBS string literal backslashes are literal and an embedded double quote
+  // is written by doubling it (""), so wrap each path in "" .. "" .
   const cmd = `""${NODE}"" ""${SERVER}"" --host ${HOST} --port ${PORT}`;
   const vbs =
     `Set sh = CreateObject("WScript.Shell")\r\n` +
-    `sh.Run "${cmd}", 0, False\r\n`;
+    `WScript.Quit sh.Run("${cmd}", 0, True)\r\n`;
   writeFileSync(VBS_FILE, vbs);
-  // Register a logon-triggered task that runs the hidden launcher.
-  // /RL HIGHEST + creating the task needs admin; schtasks will say so if not elevated.
-  const tr = `wscript.exe \"${VBS_FILE}\"`;
-  execFileSync("schtasks", ["/Create", "/TN", TASK_NAME, "/TR", tr, "/SC", "ONLOGON", "/RL", "HIGHEST", "/F"], { stdio: "inherit" });
-  console.log(`installed Scheduled Task "${TASK_NAME}" (ONLOGON) -> ${tr}`);
+
+  // Register via task XML so we can express keep-alive properly. Self-healing
+  // design: a LogonTrigger that ALSO repeats every minute, plus
+  // MultipleInstancesPolicy=IgnoreNew. While the hub is alive the waiting wscript
+  // keeps one instance running, so each minute's re-launch is ignored; when the
+  // hub dies the launcher exits and the next tick (≤1 min) relaunches it. This is
+  // deliberately NOT RestartOnFailure — that triggers on the engine failing to
+  // LAUNCH the action, not on the action exiting non-zero, so a crashed hub
+  // (exit 1) leaves the task "Ready" and never restarts. RestartOnFailure is kept
+  // too as a belt-and-suspenders, but the repetition is what actually heals.
+  // RunLevel is LeastPrivilege on purpose: the hub only serves HTTP + reads home
+  // dirs, needs no admin, and an elevated long-running node can't be stopped by
+  // normal tools.
+  const user = `${process.env.USERDOMAIN || ""}\\${process.env.USERNAME || ""}`.replace(/^\\/, "");
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const xml = `<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>session-sync hub (auto-start + restart on failure)</Description></RegistrationInfo>
+  <Triggers>
+    <LogonTrigger><Enabled>true</Enabled></LogonTrigger>
+    <TimeTrigger><StartBoundary>2024-01-01T00:00:00</StartBoundary><Enabled>true</Enabled><Repetition><Interval>PT1M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition></TimeTrigger>
+  </Triggers>
+  <Principals><Principal id="Author"><UserId>${esc(user)}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+    <RestartOnFailure><Interval>PT1M</Interval><Count>3</Count></RestartOnFailure>
+  </Settings>
+  <Actions Context="Author"><Exec><Command>wscript.exe</Command><Arguments>"${esc(VBS_FILE)}"</Arguments></Exec></Actions>
+</Task>`;
+  const XML_FILE = join(DATA, "hub-task.xml");
+  writeFileSync(XML_FILE, "﻿" + xml, "utf16le"); // schtasks /XML wants UTF-16
+  // /Create + RunLevel HIGHEST needs admin; schtasks reports it if not elevated.
+  execFileSync("schtasks", ["/Create", "/TN", TASK_NAME, "/XML", XML_FILE, "/F"], { stdio: "inherit" });
+  console.log(`installed Scheduled Task "${TASK_NAME}" (ONLOGON + 1-min keep-alive, self-healing) -> wscript.exe "${VBS_FILE}"`);
 }
 
 function uninstallWin() {

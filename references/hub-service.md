@@ -34,14 +34,32 @@ Honors the server's knobs: `SESSION_SYNC_PORT`, `SESSION_SYNC_DATA`, `--port`, `
 
 | OS | Mechanism | Notes |
 |----|-----------|-------|
-| **Windows** | Scheduled Task `SessionSyncHub`, trigger `ONLOGON`, runs `wscript.exe hub-autostart.vbs` (style 0 → no console window) | `install`/`uninstall` call `schtasks` with `/RL HIGHEST`, which **needs an elevated shell**. Validate with `schtasks /Run /TN SessionSyncHub`. |
+| **Windows** | Scheduled Task `SessionSyncHub` registered from task XML: a `LogonTrigger` **plus** a 1-minute repeating `TimeTrigger` heartbeat, `MultipleInstancesPolicy=IgnoreNew`, `RunLevel=LeastPrivilege`. Runs `wscript.exe hub-autostart.vbs` (window style 0 → no console) which **waits on** node and propagates its exit code. | `install`/`uninstall` call `schtasks` — task creation **needs an elevated shell** here. Validate via the crash test below. |
 | **macOS** | launchd agent `~/Library/LaunchAgents/com.session-inspector.hub.plist`, `RunAtLoad` + `KeepAlive` | loaded via `launchctl load`. |
 | **Linux** | systemd `--user` unit `~/.config/systemd/user/session-sync-hub.service`, `Restart=always` | enabled with `systemctl --user enable --now`. Run `loginctl enable-linger $USER` to start it before you log in. |
 
+### Windows: why a heartbeat, not RestartOnFailure
+
+Task Scheduler's `RestartOnFailure` triggers when the engine fails to **launch** the
+action — **not** when the action exits non-zero. A crashed hub (node exits 1) leaves
+the task `Ready` with `Last Result = 1` and never restarts. The reliable keep-alive
+is instead a **repeating trigger + `IgnoreNew`**: while the hub is alive the waiting
+`wscript` keeps one instance running so each minute's re-launch is ignored; when the
+hub dies the launcher exits and the next tick (≤1 min) relaunches it.
+
+A `LogonTrigger` alone is also insufficient: one created **after** you've logged in
+won't fire (nor will its repetition) until the *next* logon, so a mid-session crash
+wouldn't recover. The `TimeTrigger` (past `StartBoundary` + indefinite `PT1M`
+repetition + `StartWhenAvailable`) is active continuously, independent of logon —
+it even cold-starts the hub within ~1 min of `install`.
+
+`RunLevel=LeastPrivilege` is deliberate: the hub needs no admin, and an elevated
+long-running node can't be stopped by a normal-privilege `taskkill`/`hub-service stop`.
+
 ### Windows: run install elevated
 
-`schtasks /Create /RL HIGHEST` and the firewall rule both need admin. Self-elevating
-one-liner (one UAC click) for install:
+Task creation and the firewall rule both need admin. Self-elevating one-liner (one
+UAC click) for install:
 
 ```powershell
 Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command',
@@ -75,6 +93,8 @@ node scripts/hub-service.mjs status
 # autostart : installed (win32)
 ```
 
-End-to-end check of the autostart path (Windows): `node hub-service.mjs stop`, then
-`schtasks /Run /TN SessionSyncHub`, then `status` again — the hub should come back
-with no console window and no error dialog.
+Crash / self-heal test (Windows) — the real proof the keep-alive works: note the
+listening pid (`status`), `taskkill /PID <pid> /F /T` to simulate a crash, then watch
+`status` — within ≤1 min the heartbeat relaunches a **new** node pid with no console
+window and no error dialog. Cold-start works the same way: right after `install`,
+the hub appears on its own within ~1 min without any manual `/Run`.
