@@ -66,6 +66,26 @@ push (local state file), continued sessions dedup in place by `(device,provider,
 and project identity is resolved via `git remote` so it's stable across machines.
 Full setup, config knobs, REST API, and privacy scope in `references/session-sync.md`.
 
+### Run the hub as a persistent service
+
+To keep the hub up across logout/reboot instead of babysitting `sync-server.mjs`,
+use the lifecycle manager — it spawns the server detached (hidden), tracks pid/log
+under the data dir, and installs an OS autostart entry (Scheduled Task on Windows,
+launchd on macOS, systemd `--user` on Linux):
+
+```powershell
+node scripts/hub-service.mjs status      # running? indexed count? autostart installed?
+node scripts/hub-service.mjs start       # spawn detached + hidden, write pid/log
+node scripts/hub-service.mjs restart     # stop then start
+node scripts/hub-service.mjs install     # register autostart at logon (Windows/macOS: needs an elevated shell)
+node scripts/hub-service.mjs logs -n 40  # tail the hub log
+```
+
+Tailnet exposure needs one inbound-allow firewall rule for the port (8765); on
+Windows the Tailscale adapter is on the *Private* profile, so add the rule once with
+an elevated shell. Setup, the firewall one-liner, and per-OS autostart details in
+`references/hub-service.md`.
+
 ## Directory naming convention (Claude)
 
 Each working directory maps to a session dir by replacing path separators with `--`:

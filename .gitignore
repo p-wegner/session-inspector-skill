@@ -1,5 +1,7 @@
 node_modules/
 *.log
+*.log.err
+hub.pid
 .DS_Store
 .playwright-cli/
 *.stackdump

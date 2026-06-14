@@ -98,6 +98,27 @@ node scripts/sync-push.mjs                   # incremental: only new/changed ses
 Point a client at a remote hub with `--server <url>` or `SESSION_SYNC_URL` — nothing
 else changes, so you can develop everything on localhost and go multi-device later.
 
+### Persistent hub service
+
+`sync-server.mjs` in the foreground dies with your terminal. To keep the hub up
+across logout/reboot, manage it with `scripts/hub-service.mjs` — it spawns the
+server detached (no console window), tracks pid/log under the data dir, and
+registers an OS autostart entry (Windows Scheduled Task / macOS launchd / Linux
+systemd `--user`):
+
+```powershell
+node scripts/hub-service.mjs status      # running? indexed count? autostart installed?
+node scripts/hub-service.mjs start       # spawn detached + hidden
+node scripts/hub-service.mjs restart     # stop then start
+node scripts/hub-service.mjs install     # autostart at logon (Windows/macOS: elevated shell)
+node scripts/hub-service.mjs uninstall   # remove autostart
+node scripts/hub-service.mjs logs -n 40  # tail the hub log
+```
+
+For tailnet reach, open one inbound firewall rule for the port (on Windows the
+Tailscale adapter is on the *Private* profile, so the rule is required). Full
+per-OS detail and the firewall one-liner: [`references/hub-service.md`](references/hub-service.md).
+
 ### Browse
 
 - **Web UI** at `http://<hub>:<port>/` — keyword box (with a **deep** toggle that greps
