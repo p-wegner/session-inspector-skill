@@ -6,12 +6,13 @@
  *   node scripts/analyze-codex-session.mjs <path-to-session.jsonl>
  *   node scripts/analyze-codex-session.mjs --list                   # list recent sessions
  *   node scripts/analyze-codex-session.mjs --latest                 # analyze most recent session
+ *   node scripts/analyze-codex-session.mjs --events <path> [--type tool_call] [--grep npm] [--limit 50] [--verbose] [--json]
  */
 
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
-import { parseCodex as parseCodexSession, fmtDuration as formatDuration, fmtTokens as formatTokens } from "./lib/parse.mjs";
+import { parseCodex as parseCodexSession, fmtDuration as formatDuration, fmtTokens as formatTokens, runEventsMode } from "./lib/parse.mjs";
 
 function printSummary({ stats }) {
   console.log("═".repeat(60));
@@ -127,17 +128,21 @@ function listSessions(sessionsDir) {
 
 // ── Main ─────────────────────────────────────────────────────────────────
 
-const arg = process.argv[2];
+const args = process.argv.slice(2);
 const sessionsDir = findCodexSessionsDir();
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit"]);
+const eventsMode = args.includes("--events");
+const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
-if (!arg) {
+if (!args.length) {
   console.log("Usage: node analyze-codex-session.mjs <path-to-session.jsonl>");
   console.log("       node analyze-codex-session.mjs --list");
   console.log("       node analyze-codex-session.mjs --latest");
+  console.log("       node analyze-codex-session.mjs --events <path> [--type tool_call] [--grep s] [--limit N] [--verbose] [--json]");
   process.exit(1);
 }
 
-if (arg === "--list") {
+if (args.includes("--list")) {
   const sessions = listSessions(sessionsDir);
   console.log(`Found ${sessions.length} sessions in ${sessionsDir}\n`);
   for (const s of sessions.slice(0, 20)) {
@@ -149,19 +154,24 @@ if (arg === "--list") {
 }
 
 let targetPath;
-if (arg === "--latest") {
+if (args.includes("--latest")) {
   const sessions = listSessions(sessionsDir);
   if (!sessions.length) {
     console.error("No sessions found.");
     process.exit(1);
   }
   targetPath = sessions[0].path;
-  console.log(`Analyzing latest session: ${sessions[0].name}\n`);
-} else {
+  if (!eventsMode) console.log(`Analyzing latest session: ${sessions[0].name}\n`);
+} else if (arg) {
   targetPath = resolve(arg);
+} else {
+  console.error("No session path given.");
+  process.exit(1);
 }
 
 const content = readFileSync(targetPath, "utf-8");
-const lines = content.split("\n");
-const result = parseCodexSession(lines);
-printSummary(result);
+if (eventsMode) {
+  console.log(runEventsMode("codex", content, args));
+} else {
+  printSummary(parseCodexSession(content.split("\n")));
+}

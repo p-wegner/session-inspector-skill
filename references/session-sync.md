@@ -117,6 +117,7 @@ GET  /api/sessions?device=&provider=&project=&q=&deep=1&since=&until=&limit=   -
 GET  /api/sessions/get?key=<device/provider/sessionId>   -> {record, content}
 GET  /api/sessions/raw?key=...                    -> text/plain transcript
 GET  /api/sessions/summary?key=...                -> {record, summary, lines}  (full parse: tools, files, tokens, last assistant message)
+GET  /api/sessions/events?key=...                 -> {counts, events:[{seq,ts,type,tool,text}]}  (chronological typed timeline: user/assistant/thinking/tool_call/tool_error)
 ```
 
 `key` = `device/provider/sessionId`. Timestamps are ISO; `since`/`until` compare

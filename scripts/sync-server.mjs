@@ -23,6 +23,7 @@
  *   GET  /api/sessions/get?key=<device/provider/sessionId>   -> {record, content}
  *   GET  /api/sessions/raw?key=...                -> text/plain transcript
  *   GET  /api/sessions/summary?key=...            -> {record, summary, lines}  (full parse: tools, files, tokens, last assistant msg)
+ *   GET  /api/sessions/events?key=...             -> {counts, events:[{seq,ts,type,tool,text}]}  (chronological typed timeline)
  *   GET  /api/meta                                -> {devices, providers, projects, count}
  *   GET  /                                        web UI
  */
@@ -32,7 +33,7 @@ import { createHash } from "crypto";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { dataDir, DEFAULT_PORT, flag } from "./lib/config.mjs";
-import { summarize } from "./lib/parse.mjs";
+import { summarize, extractEvents, eventTypeCounts } from "./lib/parse.mjs";
 
 const argv = process.argv.slice(2);
 const PORT = Number(flag(argv, "--port") || process.env.SESSION_SYNC_PORT || DEFAULT_PORT);
@@ -187,6 +188,19 @@ function handleSummary(url, res) {
   sendJson(res, 200, { record: r, summary, lines: content.split("\n").filter((l) => l.trim()).length });
 }
 
+function handleEvents(url, res) {
+  const key = url.searchParams.get("key");
+  const r = index[key];
+  if (!r) return sendJson(res, 404, { error: "not found" });
+  let content = "";
+  try { content = readFileSync(storePath(r.device, r.provider, r.sessionId), "utf-8"); }
+  catch { return sendJson(res, 410, { error: "transcript missing on disk" }); }
+  let events = [];
+  try { events = extractEvents(r.provider, content.split("\n")); }
+  catch (e) { return sendJson(res, 500, { error: `parse failed: ${String(e.message || e)}` }); }
+  sendJson(res, 200, { key, provider: r.provider, counts: eventTypeCounts(events), events });
+}
+
 function handleMeta(res) {
   const devices = new Set(), providers = new Set(), projects = new Set();
   for (const r of Object.values(index)) {
@@ -219,6 +233,7 @@ const server = createServer(async (req, res) => {
     if (path === "/api/sessions/get") return handleGet(url, res, false);
     if (path === "/api/sessions/raw") return handleGet(url, res, true);
     if (path === "/api/sessions/summary") return handleSummary(url, res);
+    if (path === "/api/sessions/events") return handleEvents(url, res);
     if (path === "/" || path === "/index.html") return sendText(res, 200, HTML, "text/html; charset=utf-8");
     sendJson(res, 404, { error: "not found" });
   } catch (e) {
@@ -272,6 +287,20 @@ button:hover{border-color:var(--acc)}
 details>summary{cursor:pointer;color:var(--mut);margin:8px 0 4px;list-style:none}
 details>summary::-webkit-details-marker{display:none}details>summary:before{content:"▸ ";color:var(--acc)}
 details[open]>summary:before{content:"▾ "}
+.tl-bar{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0}
+.tl-chip{cursor:pointer;user-select:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:2px 9px;font-size:11px;color:var(--mut)}
+.tl-chip.on{border-color:var(--acc);color:var(--fg)}
+.tl-chip .n{color:var(--acc);font-weight:600}
+.tl-chip[data-t="tool_error"].on{border-color:#e06c75}.tl-chip[data-t="tool_error"] .n{color:#e06c75}
+.tl-bar input{padding:3px 7px;font-size:11px}
+.tl{display:flex;flex-direction:column;font-size:11px;border:1px solid var(--line);border-radius:6px;max-height:55vh;overflow:auto}
+.te{display:flex;gap:8px;padding:2px 8px;border-bottom:1px solid #1c2029;white-space:pre-wrap;word-break:break-word}
+.te:hover{background:var(--panel)}
+.te .seq{color:#4a5163;flex:0 0 auto}.te .clk{color:var(--mut);flex:0 0 auto}
+.te .ty{flex:0 0 78px;color:var(--mut)}
+.te.t-user .ty{color:#7fb069}.te.t-assistant .ty{color:#bd93f9}.te.t-thinking .ty{color:#8a93a6}
+.te.t-tool_call .ty{color:var(--acc)}.te.t-tool_error .ty{color:#e06c75}
+.te .tx{flex:1;min-width:0}.te .tl-tool{color:var(--warn)}
 </style></head><body>
 <header>
   <h1>Session Sync</h1>
@@ -354,7 +383,8 @@ async function open(el){
     \${(x.linesAdded||x.linesRemoved)?stat('diff','+'+x.linesAdded+'/-'+x.linesRemoved,true):''}
     \${stat('lines',lines)}
   </div>
-  <div style="margin:2px 0 6px"><button id="dl">download raw</button> <button id="rawtoggle">view transcript</button> <span class=muted style="font-size:11px">\${esc(key)}</span></div>
+  <div style="margin:2px 0 6px"><button id="dl">download raw</button> <button id="tltoggle">timeline</button> <button id="rawtoggle">view transcript</button> <span class=muted style="font-size:11px">\${esc(key)}</span></div>
+  <div id="tlwrap" style="display:none"></div>
 
   \${toolChips?\`<div class="sec"><h3>tool usage</h3><div class="tools">\${toolChips}</div></div>\`:''}
   \${repeated?\`<div class="sec"><h3>repeated commands (wasted-turn signal)</h3><div class="cmds">\${repeated}</div></div>\`:''}
@@ -374,6 +404,34 @@ async function open(el){
   $('#rawwrap').addEventListener('toggle',e=>{if(e.target.open)loadRaw();});
   $('#rawtoggle').onclick=async()=>{$('#rawwrap').open=true;await loadRaw();$('#rawwrap').scrollIntoView({behavior:'smooth'});};
   $('#dl').onclick=async()=>{const c=await loadRaw();const b=new Blob([c],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=r.sessionId+'.jsonl';a.click();};
+
+  let tlData=null;const tlSel=new Set();
+  const TL_ORDER=['user','assistant','thinking','tool_call','tool_error'];
+  const renderTL=()=>{
+    const grep=($('#tlgrep').value||'').toLowerCase();
+    const evs=tlData.events.filter(e=>(!tlSel.size||tlSel.has(e.type))&&(!grep||(e.tool+' '+e.text).toLowerCase().includes(grep)));
+    const seqW=String((tlData.events[tlData.events.length-1]||{}).seq||0).length;
+    $('#tlcount').textContent=evs.length+'/'+tlData.events.length;
+    $('#tllist').innerHTML=evs.map(e=>{
+      const body=e.tool?'<span class="tl-tool">'+esc(e.tool)+'</span>'+(e.text?': '+esc(e.text):''):esc(e.text);
+      return '<div class="te t-'+e.type+'"><span class="seq">#'+String(e.seq).padStart(seqW,'0')+'</span>'+
+        '<span class="clk">'+((e.ts||'').slice(11,19)||'--:--:--')+'</span>'+
+        '<span class="ty">'+e.type+'</span><span class="tx">'+body+'</span></div>';
+    }).join('')||'<div class="te"><span class="tx muted">no matching events</span></div>';
+  };
+  const loadTL=async()=>{
+    if(!tlData){
+      $('#tlwrap').innerHTML='<p class="muted">loading timeline…</p>';
+      tlData=await j('/api/sessions/events?key='+key);
+      if(tlData.error){$('#tlwrap').innerHTML='<p class="muted">timeline unavailable: '+esc(tlData.error)+'</p>';tlData=null;return;}
+      const chips=TL_ORDER.filter(t=>tlData.counts[t]).map(t=>'<span class="tl-chip" data-t="'+t+'">'+t+' <span class="n">'+tlData.counts[t]+'</span></span>').join('');
+      $('#tlwrap').innerHTML='<div class="tl-bar">'+chips+'<input id="tlgrep" placeholder="filter text…"><span class="muted" id="tlcount"></span></div><div class="tl" id="tllist"></div>';
+      $('#tlwrap').querySelectorAll('.tl-chip').forEach(c=>c.onclick=()=>{const t=c.dataset.t;if(tlSel.has(t)){tlSel.delete(t);c.classList.remove('on');}else{tlSel.add(t);c.classList.add('on');}renderTL();});
+      $('#tlgrep').oninput=renderTL;
+      renderTL();
+    }
+  };
+  $('#tltoggle').onclick=async()=>{const w=$('#tlwrap');const show=w.style.display==='none';w.style.display=show?'block':'none';if(show){await loadTL();w.scrollIntoView({behavior:'smooth',block:'nearest'});}};
 }
 function renderBasic(r,key,err){
   $('#detail').innerHTML=\`<div id="meta">

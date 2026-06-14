@@ -26,6 +26,25 @@ node scripts/analyze-codex-session.mjs   --latest
 node scripts/analyze-copilot-session.mjs --latest
 ```
 
+### Browse the event timeline by type (`--events`)
+
+To step through *what happened in order* — and zoom in on one kind of event — add
+`--events` to any analyzer. It prints one chronological, typed stream
+(`user` / `assistant` / `thinking` / `tool_call` / `tool_error`) with a `#seq HH:MM:SS type` prefix:
+
+```powershell
+node scripts/analyze-claude-session.mjs --latest --events                     # full timeline
+node scripts/analyze-claude-session.mjs --latest --events --type tool_error -v # just failures, full text
+node scripts/analyze-claude-session.mjs --latest --events --type call,asst     # tool calls + assistant msgs
+node scripts/analyze-claude-session.mjs --latest --events --grep git --limit 20 # last 20 mentioning "git"
+node scripts/analyze-claude-session.mjs --latest --events --type err --json    # machine-readable
+```
+
+Flags: `--type a,b` (aliases: `err`/`call`/`asst`/`user`/`think`), `--grep <substr>`,
+`--limit N` (last N), `--verbose`/`-v` (full multi-line text), `--json`. Same flags work
+on the Codex and Copilot analyzers. In the **web UI** (session-sync), the detail pane has a
+**timeline** button with clickable per-type filter chips + a text filter over the same stream.
+
 When the analyzer isn't enough and you need custom parsing, load the matching **manual recipe file** (PowerShell snippets, loaded on demand):
 - `references/claude-recipes.md` — find a session by issue #, quick overview, parse tail, detect "started but never responded", read last message / sent prompt, find by `stop_reason`.
 - `references/codex-recipes.md` — Codex `{timestamp,type,payload}` event types, list, parse tail, launch-failure detection, find user messages.

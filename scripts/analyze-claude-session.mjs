@@ -11,12 +11,13 @@
  *   node scripts/analyze-claude-session.mjs --list [--worktrees]
  *   node scripts/analyze-claude-session.mjs --latest
  *   node scripts/analyze-claude-session.mjs --json <path>   # machine-readable
+ *   node scripts/analyze-claude-session.mjs --events <path> [--type tool_error] [--grep git] [--limit 50] [--verbose] [--json]
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
-import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens } from "./lib/parse.mjs";
+import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode } from "./lib/parse.mjs";
 
 function printSummary(s) {
   console.log("═".repeat(60));
@@ -76,7 +77,8 @@ function listSessions(onlyWorktrees) {
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes("--json");
-const arg = args.find((a) => !a.startsWith("--"));
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit"]);
+const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
 if (args.includes("--list")) {
   const sessions = listSessions(args.includes("--worktrees"));
@@ -99,9 +101,11 @@ if (args.includes("--latest")) {
   process.exit(1);
 }
 
-const stats = parseClaudeSession(readFileSync(targetPath, "utf-8").split("\n"));
-if (jsonOut) {
-  console.log(JSON.stringify(stats, null, 2));
+const content = readFileSync(targetPath, "utf-8");
+if (args.includes("--events")) {
+  console.log(runEventsMode("claude", content, args));
+} else if (jsonOut) {
+  console.log(JSON.stringify(parseClaudeSession(content.split("\n")), null, 2));
 } else {
-  printSummary(stats);
+  printSummary(parseClaudeSession(content.split("\n")));
 }

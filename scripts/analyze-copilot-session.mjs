@@ -6,12 +6,13 @@
  *   node scripts/analyze-copilot-session.mjs <path-to-events.jsonl>
  *   node scripts/analyze-copilot-session.mjs --list
  *   node scripts/analyze-copilot-session.mjs --latest
+ *   node scripts/analyze-copilot-session.mjs --events <path> [--type tool_error] [--grep s] [--limit N] [--verbose] [--json]
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
-import { parseCopilot as parseCopilotSession, fmtDuration as formatDuration } from "./lib/parse.mjs";
+import { parseCopilot as parseCopilotSession, fmtDuration as formatDuration, runEventsMode } from "./lib/parse.mjs";
 
 function printSummary({ stats }) {
   console.log("=".repeat(60));
@@ -120,17 +121,21 @@ function listSessions(sessionsDir) {
 
 // ── Main ─────────────────────────────────────────────────────────────────
 
-const arg = process.argv[2];
+const args = process.argv.slice(2);
 const sessionsDir = findCopilotSessionsDir();
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit"]);
+const eventsMode = args.includes("--events");
+const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
-if (!arg) {
+if (!args.length) {
   console.log("Usage: node analyze-copilot-session.mjs <path-to-events.jsonl>");
   console.log("       node analyze-copilot-session.mjs --list");
   console.log("       node analyze-copilot-session.mjs --latest");
+  console.log("       node analyze-copilot-session.mjs --events <path> [--type tool_error] [--grep s] [--limit N] [--verbose] [--json]");
   process.exit(1);
 }
 
-if (arg === "--list") {
+if (args.includes("--list")) {
   const sessions = listSessions(sessionsDir);
   console.log(`Found ${sessions.length} sessions in ${sessionsDir}\n`);
   for (const s of sessions.slice(0, 20)) {
@@ -142,19 +147,24 @@ if (arg === "--list") {
 }
 
 let targetPath;
-if (arg === "--latest") {
+if (args.includes("--latest")) {
   const sessions = listSessions(sessionsDir).filter(s => s.hasEvents);
   if (!sessions.length) {
     console.error("No sessions with events.jsonl found.");
     process.exit(1);
   }
   targetPath = sessions[0].eventsPath;
-  console.log(`Analyzing latest session: ${sessions[0].id}\n`);
-} else {
+  if (!eventsMode) console.log(`Analyzing latest session: ${sessions[0].id}\n`);
+} else if (arg) {
   targetPath = resolve(arg);
+} else {
+  console.error("No session path given.");
+  process.exit(1);
 }
 
 const content = readFileSync(targetPath, "utf-8");
-const lines = content.split("\n");
-const stats = parseCopilotSession(lines);
-printSummary({ stats });
+if (eventsMode) {
+  console.log(runEventsMode("copilot", content, args));
+} else {
+  printSummary({ stats: parseCopilotSession(content.split("\n")) });
+}
