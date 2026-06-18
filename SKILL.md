@@ -60,9 +60,20 @@ This skill debugs **one** session. For **aggregate, time-scoped questions across
 node scripts/token-sinks.mjs      # biggest token/cost sinks (--by project|day|model|provider|session, --days N, --json)
 node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|error|day, --sort rate, --json)
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
+node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 ```
 
-Full usage + caveats for all three in `references/aggregate-tools.md`. (That file also mentions a server-side `fleet-analysis` roll-up — that path needs an agentic-kanban board and is **optional**; the bundled scripts above need nothing but Node.)
+`prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
+real human prompt into a length distribution, tone/format signals (lowercase
+start %, question %, terse one-liners %, approval-only %, German/umlaut %, …),
+opening-word frequencies, and representative samples. Scope it with
+`--project <substr>` (matches the Claude projects-dir folder, the session cwd,
+or the git remote), `--provider`, and `--days N`; run bare for an all-time,
+all-projects profile (with a busiest-projects breakdown). It shares the
+human-vs-noise `classify()` filter with `user-prompts.mjs` (both live in
+`scripts/lib/prompts.mjs`), so the two tools always agree on what a prompt is.
+
+Full usage + caveats for the other three in `references/aggregate-tools.md`. (That file also mentions a server-side `fleet-analysis` roll-up — that path needs an agentic-kanban board and is **optional**; the bundled scripts above need nothing but Node.)
 
 ## Share sessions across your machines (session-sync)
 

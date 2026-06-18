@@ -41,6 +41,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { classify } from "./lib/prompts.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -98,49 +99,8 @@ const hhmm = (ts) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-// ── classify a raw user-entry text as human | automated | noise ──────────────
-// Returns { kind, text } with text normalized (slash-command/bash-input unwrapped),
-// or null to drop the entry entirely.
-function classify(raw) {
-  let text = (raw || "").trim();
-  if (!text) return null;
-
-  // pure harness/echo noise — never a prompt
-  if (/^<task-notification>/.test(text)) return null;
-  if (/^<bash-stdout>|^<bash-stderr>/.test(text)) return null;
-  if (/^<local-command-stdout>/.test(text)) return null;
-  if (/^\[Request interrupted/.test(text)) return null;
-  if (/^Caveat: The messages below/.test(text)) return null;
-
-  // user-typed shell command (bash mode) → unwrap to "! cmd"
-  const bash = text.match(/^<bash-input>([\s\S]*?)<\/bash-input>\s*$/);
-  if (bash) return { kind: "human", text: `! ${bash[1].trim()}` };
-
-  // slash command: <command-name>/x</command-name> ... <command-args>args</command-args>
-  if (/<command-name>/.test(text)) {
-    const name = (text.match(/<command-name>([^<]*)<\/command-name>/)?.[1] || "").trim().replace(/^\//, "");
-    const args = (text.match(/<command-args>([\s\S]*?)<\/command-args>/)?.[1] || "").trim();
-    if (!name) return null;
-    if (!args) {
-      // bare UI command (/clear, /model, /fast …) — noise unless --all
-      return { kind: "noise", text: `/${name}` };
-    }
-    return { kind: "human", text: `/${name} ${args}` };
-  }
-
-  // automated agent traffic that lands in user entries
-  if (/^\[SESSION HANDOFF/.test(text)) return { kind: "automated", text };
-  if (/^You are the autonomous BOARD MONITOR/.test(text)) return { kind: "automated", text };
-  if (/^Base directory for this skill:/.test(text)) return { kind: "automated", text };
-  // internal LLM utility calls (file prediction, voice-note → ticket, etc.)
-  if (/^You are a (project manager assistant|software engineer)/.test(text)) return { kind: "automated", text };
-  // builder launch prompt = a ticket body, usually with the workflow preamble
-  if (/stage of this issue's workflow/.test(text) || /^##\s+Workflow/m.test(text)) {
-    return { kind: "automated", text };
-  }
-
-  return { kind: "human", text };
-}
+// classify() (human | automated | noise) is shared with prompt-style.mjs — see
+// scripts/lib/prompts.mjs for the single source of truth.
 
 // ── extract user prompts from one Claude transcript ──────────────────────────
 function claudePrompts(path) {
