@@ -62,7 +62,17 @@ node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
+node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
 ```
+
+`waste.mjs` answers **"what cost unnecessary tokens?"** — it attributes each
+session's content to buckets (tool_result by tool, Write/Edit args, user
+prompts/pastes, …) weighted by **persistence** (tokens × turns-survived, because
+cost is cache-read dominated — an early dump is re-billed every later turn), then
+flags the avoidable waste: **re-reading a file already in context**, repeated
+identical Bash output, and **node_modules leaking into Glob/Read**. Companion to
+`token-sinks.mjs` (which gives the billing total); this explains what ran it up.
+Claude transcripts only; chars/4 token estimate (≈1.5% of exact tiktoken).
 
 `incidents.mjs` answers **"which sessions are worth learning from?"** — it ranks
 the fleet by friction (human course-corrections matching a defect lexicon,
