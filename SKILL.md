@@ -61,7 +61,18 @@ node scripts/token-sinks.mjs      # biggest token/cost sinks (--by project|day|m
 node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|error|day, --sort rate, --json)
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
+node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
 ```
+
+`incidents.mjs` answers **"which sessions are worth learning from?"** — it ranks
+the fleet by friction (human course-corrections matching a defect lexicon,
+repeated near-identical complaints, failed tools, wasted command re-runs, and
+image-**regeneration churn**) so you deep-dive the few sessions that hit a wall
+instead of reading them all. Swap the lexicon with `--lens general|visual|image`
+(visual = overlap/cropped/chrome/aspect…; image = crop/aspect/regenerate/refusal…),
+narrow with `--project`/`--grep`/`--days`, then it prints the exact
+`analyze-*-session.mjs … --events --grep` command to explain the top hit. It's
+the discovery half of the loop; the single-session analyzers are the explain half.
 
 `prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
 real human prompt into a length distribution, tone/format signals (lowercase
