@@ -96,9 +96,15 @@ signal Codex emits). This split matters because skill **materialization** inflat
 weak counts: the kanban board copies its built-in skills into every worktree's
 `.claude/skills`, so their path appears in thousands of sessions even though no
 agent ever invokes them (those are server-triggered, not agent-triggered). The
-report buckets skills into **no-trace** (truly dead), **loaded-only** (strong=0 —
-present but never agent-invoked), and **agent-invoked**, plus an orphan list of
-names triggered in logs with no SKILL.md on disk. Board-independent (no DB).
+report buckets skills into **dead** (never invoked but **was available**),
+**too-new** (created after ~all scanned sessions — no fair chance to fire),
+**loaded-only** (strong=0, present but never agent-invoked), and **agent-invoked**,
+plus an orphan list of names triggered in logs with no SKILL.md on disk.
+Availability is the fair denominator: a skill's `git` first-add date vs each
+session's time gives `avail` = sessions that ran *after* it existed, so a skill
+written last week isn't wrongly called dead. Board-independent (no DB). The
+git-history pass only runs for never-strong-invoked skills; narrow with `--days`
+for a fast windowed audit (`--no-git` skips creation-time entirely).
 
 `prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
 real human prompt into a length distribution, tone/format signals (lowercase

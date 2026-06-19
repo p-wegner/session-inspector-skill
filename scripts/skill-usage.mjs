@@ -63,6 +63,7 @@ const unusedOnly = has("--unused-only");
 const jsonOut = has("--json");
 const top = parseInt(val("--top", "0"), 10) || 0;
 const extraProjectDirs = vals("--project-dir");
+const noGit = has("--no-git");
 
 const HOME = homedir();
 const realOrSelf = (p) => { try { return realpathSync(p); } catch { return p; } };
@@ -107,6 +108,44 @@ function discoverPluginSkills(acc) {
       }
     }
   }
+}
+
+// Earliest moment a skill could have fired = when its SKILL.md first existed.
+// git first-add is authoritative (fs birthtime is reset by every checkout/junction);
+// fall back to fs birthtime/mtime only when the path isn't git-tracked.
+const createdCache = new Map();   // git-toplevel|skill-relpath -> ts (dedup the many worktree copies)
+function gitCreatedAt(skillDir) {
+  let root;
+  try {
+    root = execFileSync("git", ["-C", skillDir, "rev-parse", "--show-toplevel"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 4000,
+    }).trim();
+  } catch { return null; }
+  if (!root) return null;
+  // identity = the skill's path inside ITS repo (so the 100s of worktree copies collapse to one)
+  const rel = skillDir.replace(/\\/g, "/").replace(/.*[/\\]\.(?:claude|codex)[/\\]skills[/\\]/, "");
+  const key = root.toLowerCase() + "|" + rel.toLowerCase();
+  if (createdCache.has(key)) return createdCache.get(key);
+  let ts = null;
+  try {
+    const out = execFileSync("git", ["-C", skillDir, "log", "--diff-filter=A", "--format=%aI", "--", "SKILL.md"], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 6000,
+    }).trim().split("\n").filter(Boolean);
+    if (out.length) ts = new Date(out[out.length - 1]).getTime();
+  } catch { /* untracked */ }
+  createdCache.set(key, ts);
+  return ts;
+}
+function skillCreatedAt(paths) {
+  // Prefer non-worktree, shortest paths; only probe a few — they collapse by repo anyway.
+  const ordered = [...paths].sort((a, b) => (/\bworktrees\b/i.test(a) - /\bworktrees\b/i.test(b)) || a.length - b.length);
+  let min = Infinity;
+  for (const p of ordered.slice(0, 6)) {
+    let t = noGit ? null : gitCreatedAt(p);
+    if (t == null) { try { const st = statSync(join(p, "SKILL.md")); t = Math.min(st.birthtimeMs || Infinity, st.mtimeMs) || st.mtimeMs; } catch { /* gone */ } }
+    if (t && t < min) min = t;
+  }
+  return isFinite(min) ? min : null;
 }
 
 function gitRoot(cwd) {
@@ -205,15 +244,22 @@ if (!jsonOut) process.stderr.write(`\r  scanned ${scanned} sessions (${(bytes / 
 
 const skills = discoverSkills(cwds);
 
+// scanned-session times sorted ascending → count sessions that ran AFTER a skill existed
+const sessTimes = sessions.map((s) => s.mtime.getTime()).sort((a, b) => a - b);
+const lowerBound = (t) => { let lo = 0, hi = sessTimes.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (sessTimes[mid] < t) lo = mid + 1; else hi = mid; } return lo; };
+const availableSessionsSince = (t) => (t == null ? sessTimes.length : sessTimes.length - lowerBound(t));
+
 // ── join discovered universe with observed triggers ───────────────────────────
 const fmtDate = (t) => (t && isFinite(t) ? new Date(t).toISOString().slice(0, 10) : "—");
 const rows = [];
 for (const [name, def] of skills) {
   const u = usage.get(name);
-  rows.push({
+  const row = {
     name,
     sources: [...def.sources].sort(),
     paths: [...def.paths],
+    createdAt: undefined,        // filled lazily (git is slow) only for skills we report availability for
+    availableSessions: undefined,
     strongInv: u ? u.strongInv : 0,
     weakRefs: u ? u.weakRefs : 0,
     sessions: u ? u.sessions.size : 0,
@@ -221,8 +267,18 @@ for (const [name, def] of skills) {
     last: u ? u.last : 0,
     first: u ? u.first : 0,
     triggered: !!u,
-  });
+  };
+  rows.push(row);
 }
+// fill creation-time / availability lazily — only for skills whose availability we report
+// (never-invoked: the dead-vs-too-new split; loaded-only: their weak-only avail column)
+function ensureAvail(r) {
+  if (r.createdAt !== undefined) return r;
+  r.createdAt = skillCreatedAt(r.paths);
+  r.availableSessions = availableSessionsSince(r.createdAt);
+  return r;
+}
+for (const r of rows) if (!r.triggered || r.strongInv === 0) ensureAvail(r);
 // triggered names observed in logs but NOT found in any discovered root (orphans)
 const orphans = [...usage.keys()].filter((n) => !skills.has(n)).map((n) => {
   const u = usage.get(n);
@@ -230,15 +286,20 @@ const orphans = [...usage.keys()].filter((n) => !skills.has(n)).map((n) => {
 }).filter((o) => o.strongInv > 0)   // ignore pure path-token noise for orphans
   .sort((a, b) => b.strongInv - a.strongInv);
 
-const dead = rows.filter((r) => !r.triggered).sort((a, b) => a.name.localeCompare(b.name));
+// A skill only counts as "dead" if it was AVAILABLE to fire (≥1 session ran after it
+// existed). Skills created after every scanned session ("too new") never had a chance.
+const NEW_THRESHOLD = 3;   // <3 sessions of opportunity → treat as too-new, not dead
+const deadAll = rows.filter((r) => !r.triggered);
+const dead = deadAll.filter((r) => r.availableSessions >= NEW_THRESHOLD).sort((a, b) => b.availableSessions - a.availableSessions);
+const tooNew = deadAll.filter((r) => r.availableSessions < NEW_THRESHOLD).sort((a, b) => a.name.localeCompare(b.name));
 const live = rows.filter((r) => r.triggered).sort((a, b) => (b.strongInv + b.weakRefs) - (a.strongInv + a.weakRefs) || b.sessions - a.sessions);
 
 if (jsonOut) {
   console.log(JSON.stringify({
     window: days ? `${days}d` : "all-time",
     provider, scannedSessions: scanned,
-    discoveredSkills: skills.size, triggered: live.length, neverTriggered: dead.length,
-    dead, live: top ? live.slice(0, top) : live, orphans,
+    discoveredSkills: skills.size, triggered: live.length, neverTriggeredButAvailable: dead.length, tooNew: tooNew.length,
+    dead, tooNew, live: top ? live.slice(0, top) : live, orphans,
   }, null, 2));
   process.exit(0);
 }
@@ -249,14 +310,19 @@ const strongLive = live.filter((r) => r.strongInv > 0);
 const repoOf = (r) => { const p = r.paths.find((x) => /[/\\]\.(claude|codex)[/\\]skills[/\\]/.test(x)) || r.paths[0] || ""; return (p.replace(/[/\\]\.(claude|codex)[/\\]skills[/\\].*$/, "").split(/[/\\]/).pop()) || ""; };
 console.log(bar);
 console.log(`SKILL USAGE AUDIT   window=${days ? days + "d" : "all-time"}  provider=${provider}  sessions=${scanned}`);
-console.log(`discovered ${skills.size} skills · ${strongLive.length} agent-invoked · ${live.length - strongLive.length} loaded-only · ${dead.length} no-trace${includePlugins ? "" : "   (plugins excluded; --include-plugins to add)"}`);
+console.log(`discovered ${skills.size} skills · ${strongLive.length} agent-invoked · ${live.length - strongLive.length} loaded-only · ${dead.length} DEAD · ${tooNew.length} too-new${includePlugins ? "" : "   (plugins excluded; --include-plugins to add)"}`);
 console.log(`NEVER AGENT-INVOKED (no Skill-tool/slash/copilot call): ${dead.length + (live.length - strongLive.length)} of ${skills.size}`);
 console.log(bar);
-console.log(`\nNote: "weak"/loaded counts are inflated by worktree skill MATERIALIZATION (kanban copies its built-in\nskills into every worktree's .claude/skills, so their SKILL.md path appears even when no agent invokes them).\n"strong" = an agent actually fired the skill, and is the real trigger signal. Codex emits no strong signal.`);
+console.log(`\nNote: "weak"/loaded counts are inflated by worktree skill MATERIALIZATION (kanban copies its built-in\nskills into every worktree's .claude/skills, so their SKILL.md path appears even when no agent invokes them).\n"strong" = an agent actually fired the skill. "avail" = sessions that ran AFTER the skill existed (git\nfirst-add) — the FAIR denominator; a skill is only DEAD if it had the chance to fire (avail≥${NEW_THRESHOLD}). Codex emits no strong signal.`);
 
-console.log(`\n● NEVER TRIGGERED — zero trace at all (${dead.length})  [defined on disk, never even loaded]`);
-if (!dead.length) console.log("  (none — every discovered skill left some trace)");
-for (const r of dead) console.log(`  ✗ ${r.name.padEnd(28)} [${r.sources.join(",")}]  repo: ${repoOf(r) || "?"}`);
+console.log(`\n● NEVER TRIGGERED but WAS AVAILABLE (${dead.length}) — zero trace despite ≥${NEW_THRESHOLD} sessions after it existed`);
+if (!dead.length) console.log("  (none — every available skill left some trace)");
+for (const r of dead) console.log(`  ✗ ${r.name.padEnd(28)} avail=${String(r.availableSessions).padStart(4)}  since ${fmtDate(r.createdAt)}  [${r.sources.join(",")}] repo:${repoOf(r) || "?"}`);
+
+if (tooNew.length) {
+  console.log(`\n● TOO NEW / never available (${tooNew.length}) — created after (almost) all scanned sessions; no fair chance to fire`);
+  for (const r of tooNew) console.log(`  · ${r.name.padEnd(28)} avail=${String(r.availableSessions).padStart(4)}  since ${fmtDate(r.createdAt)}  [${r.sources.join(",")}] repo:${repoOf(r) || "?"}`);
+}
 
 if (!unusedOnly) {
   console.log(`\n● TRIGGERED (${live.length})   strong=Skill-tool/slash/copilot-field · weak=SKILL.md loaded/read`);
@@ -269,7 +335,7 @@ if (!unusedOnly) {
   if (weakOnly.length) {
     console.log(`\n● REFERENCED BUT NEVER EXPLICITLY INVOKED (${weakOnly.length}) — only seen as a loaded/read SKILL.md, no Skill-tool/slash call`);
     console.log(`  (expected for Codex skills — Codex has no Skill tool; suspicious for Claude-only skills)`);
-    for (const r of weakOnly) console.log(`  ~ ${r.name.padEnd(28)} weak=${r.weakRefs} [${r.providers.join(",")}]`);
+    for (const r of weakOnly) console.log(`  ~ ${r.name.padEnd(28)} weak=${String(r.weakRefs).padStart(4)} avail=${String(r.availableSessions).padStart(4)} [${r.providers.join(",")}]`);
   }
   if (orphans.length) {
     console.log(`\n● INVOKED BUT NOT FOUND ON DISK (${orphans.length}) — triggered in logs, no SKILL.md in scanned roots (uninstalled/renamed/removed)`);
