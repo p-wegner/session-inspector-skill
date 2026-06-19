@@ -1,6 +1,6 @@
 ---
 name: session-inspector
-description: Inspect agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) to debug why sessions stopped, what they did, and whether they produced output. Self-contained — bundles its own analyzer scripts.
+description: Inspect agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) to debug why sessions stopped, what they did, and whether they produced output. ALWAYS use this — never hand-read or grep transcript .jsonl files directly — whenever asked about a specific session by id/path or "what was session X doing". Self-contained — bundles its own analyzer scripts.
 argument-hint: [issue-number, keyword, --codex <path>, --copilot]
 ---
 
@@ -63,6 +63,7 @@ node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, -
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
+node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--days N, --provider, --include-plugins, --unused-only, --json)
 ```
 
 `waste.mjs` answers **"what cost unnecessary tokens?"** — it attributes each
@@ -83,6 +84,21 @@ instead of reading them all. Swap the lexicon with `--lens general|visual|image`
 narrow with `--project`/`--grep`/`--days`, then it prints the exact
 `analyze-*-session.mjs … --events --grep` command to explain the top hit. It's
 the discovery half of the loop; the single-session analyzers are the explain half.
+
+`skill-usage.mjs` answers **"which of my agent skills never get triggered?"** —
+it discovers every skill on disk (`~/.claude/skills`, `~/.codex/skills`,
+`~/.copilot/skills`, and each repo's `.claude/.codex/skills` reached via session
+cwds + `--project-dir`; plugins are opt-in via `--include-plugins`) and cross-
+references each against every transcript. It separates a **strong** trigger (an
+agent explicitly fired it: Claude `Skill` tool, a `/slash`, or a Copilot skill
+field) from a **weak** one (the `SKILL.md` body was merely loaded/read — the only
+signal Codex emits). This split matters because skill **materialization** inflates
+weak counts: the kanban board copies its built-in skills into every worktree's
+`.claude/skills`, so their path appears in thousands of sessions even though no
+agent ever invokes them (those are server-triggered, not agent-triggered). The
+report buckets skills into **no-trace** (truly dead), **loaded-only** (strong=0 —
+present but never agent-invoked), and **agent-invoked**, plus an orphan list of
+names triggered in logs with no SKILL.md on disk. Board-independent (no DB).
 
 `prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
 real human prompt into a length distribution, tone/format signals (lowercase
