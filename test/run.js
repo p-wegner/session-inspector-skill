@@ -6,6 +6,8 @@ const { resolveCounter, familyOf } = require('../src/counters');
 const { scan } = require('../src/scan');
 const { audit } = require('../src/audit');
 const { analyzeSkill, parseFrontmatter } = require('../src/skill');
+const { parseEnvelope, normalizeEnvelope } = require('../src/claude-run');
+const { costForUsage, ratesFor } = require('../src/pricing');
 
 let pass = 0;
 function ok(name, fn) { try { fn(); console.log('  ✓', name); pass++; } catch (e) { console.error('  ✗', name, '\n   ', e.message); process.exitCode = 1; } }
@@ -83,6 +85,44 @@ ok('analyzeSkill tiers this repo + flags reachability', () => {
   assert.ok(a.notContext.humanDocs.some(f => /readme/i.test(f.path)), 'README = human doc');
   assert.strictEqual(a.notContext.orphanDocs.length, 0, 'no true orphans');
   assert.strictEqual(a.fullyExpanded, a.tiers.alwaysOn + a.tiers.onInvoke + a.tiers.onDemand, 'expanded = sum of tiers');
+});
+
+ok('parseEnvelope: single json object and stream-json ndjson', () => {
+  const env = { type: 'result', total_cost_usd: 0.5, session_id: 's1', modelUsage: {} };
+  assert.strictEqual(parseEnvelope(JSON.stringify(env)).session_id, 's1');
+  // stream-json: result is the last type:"result" line amid other events
+  const nd = [
+    JSON.stringify({ type: 'system', subtype: 'init' }),
+    JSON.stringify({ type: 'assistant', message: {} }),
+    JSON.stringify(env),
+  ].join('\n');
+  assert.strictEqual(parseEnvelope(nd).total_cost_usd, 0.5);
+  assert.throws(() => parseEnvelope('not json at all'), /no result envelope|empty/);
+});
+
+ok('normalizeEnvelope: rolls up subagent model as a second key', () => {
+  // main model + a subagent on a different model, as claude -p reports it
+  const env = {
+    type: 'result', session_id: 's2', total_cost_usd: 0.2418, num_turns: 2,
+    modelUsage: {
+      'claude-sonnet-5': { inputTokens: 12257, outputTokens: 876, cacheReadInputTokens: 85575, cacheCreationInputTokens: 33880, costUSD: 0.24117 },
+      'claude-haiku-4-5-20251001': { inputTokens: 554, outputTokens: 14, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.000624 },
+    },
+  };
+  const n = normalizeEnvelope(env);
+  assert.strictEqual(n.multiModel, true, 'two models => subagent/aux present');
+  assert.strictEqual(n.models[0].model, 'claude-sonnet-5', 'sorted by cost desc');
+  assert.strictEqual(n.totals.inputTokens, 12811, 'input tokens summed across models');
+  assert.strictEqual(n.totalCostUSD, 0.2418, 'authoritative total preserved');
+});
+
+ok('pricing: known models priced, unknown returns null', () => {
+  assert.ok(ratesFor('claude-opus-4-8'), 'opus known');
+  assert.strictEqual(ratesFor('gpt-5.5'), null, 'non-claude unknown');
+  // output billed at output rate; a pure-output record is cheap but nonzero
+  const c = costForUsage('claude-haiku-4-5-20251001', { output_tokens: 1_000_000 });
+  assert.strictEqual(c, 5, 'haiku output = $5/1M');
+  assert.strictEqual(costForUsage('mystery-model', { output_tokens: 100 }), null, 'unknown => null');
 });
 
 console.log(`\n${pass} checks passed`);
