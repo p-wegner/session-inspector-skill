@@ -70,4 +70,75 @@ function skillReport(a) {
   return L.join('\n');
 }
 
-module.exports = { scanTable, skillReport, delta, fmt, bar };
+function usd(n) {
+  if (n == null) return '   n/a';
+  if (n < 0.01) return `$${n.toFixed(5)}`;
+  return `$${n.toFixed(4)}`;
+}
+
+// Report for `tokt run` / `tokt cost` — the authoritative envelope.
+function claudeRunReport(n) {
+  const L = [];
+  L.push(`claude -p run   session: ${n.sessionId || '(unknown)'}`);
+  if (n.result != null) {
+    const r = n.result.replace(/\s+/g, ' ').trim();
+    L.push(`  result: ${r.length > 80 ? r.slice(0, 77) + '…' : r}`);
+  }
+  const meta = [];
+  if (n.numTurns != null) meta.push(`${n.numTurns} turn${n.numTurns === 1 ? '' : 's'}`);
+  if (n.durationMs != null) meta.push(`${(n.durationMs / 1000).toFixed(1)}s`);
+  if (n.isError) meta.push('ERROR');
+  if (n.permissionDenials) meta.push(`${n.permissionDenials} permission denial(s)`);
+  if (meta.length) L.push(`  ${meta.join('   ')}`);
+  L.push('');
+  L.push('COST + TOKENS (Anthropic-computed; includes subagents & aux calls)');
+  L.push(`  ${'MODEL'.padEnd(26)} ${'COST'.padStart(11)} ${'INPUT'.padStart(9)} ${'OUTPUT'.padStart(8)} ${'CACHE-R'.padStart(9)} ${'CACHE-W'.padStart(9)}`);
+  for (const m of n.models) {
+    L.push(`  ${m.model.padEnd(26)} ${usd(m.costUSD).padStart(11)} ${fmt(m.inputTokens).padStart(9)} ${fmt(m.outputTokens).padStart(8)} ${fmt(m.cacheReadInputTokens).padStart(9)} ${fmt(m.cacheCreationInputTokens).padStart(9)}`);
+  }
+  L.push(`  ${'─'.repeat(75)}`);
+  L.push(`  ${'TOTAL'.padEnd(26)} ${usd(n.totalCostUSD).padStart(11)} ${fmt(n.totals.inputTokens).padStart(9)} ${fmt(n.totals.outputTokens).padStart(8)} ${fmt(n.totals.cacheReadInputTokens).padStart(9)} ${fmt(n.totals.cacheCreationInputTokens).padStart(9)}`);
+  if (n.multiModel) {
+    L.push('');
+    L.push(`  ${n.models.length} models billed — extra keys are subagents (Task) and/or aux calls (e.g. title generation).`);
+  }
+  return L.join('\n');
+}
+
+// Report for `tokt session` — reconstructed from a transcript, with per-subagent
+// breakdown. Dollars are a local-table estimate.
+function sessionCostReport(a) {
+  const L = [];
+  L.push(`session: ${a.session}   (reconstructed from transcript)`);
+  L.push(`  ${a.transcript}`);
+  L.push('');
+  L.push('PER-MODEL (main + all subagents)   [$ = local-table ESTIMATE, not billed]');
+  L.push(`  ${'MODEL'.padEnd(26)} ${'~COST'.padStart(11)} ${'MSGS'.padStart(5)} ${'INPUT'.padStart(9)} ${'OUTPUT'.padStart(8)} ${'CACHE-R'.padStart(9)} ${'CACHE-W'.padStart(9)}`);
+  for (const m of a.models) {
+    const c = m.costKnown ? usd(m.costUSD) : usd(m.costUSD) + '?';
+    L.push(`  ${m.model.padEnd(26)} ${c.padStart(11)} ${fmt(m.messages).padStart(5)} ${fmt(m.input_tokens).padStart(9)} ${fmt(m.output_tokens).padStart(8)} ${fmt(m.cache_read_input_tokens).padStart(9)} ${fmt(m.cache_creation_input_tokens).padStart(9)}`);
+  }
+  L.push(`  ${'─'.repeat(81)}`);
+  const gc = a.grand.costKnown ? usd(a.grand.costUSD) : usd(a.grand.costUSD) + '?';
+  L.push(`  ${'TOTAL'.padEnd(26)} ${gc.padStart(11)} ${''.padStart(5)} ${fmt(a.grand.input_tokens).padStart(9)} ${fmt(a.grand.output_tokens).padStart(8)} ${fmt(a.grand.cache_read_input_tokens).padStart(9)} ${fmt(a.grand.cache_creation_input_tokens).padStart(9)}`);
+
+  L.push('');
+  L.push(`ATTRIBUTION   main: ${fmt(a.main.messages)} msg    subagents: ${a.subagents.length}`);
+  for (const s of a.subagents) {
+    const cost = s.models.reduce((t, m) => t + m.costUSD, 0);
+    const known = s.models.every((m) => m.costKnown);
+    const modelList = s.models.map((m) => m.model).join(', ') || '—';
+    const label = s.agentType || '(unknown type)';
+    const desc = s.description ? ` — ${s.description}` : '';
+    L.push(`  ${('└ ' + label).padEnd(22)} ${(known ? usd(cost) : usd(cost) + '?').padStart(11)}   ${modelList}${desc}`);
+  }
+  if (!a.grand.costKnown) {
+    L.push('');
+    L.push('! "?" = a model had no price-table entry; its token counts are exact but cost is partial. Update src/pricing.js.');
+  }
+  L.push('');
+  L.push('Note: cost is estimated from src/pricing.js. For billing-grade numbers, run via `tokt run` / capture `claude -p --output-format json` and use `tokt cost`.');
+  return L.join('\n');
+}
+
+module.exports = { scanTable, skillReport, claudeRunReport, sessionCostReport, delta, fmt, bar, usd };

@@ -1,6 +1,6 @@
 ---
 name: token-budget
-description: Count and analyze LLM token usage across files, codebases, docs, and agent skills — then optimize prose to cut redundant/noisy tokens without losing performance. Use when the user wants to "count tokens", "how many tokens is this", "measure context size", "find the biggest token consumers", "shrink/optimize a prompt/skill/doc", "reduce token count", or audit a CLAUDE.md / skill / docs folder for bloat.
+description: Count and analyze LLM token usage across files, codebases, docs, and agent skills; measure the exact cost + token usage of spawned `claude -p` runs (subagents included); then optimize prose to cut redundant/noisy tokens without losing performance. Use when the user wants to "count tokens", "how many tokens is this", "measure context size", "find the biggest token consumers", "measure the cost of a claude -p run / agent / subagents", "how much did that session cost", "shrink/optimize a prompt/skill/doc", "reduce token count", or audit a CLAUDE.md / skill / docs folder for bloat.
 ---
 
 # token-budget
@@ -33,6 +33,12 @@ node bin/tokt.js skill path/to/skill-dir
 
 # optimization report: flags redundancy, filler, restating, dead sections
 node bin/tokt.js audit path/to/SKILL.md
+
+# measure a spawned Claude Code run — EXACT cost + tokens, subagents included
+node bin/tokt.js run "list the files here" -- --model haiku --allowedTools "Bash"
+node bin/tokt.js cost saved-envelope.json      # cost + tokens from a captured envelope
+node bin/tokt.js result saved-envelope.json    # just the run's output text (no jq)
+node bin/tokt.js session <session-id>          # reconstruct from a transcript
 ```
 
 ## Model selection
@@ -70,6 +76,87 @@ tiers instead of a flat sum:
 When optimizing a skill, cut Tier 0 first (every-turn cost), then Tier 1, and
 move rarely-needed detail from Tier 1 down into a Tier 2 reference doc.
 
+## Measuring spawned `claude -p` runs (exact cost + tokens, subagents included)
+When you spawn Claude Code non-interactively (`claude -p`), you can get **billing-grade**
+cost and token numbers straight from the run — no tokenizer estimate needed.
+
+- **`tokt run "<prompt>" [-- <claude flags>]`** — runs `claude -p <prompt>
+  --output-format json`, then reports `total_cost_usd` and a per-model token
+  table. Everything after `--` is passed verbatim to `claude` (e.g. `--model
+  haiku`, `--allowedTools "Task"`, `--append-system-prompt ...`). The prompt is
+  sent on stdin, so quotes/spaces/newlines in it are safe.
+- **`tokt cost <envelope.json | ->`** — if you already captured the envelope
+  (`claude -p ... --output-format json > run.json`, or piped stream-json), parse
+  it without re-running. Reads `-` for stdin.
+- **`tokt result <envelope.json | ->`** — print *only* the run's output text
+  (what the agent produced/found), raw and untruncated. The Node-only,
+  dependency-free replacement for `jq -r .result`; exits non-zero if the run
+  errored. Reads `-` for stdin.
+- **`tokt session <id | transcript.jsonl | session-dir>`** — reconstruct usage
+  from a session transcript under `~/.claude/projects/`, with a **per-subagent**
+  breakdown (agent type + description). Use this for interactive sessions or any
+  run not captured with `--output-format json`.
+
+**Subagents are already included.** The `--output-format json` envelope's
+`modelUsage` is keyed by model and aggregates the *entire* run — the main agent,
+every Task subagent, and auxiliary calls (e.g. title generation). A subagent on
+a different model simply appears as an extra `modelUsage` key, and
+`total_cost_usd` sums them all. So `run`/`cost` give a subagent-inclusive total
+with a per-model split for free.
+
+**Two routes, one is authoritative:**
+- `run` / `cost` read Anthropic-computed dollars (`costUSD`, `total_cost_usd`) —
+  **exact, billing-grade**. Prefer these whenever you control the spawn.
+- `session` reconstructs from the transcript's per-message `usage`, which records
+  *tokens* but not dollars, so it prices them with a bundled local table
+  (`src/pricing.js`) — an **estimate**, and its per-subagent attribution is the
+  reason to use it. Token counts are exact; the `$` is approximate (marked with
+  `?` if a model isn't in the price table). Don't sum transcript tokens naively
+  across turns for a single "context size" — cache reads repeat every turn; the
+  per-category pricing in `session` is what makes the sum meaningful.
+
+Transcript layout the `session` command walks:
+`~/.claude/projects/<encoded-cwd>/<session_id>.jsonl` (main) plus
+`<session_id>/subagents/agent-*.jsonl` (+ `.meta.json` with `agentType` /
+`description`) for each Task subagent.
+
+### Benchmark workflow — you drive `claude -p`, this skill costs it
+When you're benchmarking an agentic task (e.g. "did the reviewer catch the bug we
+planted in this PR, and what did the review cost?"), you usually want **both** the
+run's *output* (to judge it) and its *cost*. You don't need `tokt run` for this —
+call `claude -p` yourself so you fully control the invocation and keep its result,
+then hand the envelope to the two `tokt` readers. The `--output-format json`
+envelope carries both: `result` is what the agent produced; `modelUsage` /
+`total_cost_usd` is the subagent-inclusive cost. Everything below is Node-only —
+**no `jq` or other external tools needed.**
+
+```bash
+# 1. Run the reviewer under test, capturing output + usage in one envelope.
+claude -p "Review the diff for bugs. Report each with file:line and severity." \
+  --output-format json --model opus \
+  --append-system-prompt "You are a strict code reviewer." > review.json
+
+# 2a. Judge it: pull just the reviewer's output text (no jq) and check for the bug.
+node bin/tokt.js result review.json | grep -qi "off-by-one" && echo "BUG FOUND" || echo "MISSED"
+
+# 2b. Cost it (per model, subagents rolled in):
+node bin/tokt.js cost review.json
+```
+
+- **`tokt result <envelope>`** prints *only* the run's output text (raw, untruncated,
+  nothing else) — the drop-in replacement for `jq -r .result`. It exits non-zero if
+  the run errored, so you can gate on it. Reads `-` for stdin.
+- **`tokt cost <envelope>`** prints the cost + per-model token table.
+
+For a fully scripted benchmark, `tokt cost review.json --json` returns one object
+with everything per run — `result` (full, untruncated, to grep/grade),
+`totalCostUSD`, `isError`, `numTurns`, `durationMs`, and per-model `models[]`. Loop
+it over your PR fixtures and you get a found-the-bug × cost table, using nothing but
+`node`.
+
+If a run wasn't captured with `--output-format json`, fall back to `tokt session
+<session-id>` to reconstruct cost from its transcript (estimate; per-subagent).
+
 ## Optimization workflow (the point of the skill)
 When asked to shrink a doc/skill without losing performance:
 1. `scan` / `audit` to get a baseline count + ranked hotspots.
@@ -80,7 +167,14 @@ When asked to shrink a doc/skill without losing performance:
    Report what was cut and confirm semantics are intact.
 
 ## Architecture
-- `bin/tokt.js` — CLI (count / scan / audit).
+- `bin/tokt.js` — CLI (count / scan / skill / audit / run / cost / session).
+- `src/claude-run.js` — spawn `claude -p --output-format json`, parse the result
+  envelope (json or stream-json), normalize per-model usage + total cost. Prompt
+  on stdin, no shell (spaces/quotes safe).
+- `src/session-cost.js` — locate a session transcript, walk main +
+  `subagents/*.jsonl` (+ `.meta.json`), aggregate per model and per subagent.
+- `src/pricing.js` — local per-model $/MTok table (input/output/cache), used
+  ONLY to estimate cost in `session` (the envelope carries exact dollars).
 - `src/counters/` — pluggable counters; `index.js` resolves model → counter
   over the shared o200k_base normalizer. Each exposes `count(text) -> number`
   (+ optional async `exact`). Add a model family = add one file.
