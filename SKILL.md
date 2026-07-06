@@ -64,6 +64,8 @@ node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provid
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
 node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--days N, --provider, --include-plugins, --unused-only, --json)
+node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
+node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + per-session goals (--project, --days, --top, --json)
 ```
 
 `waste.mjs` answers **"what cost unnecessary tokens?"** — it attributes each
@@ -115,6 +117,31 @@ or the git remote), `--provider`, and `--days N`; run bare for an all-time,
 all-projects profile (with a busiest-projects breakdown). It shares the
 human-vs-noise `classify()` filter with `user-prompts.mjs` (both live in
 `scripts/lib/prompts.mjs`), so the two tools always agree on what a prompt is.
+
+`context-growth.mjs` answers **"why did this cost so much?"** — agent cost is
+cache-read dominated (every turn re-bills the ENTIRE current context), so a
+session's spend is roughly the **area under its context-growth curve**. It reads
+per-turn `message.usage` (exact billed tokens, not estimated) and reports:
+**auto-compacts** — how many `isCompactSummary` boundaries fired (the safety
+valve; few compacts + huge maxCtx means it never tripped, often because the 1M
+context window pushed the compact threshold up near the window size); a
+**context histogram + percentiles**; the **long-context tax** — the
+price-independent share of turns and of cache-read tokens sitting above 200k
+(the premium pricing tier); and the **point of no return** — the turn context
+first crossed 200k and never came back (everything after is premium-tier).
+`--session <id>` focuses one session and prints its sampled growth curve.
+Companion to `token-sinks.mjs` (billing total) and `waste.mjs` (what fills the
+context) — this explains the SHAPE that multiplies both. Claude only.
+
+`slash-goals.mjs` answers **"what was the agent asked to do, and how?"** — per
+session it surfaces the **goal** (custom title → ai-title → slug → first typed
+prompt, sorted by turns so marathon sessions lead), the **slash commands** the
+human invoked (flagging session-hygiene ones — `/clear`, `/compact`, `/model` —
+whose *absence* explains runaway context), and the **skill invocations** the
+agent fired. Goals give intent, slash gives hygiene, skills give mechanism
+(a brainstorming → writing-plans → subagent-driven-development workflow
+front-loads big design docs and spawns result-dumping Agents — often the *cause*
+of the growth `context-growth.mjs` measures). Claude only.
 
 Full usage + caveats for the other three in `references/aggregate-tools.md`. (That file also mentions a server-side `fleet-analysis` roll-up — that path needs an agentic-kanban board and is **optional**; the bundled scripts above need nothing but Node.)
 
