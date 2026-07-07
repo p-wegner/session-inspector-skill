@@ -26,6 +26,29 @@ node scripts/analyze-codex-session.mjs   --latest
 node scripts/analyze-copilot-session.mjs --latest
 ```
 
+### AT A GLANCE — what's interesting about a session (Claude)
+
+The Claude summary leads with an **at-a-glance panel** so you can triage a session
+in one look without reading the transcript — designed for the "was this session's
+work finished, and what was it even trying to do?" question:
+
+- **Goal** — the agent-generated session title (`aiTitle`), i.e. the objective in a phrase.
+- **First ask / Last ask** — the human's first and most recent real prompts, run through
+  the same `classify()` filter the fleet tools use, so injected skill preambles
+  (`Base directory for this skill:`), continuation handoffs, and slash-UI noise never
+  masquerade as the human's intent.
+- **Signals** — a one-line health verdict flagging the things you'd want to know:
+  `⛔ HIT USAGE LIMIT (work likely unfinished)` / `⛔ RATE-LIMITED` (the session was cut
+  off — its work is probably incomplete and needs continuing), `✋ ended on user interrupt`,
+  `🗜 N compactions` (auto-compact fired), `⚠ N% tool failures`, and
+  `… ended mid-tool-call`. Plus **peak ctx** (largest single-turn context) on the tokens line.
+
+All of these are also in `--json` (`aiTitle`, `firstPrompt`, `lastPrompt`, `compactions`,
+`maxContextTokens`, `hitLimit`, `endedInterrupted`) for scripting. The `hitLimit` flag keys
+on assistant-authored text ("you've hit your session limit"), so a session that merely
+*quotes* that phrase (e.g. one analyzing other sessions) can read as a limit hit — treat
+it as a strong hint, not proof.
+
 ### Browse the event timeline by type (`--events`)
 
 To step through *what happened in order* — and zoom in on one kind of event — add
@@ -317,6 +340,26 @@ Windows the Tailscale adapter is on the *Private* profile, so add the rule once 
 an elevated shell. Setup, the firewall one-liner, and per-OS autostart details in
 `references/hub-service.md`.
 
+## Multiple Claude homes (profiles / teams) — sibling `.claude-*` dirs
+
+Claude Code reads its config dir from `CLAUDE_CONFIG_DIR`; unset, it defaults to
+`~/.claude`. Parallel/team setups run with a **per-profile config dir that is a
+sibling** of `~/.claude` — e.g. `~/.claude-andrena_team_5x` — so those sessions
+land under `~/.claude-<suffix>/projects/…`, **invisible to any tool that hard-codes
+`~/.claude/projects`**. If a session you know exists doesn't show up, this is almost
+always why.
+
+Every Claude-reading script now discovers **all** of these via
+`claudeProjectDirs()` (`scripts/lib/config.mjs`), which returns, deduped:
+1. `$CLAUDE_PROJECT_DIRS` — explicit `;`/`:`-separated list (bypasses discovery; use for a mounted/synced copy)
+2. `$CLAUDE_CONFIG_DIR/projects` and `$CLAUDE_HOME/projects` — the active profile
+3. `~/.claude/projects` **plus every `~/.claude-<suffix>` / `~/.claude_<suffix>` sibling home**
+
+In `--list`, when more than one home exists the dir label is prefixed with the home
+tag (`.claude-andrena_team_5x/C--projects-…`) so identically-named project dirs across
+profiles stay distinguishable. Codex (`~/.codex`) and Copilot (`~/.copilot`) are
+single-home and unaffected.
+
 ## Directory naming convention (Claude)
 
 Each working directory maps to a session dir by replacing path separators with `--`:
@@ -324,6 +367,10 @@ Each working directory maps to a session dir by replacing path separators with `
 - `C:\andrena\agentic-kanban\packages\.worktrees\feature_ak-N-...` → `C--andrena-agentic-kanban-packages--worktrees-feature-ak-N-...`
 
 Multiple `.jsonl` files in one dir = multiple sessions (e.g. original run + re-launched review). Sort by `LastWriteTime` descending to find the latest.
+
+Subagent transcripts live under `<session-dir>/<session-id>/subagents/agent-<id>.jsonl`
+and are prefixed `agent-` — pass the full filename to the analyzer (dropping the prefix
+gives ENOENT).
 
 ## Common stop_reason values and what they mean (Claude)
 
