@@ -33,6 +33,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { claudeProjectDirs } from "./lib/config.mjs";
 
 // ── pricing ────────────────────────────────────────────────────────────────
 // $/1M tokens. cacheRead = 0.1x input, cacheWrite (5m) = 1.25x input.
@@ -131,28 +132,28 @@ function parseCodex(path) {
 
 // ── collect sessions in the window ───────────────────────────────────────────
 function collectClaude(cutoffMs) {
-  const base = join(homedir(), ".claude", "projects");
   const out = [];
-  if (!existsSync(base)) return out;
-  for (const dir of readdirSync(base)) {
-    const dirPath = join(base, dir);
-    let files;
-    try { files = readdirSync(dirPath); } catch { continue; }
-    for (const f of files) {
-      if (!f.endsWith(".jsonl")) continue;
-      const p = join(dirPath, f);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.mtimeMs < cutoffMs) continue; // stat-filter first
-      const parsed = parseClaude(p);
-      out.push({
-        provider: "claude",
-        sessionId: f.replace(/\.jsonl$/, ""),
-        project: dir,
-        path: p,
-        modified: st.mtime,
-        ...parsed,
-      });
+  for (const base of claudeProjectDirs()) {
+    for (const dir of readdirSync(base)) {
+      const dirPath = join(base, dir);
+      let files;
+      try { files = readdirSync(dirPath); } catch { continue; }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        const p = join(dirPath, f);
+        let st;
+        try { st = statSync(p); } catch { continue; }
+        if (st.mtimeMs < cutoffMs) continue; // stat-filter first
+        const parsed = parseClaude(p);
+        out.push({
+          provider: "claude",
+          sessionId: f.replace(/\.jsonl$/, ""),
+          project: dir,
+          path: p,
+          modified: st.mtime,
+          ...parsed,
+        });
+      }
     }
   }
   return out;

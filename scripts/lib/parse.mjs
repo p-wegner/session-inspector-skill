@@ -12,6 +12,8 @@
  * SessionSummary for the server / UI.
  */
 
+import { classify } from "./prompts.mjs";
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 export function fmtDuration(sec) {
@@ -58,6 +60,14 @@ export function parseClaude(lines) {
     userMessages: [], assistantTexts: [],
     filesRead: [], filesEdited: [], filesWritten: [],
     errors: [],
+    // ── "at a glance" signals ───────────────────────────────────────────────
+    aiTitle: "",        // agent-generated session title (the goal in a phrase)
+    firstPrompt: "",    // first human prompt (raw intent)
+    lastPrompt: "",     // most recent human prompt
+    compactions: 0,     // auto-compact boundaries (isCompactSummary)
+    maxContextTokens: 0,// largest single-turn context (input+cacheRead) seen
+    hitLimit: "",       // "" | "usage-limit" | "rate-limit" — session ended blocked
+    endedInterrupted: false, // last human action was an interrupt
   };
 
   for (const line of lines) {
@@ -68,6 +78,10 @@ export function parseClaude(lines) {
     if (obj.timestamp) { if (!stats.startTime) stats.startTime = obj.timestamp; stats.endTime = obj.timestamp; }
     if (obj.sessionId && !stats.sessionId) stats.sessionId = obj.sessionId;
     if (obj.cwd && !stats.cwd) stats.cwd = obj.cwd;
+    // Goal signal: the agent-generated session title (latest wins).
+    if (obj.type === "ai-title" && obj.aiTitle) stats.aiTitle = obj.aiTitle;
+    // Auto-compact boundary — the context safety valve fired here.
+    if (obj.isCompactSummary) stats.compactions++;
     if (obj.type === "result") {
       if (typeof obj.total_cost_usd === "number") stats.totalCostUsd = obj.total_cost_usd;
       continue;
@@ -84,10 +98,17 @@ export function parseClaude(lines) {
         stats.inputTokens += u.input_tokens || 0;
         stats.outputTokens += u.output_tokens || 0;
         stats.cacheReadTokens += u.cache_read_input_tokens || 0;
+        // Track the largest single-turn context (input + cache-read) as a proxy
+        // for how close the session ran to its window.
+        const ctx = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
+        if (ctx > stats.maxContextTokens) stats.maxContextTokens = ctx;
       }
       for (const block of msg.content || []) {
         if (block.type === "text" && block.text) {
           stats.assistantTexts.push(block.text);
+          // Detect a session/usage/rate limit that blocked further progress.
+          if (/you've hit your (session|usage) limit|usage limit reached/i.test(block.text)) stats.hitLimit = "usage-limit";
+          else if (/rate limit|\b429\b|overloaded/i.test(block.text) && !stats.hitLimit) stats.hitLimit = "rate-limit";
         } else if (block.type === "tool_use") {
           stats.toolCalls++;
           const name = block.name || "unknown";
@@ -107,7 +128,8 @@ export function parseClaude(lines) {
     } else if (obj.type === "user") {
       const content = msg.content;
       if (typeof content === "string") {
-        if (!content.startsWith("<")) stats.userMessages.push(content);
+        if (/\[Request interrupted by user/.test(content)) stats.endedInterrupted = true;
+        else if (!content.startsWith("<")) { stats.userMessages.push(content); stats.endedInterrupted = false; }
       } else if (Array.isArray(content)) {
         for (const block of content) {
           if (block.type === "tool_result" && block.is_error) {
@@ -128,6 +150,21 @@ export function parseClaude(lines) {
   stats.toolNames = Object.fromEntries([...toolCounts.entries()]);
   stats.commands = commands;
   stats.repeatedCommands = repeatedFrom(commands);
+  // Human-intent bookends: run userMessages through classify() so injected
+  // skill preambles ("Base directory for this skill:"), handoffs, and slash-UI
+  // noise don't masquerade as the human's first/last ask.
+  const human = [];
+  for (const m of stats.userMessages) {
+    const c = classify(m);
+    if (c && c.kind === "human") human.push(c.text);
+  }
+  if (human.length) {
+    stats.firstPrompt = human[0];
+    stats.lastPrompt = human[human.length - 1];
+  } else if (stats.userMessages.length) {
+    // Fallback: no clean human prompt (e.g. a pure subagent) — show the first raw one.
+    stats.firstPrompt = stats.userMessages[0];
+  }
   return stats;
 }
 
