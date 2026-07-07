@@ -42,6 +42,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { classify } from "./lib/prompts.mjs";
+import { claudeProjectDirs } from "./lib/config.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -160,21 +161,21 @@ function codexPrompts(path) {
 
 // ── collectors (mtime pre-filter, then per-entry date filter) ────────────────
 function collectClaude() {
-  const base = join(homedir(), ".claude", "projects");
   const out = [];
-  if (!existsSync(base)) return out;
-  for (const dir of readdirSync(base)) {
-    const dirPath = join(base, dir);
-    let files;
-    try { files = readdirSync(dirPath); } catch { continue; }
-    for (const f of files) {
-      if (!f.endsWith(".jsonl")) continue;
-      const p = join(dirPath, f);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.mtimeMs < windowStartMs) continue;
-      const prompts = claudePrompts(p);
-      if (prompts.length) out.push({ provider: "claude", project: dir, sessionId: f.replace(/\.jsonl$/, ""), prompts });
+  for (const base of claudeProjectDirs()) {
+    for (const dir of readdirSync(base)) {
+      const dirPath = join(base, dir);
+      let files;
+      try { files = readdirSync(dirPath); } catch { continue; }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        const p = join(dirPath, f);
+        let st;
+        try { st = statSync(p); } catch { continue; }
+        if (st.mtimeMs < windowStartMs) continue;
+        const prompts = claudePrompts(p);
+        if (prompts.length) out.push({ provider: "claude", project: dir, sessionId: f.replace(/\.jsonl$/, ""), prompts });
+      }
     }
   }
   return out;

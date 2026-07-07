@@ -14,23 +14,24 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { execFileSync } from "child_process";
+import { claudeProjectDirs } from "./config.mjs";
 
 export const PROVIDERS = ["claude", "codex", "copilot"];
 
 // ── Discovery ──────────────────────────────────────────────────────────────
 
 function discoverClaude() {
-  const base = join(homedir(), ".claude", "projects");
   const out = [];
-  if (!existsSync(base)) return out;
-  for (const dir of readdirSync(base)) {
-    const dirPath = join(base, dir);
-    let files;
-    try { files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")); } catch { continue; }
-    for (const f of files) {
-      const p = join(dirPath, f);
-      const st = statSync(p);
-      out.push({ provider: "claude", path: p, sessionId: f.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime });
+  for (const base of claudeProjectDirs()) {
+    for (const dir of readdirSync(base)) {
+      const dirPath = join(base, dir);
+      let files;
+      try { files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")); } catch { continue; }
+      for (const f of files) {
+        const p = join(dirPath, f);
+        const st = statSync(p);
+        out.push({ provider: "claude", path: p, sessionId: f.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime });
+      }
     }
   }
   return out;

@@ -15,22 +15,54 @@
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, basename, dirname } from "path";
 import { homedir } from "os";
 import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode } from "./lib/parse.mjs";
+import { claudeProjectDirs } from "./lib/config.mjs";
+
+/** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
+function homeTag(projectsDir) {
+  return basename(dirname(projectsDir));
+}
+
+/** Collapse whitespace and truncate to n chars for single-line display. */
+function oneLine(text, n = 100) {
+  const t = String(text || "").replace(/\s+/g, " ").trim();
+  return t.length > n ? `${t.slice(0, n)}…` : t;
+}
+
+/** One-line health verdict: what's interesting about how this session ended. */
+function glanceFlags(s) {
+  const flags = [];
+  if (s.hitLimit === "usage-limit") flags.push("⛔ HIT USAGE LIMIT (work likely unfinished)");
+  else if (s.hitLimit === "rate-limit") flags.push("⛔ RATE-LIMITED");
+  if (s.endedInterrupted) flags.push("✋ ended on user interrupt");
+  if (s.compactions) flags.push(`🗜 ${s.compactions} compaction${s.compactions > 1 ? "s" : ""}`);
+  if (s.toolCalls && s.failedToolCalls / s.toolCalls >= 0.2) flags.push(`⚠ ${Math.round((100 * s.failedToolCalls) / s.toolCalls)}% tool failures`);
+  if (s.stopReason === "tool_use") flags.push("… ended mid-tool-call (interrupted/still running)");
+  return flags;
+}
 
 function printSummary(s) {
   console.log("═".repeat(60));
   console.log("CLAUDE SESSION SUMMARY");
   console.log("═".repeat(60));
+
+  // ── AT A GLANCE — the interesting stuff first ──────────────────────────────
+  console.log(`\nGoal:       ${s.aiTitle || "(no title)"}`);
+  if (s.firstPrompt) console.log(`First ask:  ${oneLine(s.firstPrompt, 100)}`);
+  if (s.lastPrompt && s.lastPrompt !== s.firstPrompt) console.log(`Last ask:   ${oneLine(s.lastPrompt, 100)}`);
+  const flags = glanceFlags(s);
+  if (flags.length) console.log(`Signals:    ${flags.join("  ·  ")}`);
+
   console.log(`\nSession:    ${(s.sessionId || "?").slice(0, 8)}…`);
   console.log(`Model:      ${s.model}`);
   console.log(`CWD:        ${s.cwd}`);
   console.log(`Duration:   ${fmtDuration(s.durationSec)}`);
-  console.log(`Asst turns: ${s.assistantTurns}`);
-  console.log(`Tokens:     ${fmtTokens(s.inputTokens)} in / ${fmtTokens(s.outputTokens)} out / ${fmtTokens(s.cacheReadTokens)} cache-read`);
+  console.log(`Asst turns: ${s.assistantTurns}${s.compactions ? `  (${s.compactions} compaction${s.compactions > 1 ? "s" : ""})` : ""}`);
+  console.log(`Tokens:     ${fmtTokens(s.inputTokens)} in / ${fmtTokens(s.outputTokens)} out / ${fmtTokens(s.cacheReadTokens)} cache-read${s.maxContextTokens ? `  ·  peak ctx ${fmtTokens(s.maxContextTokens)}` : ""}`);
   console.log(`Tool calls: ${s.toolCalls}  (failed: ${s.failedToolCalls}${s.toolCalls ? `, ${Math.round((100 * s.failedToolCalls) / s.toolCalls)}%` : ""})`);
-  console.log(`Stop:       ${s.stopReason || "(none / interrupted)"}`);
+  console.log(`Stop:       ${s.stopReason || "(none / interrupted)"}${s.hitLimit ? `  ⛔ ${s.hitLimit}` : ""}`);
 
   const tools = Object.entries(s.toolNames).sort((a, b) => b[1].count - a[1].count);
   if (tools.length) {
@@ -71,18 +103,24 @@ export function resolveConfigDir(argv = process.argv) {
 }
 
 function listSessions(onlyWorktrees) {
-  const base = join(resolveConfigDir(), "projects");
+  const homes = claudeProjectDirs();
+  const multiHome = homes.length > 1;
   const out = [];
-  if (!existsSync(base)) return out;
-  for (const dir of readdirSync(base)) {
-    if (onlyWorktrees && !/worktrees-feature-ak-/.test(dir)) continue;
-    const dirPath = join(base, dir);
-    let files;
-    try { files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")); } catch { continue; }
-    for (const f of files) {
-      const p = join(dirPath, f);
-      const st = statSync(p);
-      out.push({ path: p, name: f, dir, size: st.size, modified: st.mtime });
+  for (const base of homes) {
+    const tag = homeTag(base);
+    for (const dir of readdirSync(base)) {
+      if (onlyWorktrees && !/worktrees-feature-ak-/.test(dir)) continue;
+      const dirPath = join(base, dir);
+      let files;
+      try { files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")); } catch { continue; }
+      for (const f of files) {
+        const p = join(dirPath, f);
+        const st = statSync(p);
+        // Prefix the dir label with the home tag when more than one home exists,
+        // so identically-named project dirs across profiles stay distinguishable.
+        const label = multiHome ? `${tag}/${dir}` : dir;
+        out.push({ path: p, name: f, dir: label, size: st.size, modified: st.mtime });
+      }
     }
   }
   return out.sort((a, b) => b.modified - a.modified);
@@ -97,7 +135,7 @@ if (args.includes("--list")) {
   const sessions = listSessions(args.includes("--worktrees"));
   console.log(`Found ${sessions.length} Claude sessions\n`);
   for (const s of sessions.slice(0, 25)) {
-    console.log(`  ${s.modified.toISOString().slice(0, 16)}  ${(s.size / 1024).toFixed(0)}KB  ${s.dir.slice(0, 50)}  ${s.name.slice(0, 12)}`);
+    console.log(`  ${s.modified.toISOString().slice(0, 16)}  ${(s.size / 1024).toFixed(0)}KB  ${s.dir.slice(0, 64)}  ${s.name.slice(0, 12)}`);
   }
   process.exit(0);
 }

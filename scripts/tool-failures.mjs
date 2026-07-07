@@ -30,6 +30,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { claudeProjectDirs } from "./lib/config.mjs";
 
 // normalize an error message into a clusterable signature
 function errSig(text) {
@@ -128,20 +129,20 @@ function parseCodex(path) {
 
 // ── collect sessions in the window ───────────────────────────────────────────
 function collectClaude(cutoffMs) {
-  const base = join(homedir(), ".claude", "projects");
   const out = [];
-  if (!existsSync(base)) return out;
-  for (const dir of readdirSync(base)) {
-    const dirPath = join(base, dir);
-    let files;
-    try { files = readdirSync(dirPath); } catch { continue; }
-    for (const f of files) {
-      if (!f.endsWith(".jsonl")) continue;
-      const p = join(dirPath, f);
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.mtimeMs < cutoffMs) continue;
-      out.push({ provider: "claude", project: dir, id: p, modified: st.mtime, ...parseClaude(p) });
+  for (const base of claudeProjectDirs()) {
+    for (const dir of readdirSync(base)) {
+      const dirPath = join(base, dir);
+      let files;
+      try { files = readdirSync(dirPath); } catch { continue; }
+      for (const f of files) {
+        if (!f.endsWith(".jsonl")) continue;
+        const p = join(dirPath, f);
+        let st;
+        try { st = statSync(p); } catch { continue; }
+        if (st.mtimeMs < cutoffMs) continue;
+        out.push({ provider: "claude", project: dir, id: p, modified: st.mtime, ...parseClaude(p) });
+      }
     }
   }
   return out;
