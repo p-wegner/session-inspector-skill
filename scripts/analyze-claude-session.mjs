@@ -57,8 +57,21 @@ function printSummary(s) {
   console.log("═".repeat(60));
 }
 
+// Resolve the Claude config dir (which profile's transcripts to read).
+// Priority: --config-dir <path> | --profile <name> (=> ~/.claude-<name>) |
+// $CLAUDE_CONFIG_DIR | default ~/.claude. Lets --list/--latest see non-default
+// auth profiles (e.g. ~/.claude-andrena_team_5x) instead of only ~/.claude.
+export function resolveConfigDir(argv = process.argv) {
+  const cd = argv[argv.indexOf("--config-dir") + 1];
+  if (argv.includes("--config-dir") && cd) return cd;
+  const pf = argv[argv.indexOf("--profile") + 1];
+  if (argv.includes("--profile") && pf) return join(homedir(), `.claude-${pf}`);
+  if (process.env.CLAUDE_CONFIG_DIR) return process.env.CLAUDE_CONFIG_DIR;
+  return join(homedir(), ".claude");
+}
+
 function listSessions(onlyWorktrees) {
-  const base = join(homedir(), ".claude", "projects");
+  const base = join(resolveConfigDir(), "projects");
   const out = [];
   if (!existsSync(base)) return out;
   for (const dir of readdirSync(base)) {
@@ -77,7 +90,7 @@ function listSessions(onlyWorktrees) {
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes("--json");
-const VALUE_FLAGS = new Set(["--type", "--grep", "--limit"]);
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--config-dir", "--profile"]);
 const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
 if (args.includes("--list")) {

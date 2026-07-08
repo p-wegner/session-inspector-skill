@@ -5,3 +5,4 @@ hub.pid
 .DS_Store
 .playwright-cli/
 *.stackdump
+resume-briefs/
