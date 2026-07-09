@@ -1,7 +1,7 @@
 ---
 name: session-inspector
-description: Inspect agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) to debug why sessions stopped, what they did, and whether they produced output. ALWAYS use this — never hand-read or grep transcript .jsonl files directly — whenever asked about a specific session by id/path or "what was session X doing". Self-contained — bundles its own analyzer scripts.
-argument-hint: [issue-number, keyword, --codex <path>, --copilot]
+description: Inspect and edit agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) — debug why sessions stopped, what they did, and whether they produced output; or rewrite the user/assistant messages of a Claude session in place. ALWAYS use this — never hand-read, grep, or hand-patch transcript .jsonl files directly — whenever asked about a specific session by id/path, "what was session X doing", or to edit/fix/rewrite what was said in a session. Self-contained — bundles its own analyzer scripts.
+argument-hint: [issue-number, keyword, --codex <path>, --copilot, edit]
 ---
 
 # Session Inspector — Debugging Agent Session Transcripts
@@ -51,6 +51,75 @@ When the analyzer isn't enough and you need custom parsing, load the matching **
 - `references/copilot-recipes.md` — Copilot `events.jsonl` event types, manual parse, workspace correlation, process logs, common-issue symptoms. (Some snippets read an agentic-kanban board API — **optional**, only relevant if you run that board; the local `events.jsonl` path always works.)
 
 **Tip — surface the current session in your statusline.** To make the *current* Claude session one copy-paste away (for inspecting it or handing it to a stronger model mid-task), show its `<project-folder>/<session-id>` locator in the Claude Code statusline. Setup in `references/statusline.md`.
+
+## Edit a session's user/assistant messages (`session-edit.mjs`)
+
+The analyzers above are read-only. To **change what a session says** — fix a
+misleading prompt before handing the transcript to a stronger model, redact a
+secret you pasted, correct an assistant message that poisoned the rest of the
+run — use `scripts/session-edit.mjs`. Raw `.jsonl` is far too noisy to hand-edit
+(one line per content block, escaped JSON, uuid chains), so this is a **two-phase
+extract → edit-in-your-editor → apply** flow. Claude transcripts only.
+
+```powershell
+node scripts/session-edit.mjs extract --latest -o edits.md    # 1. flatten to a readable file
+#  … open edits.md in your editor, change the text under any [edit] header …
+node scripts/session-edit.mjs apply edits.md --dry-run        # 2. preview the diff
+node scripts/session-edit.mjs apply edits.md                  # 3. write it back, in place
+```
+
+`extract` takes `<path.jsonl>`, `--latest`, or `--session <id-prefix>`, plus the
+same `--profile <name>` / `--config-dir <path>` resolution the analyzers use.
+
+**The extracted format.** One `@@@ <seq> <kind> <uuid>#<blockIndex> [edit|read-only]`
+header per block, body underneath:
+
+```
+@@@ 4 user d5109c08-…#0 [edit]
+unzip all files in this folder, dedupe images…
+
+@@@ 5 assistant.thinking 20683a7e-…#0 [read-only]
+Let me check what's in the folder first…
+… [truncated, 12 more line(s)]
+
+@@@ 6 assistant.tool_use:Bash 9e7730b0-…#0 [read-only]
+{ "command": "ls -la" }
+```
+
+**What's editable.** By default only human prompts (`user`) and assistant `text`
+blocks. `thinking`, `tool_use`, and `tool_result` blocks are emitted as
+**truncated `[read-only]` context** — they're there so you edit with the
+conversation in view, and their bodies are never written back. Widen the scope
+with `--include-thinking` / `--include-tool-results` (tool_result payloads are
+huge; prefer targeting them one session at a time).
+
+**It never deletes or reorders lines.** Text is rewritten in place, so `uuid` /
+`parentUuid` stay intact and `claude --resume <id>` still walks the transcript.
+Only the edited lines are re-serialized; every other byte passes through
+untouched, and key order within a line is preserved.
+
+**Guard rails** (all fire before anything is written):
+- **block-level conflict detection** — the edit file records a sha256 of the whole
+  transcript *and* an `h=<hash>` of each editable block's original text. A session
+  routinely flushes a final turn on exit, so a whole-file mismatch alone means
+  little. `apply` therefore asks the narrower question: *did a block **you edited**
+  change?* If not, it applies and prints a note (appended turns are preserved,
+  since blocks are addressed by `uuid`, not line offset). If yes — the block was
+  rewritten, or has vanished — it refuses and names the blocks (re-extract to
+  rebase, or `--force`). v1 edit files have no per-block hashes and keep the old
+  strict refusal.
+- **live-session guard** — refuses a source modified in the last 120s, since a running agent could append a turn between the read and the write. Exit that session first, or `--force`.
+- **backup** — copies to `<transcript>.jsonl.bak-<timestamp>` before writing (`--no-backup` to skip); the write itself is atomic (tmp + rename).
+
+`--dry-run` bypasses the guards with a warning and prints a per-block before/after
+diff without touching disk. A round-trip with no edits always reports **0 changes**,
+so an untouched `apply` is a no-op. Body lines that look like a `@@@` header are
+dot-stuffed on extract and unescaped on apply — message text can safely contain
+the delimiter.
+
+**Editing the session you're currently in won't work** the way you'd hope: the
+live agent holds the transcript open and rewrites it on every turn, so your edits
+are overwritten. Edit a *finished* session, then `claude --resume` it.
 
 ## Resume sessions after a crash / reboot / rate-limit
 
