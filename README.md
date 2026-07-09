@@ -43,6 +43,7 @@ scripts/
   analyze-claude-session.mjs      # single Claude session  → structured summary
   analyze-codex-session.mjs       # single Codex session   → structured summary
   analyze-copilot-session.mjs     # single Copilot session → structured summary
+  session-edit.mjs                # extract → edit → apply: rewrite a Claude session's messages (WRITES)
   token-sinks.mjs                 # rank token/cost sinks across MANY sessions
   tool-failures.mjs               # rank failed tool calls across MANY sessions
   user-prompts.mjs                # extract real human-typed prompts across MANY sessions
@@ -72,9 +73,19 @@ node scripts/user-prompts.mjs   --today         # what you actually asked
 node scripts/sync-server.mjs                     # run the hub, open http://localhost:8765/
 node scripts/sync-push.mjs                       # push this machine's sessions to it
 node scripts/sync-query.mjs search "<text>" --deep
+
+# Edit a finished Claude session's messages (two-phase, in your own editor)
+node scripts/session-edit.mjs extract --latest -o edits.md
+node scripts/session-edit.mjs apply edits.md --dry-run
 ```
 
-All read-only tools read from the standard agent home dirs and write only to stdout.
+Every tool except `session-edit.mjs` is read-only: it reads from the standard agent
+home dirs and writes only to stdout. `session-edit.mjs apply` is the one writer — it
+rewrites message text in a transcript in place, guarded by per-block conflict
+detection (it refuses only when a block *you edited* changed underneath you, not
+merely because the session appended a turn), a live-session check, and a
+timestamped backup. Blocks are addressed by `uuid`, never by line offset, so
+nothing is deleted or reordered and `claude --resume` still works.
 
 ## Cross-machine sync (session-sync)
 
