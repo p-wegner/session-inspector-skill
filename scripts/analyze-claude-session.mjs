@@ -34,8 +34,13 @@ function oneLine(text, n = 100) {
 /** One-line health verdict: what's interesting about how this session ended. */
 function glanceFlags(s) {
   const flags = [];
-  if (s.hitLimit === "usage-limit") flags.push("⛔ HIT USAGE LIMIT (work likely unfinished)");
-  else if (s.hitLimit === "rate-limit") flags.push("⛔ RATE-LIMITED");
+  // Strong signal first: the limit banner was the session's FINAL message → it was
+  // actually cut off here and is resumable. Fall back to the weak any-mention flag
+  // (marked "mentioned") so a session that merely discusses limits isn't sold as cut off.
+  if (s.endedOnLimit === "usage-limit") flags.push("⛔ HIT USAGE LIMIT (cut off — resumable)");
+  else if (s.endedOnLimit === "rate-limit") flags.push("⛔ RATE-LIMITED (cut off — resumable)");
+  else if (s.hitLimit === "usage-limit") flags.push("⚠ usage limit mentioned (not terminal)");
+  else if (s.hitLimit === "rate-limit") flags.push("⚠ rate limit mentioned (not terminal)");
   if (s.endedInterrupted) flags.push("✋ ended on user interrupt");
   if (s.compactions) flags.push(`🗜 ${s.compactions} compaction${s.compactions > 1 ? "s" : ""}`);
   if (s.toolCalls && s.failedToolCalls / s.toolCalls >= 0.2) flags.push(`⚠ ${Math.round((100 * s.failedToolCalls) / s.toolCalls)}% tool failures`);
@@ -62,7 +67,7 @@ function printSummary(s) {
   console.log(`Asst turns: ${s.assistantTurns}${s.compactions ? `  (${s.compactions} compaction${s.compactions > 1 ? "s" : ""})` : ""}`);
   console.log(`Tokens:     ${fmtTokens(s.inputTokens)} in / ${fmtTokens(s.outputTokens)} out / ${fmtTokens(s.cacheReadTokens)} cache-read${s.maxContextTokens ? `  ·  peak ctx ${fmtTokens(s.maxContextTokens)}` : ""}`);
   console.log(`Tool calls: ${s.toolCalls}  (failed: ${s.failedToolCalls}${s.toolCalls ? `, ${Math.round((100 * s.failedToolCalls) / s.toolCalls)}%` : ""})`);
-  console.log(`Stop:       ${s.stopReason || "(none / interrupted)"}${s.hitLimit ? `  ⛔ ${s.hitLimit}` : ""}`);
+  console.log(`Stop:       ${s.stopReason || "(none / interrupted)"}${s.endedOnLimit ? `  ⛔ ${s.endedOnLimit} (cut off here)` : (s.hitLimit ? `  ⚠ ${s.hitLimit} mentioned` : "")}`);
 
   const tools = Object.entries(s.toolNames).sort((a, b) => b[1].count - a[1].count);
   if (tools.length) {

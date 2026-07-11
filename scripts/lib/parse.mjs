@@ -47,6 +47,20 @@ const CLAUDE_READ_TOOLS = new Set(["Read", "NotebookRead"]);
 const CLAUDE_EDIT_TOOLS = new Set(["Edit", "MultiEdit", "NotebookEdit"]);
 const CLAUDE_WRITE_TOOLS = new Set(["Write"]);
 
+// Usage/rate-limit banner detection. The USAGE regex matches the exact banner
+// Claude Code emits as its FINAL assistant message when a session is cut off
+// ("You've hit your session limit · resets 1:50am"). RATE matches transient
+// 429/overload text. Kept module-level so the discovery tools reuse the identical
+// test the analyzer uses — a session reads the same everywhere.
+const LIMIT_USAGE_RE = /you've hit your (session|usage) limit|usage limit reached|session limit ·|resets \d{1,2}(:\d\d)?\s*(am|pm)/i;
+const LIMIT_RATE_RE = /rate limit|\b429\b|overloaded/i;
+export function limitKind(text) {
+  if (!text) return "";
+  if (LIMIT_USAGE_RE.test(text)) return "usage-limit";
+  if (LIMIT_RATE_RE.test(text)) return "rate-limit";
+  return "";
+}
+
 export function parseClaude(lines) {
   const toolNameById = new Map();
   const toolCounts = new Map(); // name -> { count, failed }
@@ -66,7 +80,8 @@ export function parseClaude(lines) {
     lastPrompt: "",     // most recent human prompt
     compactions: 0,     // auto-compact boundaries (isCompactSummary)
     maxContextTokens: 0,// largest single-turn context (input+cacheRead) seen
-    hitLimit: "",       // "" | "usage-limit" | "rate-limit" — session ended blocked
+    hitLimit: "",       // "" | "usage-limit" | "rate-limit" — a limit was MENTIONED anywhere (weak: fooled by sessions that merely discuss limits)
+    endedOnLimit: "",   // "" | "usage-limit" | "rate-limit" — the limit banner was the FINAL assistant message (strong: the session was actually cut off here → resumable)
     endedInterrupted: false, // last human action was an interrupt
   };
 
@@ -106,9 +121,11 @@ export function parseClaude(lines) {
       for (const block of msg.content || []) {
         if (block.type === "text" && block.text) {
           stats.assistantTexts.push(block.text);
-          // Detect a session/usage/rate limit that blocked further progress.
-          if (/you've hit your (session|usage) limit|usage limit reached/i.test(block.text)) stats.hitLimit = "usage-limit";
-          else if (/rate limit|\b429\b|overloaded/i.test(block.text) && !stats.hitLimit) stats.hitLimit = "rate-limit";
+          // Weak mention signal (any occurrence). endedOnLimit (computed after the
+          // loop from the FINAL assistant text) is the trustworthy one.
+          const k = limitKind(block.text);
+          if (k === "usage-limit") stats.hitLimit = "usage-limit";
+          else if (k === "rate-limit" && !stats.hitLimit) stats.hitLimit = "rate-limit";
         } else if (block.type === "tool_use") {
           stats.toolCalls++;
           const name = block.name || "unknown";
@@ -147,6 +164,11 @@ export function parseClaude(lines) {
   }
 
   if (stats.startTime && stats.endTime) stats.durationSec = Math.round((new Date(stats.endTime) - new Date(stats.startTime)) / 1000);
+  // Strong "cut off here" signal: the limit banner is the FINAL assistant message.
+  // A genuine limit-hit session ends ON the banner; a session that merely quotes or
+  // discusses limits keeps working afterwards, so its last text is something else.
+  const lastText = stats.assistantTexts.length ? stats.assistantTexts[stats.assistantTexts.length - 1] : "";
+  stats.endedOnLimit = limitKind(lastText);
   stats.toolNames = Object.fromEntries([...toolCounts.entries()]);
   stats.commands = commands;
   stats.repeatedCommands = repeatedFrom(commands);
@@ -527,6 +549,8 @@ export function summarize(provider, content) {
       lastAssistant: last(s.assistantTexts),
       inputTokens: s.inputTokens, outputTokens: s.outputTokens, cacheReadTokens: s.cacheReadTokens, totalCostUsd: s.totalCostUsd,
       stopReason: s.stopReason,
+      hitLimit: s.hitLimit, endedOnLimit: s.endedOnLimit, endedInterrupted: s.endedInterrupted,
+      aiTitle: s.aiTitle, firstPrompt: s.firstPrompt, lastPrompt: s.lastPrompt,
       filesRead: s.filesRead, filesEdited: s.filesEdited, filesWritten: s.filesWritten,
       extra: {},
     };
