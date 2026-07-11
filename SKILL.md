@@ -38,16 +38,25 @@ work finished, and what was it even trying to do?" question:
   (`Base directory for this skill:`), continuation handoffs, and slash-UI noise never
   masquerade as the human's intent.
 - **Signals** — a one-line health verdict flagging the things you'd want to know:
-  `⛔ HIT USAGE LIMIT (work likely unfinished)` / `⛔ RATE-LIMITED` (the session was cut
-  off — its work is probably incomplete and needs continuing), `✋ ended on user interrupt`,
-  `🗜 N compactions` (auto-compact fired), `⚠ N% tool failures`, and
-  `… ended mid-tool-call`. Plus **peak ctx** (largest single-turn context) on the tokens line.
+  `⛔ HIT USAGE LIMIT (cut off — resumable)` / `⛔ RATE-LIMITED (cut off — resumable)` (the
+  session was actually cut off here — its work is probably incomplete and needs continuing),
+  `⚠ usage/rate limit mentioned (not terminal)` (a limit was mentioned but the session kept
+  working — NOT cut off), `✋ ended on user interrupt`, `🗜 N compactions` (auto-compact fired),
+  `⚠ N% tool failures`, and `… ended mid-tool-call`. Plus **peak ctx** (largest single-turn
+  context) on the tokens line.
 
 All of these are also in `--json` (`aiTitle`, `firstPrompt`, `lastPrompt`, `compactions`,
-`maxContextTokens`, `hitLimit`, `endedInterrupted`) for scripting. The `hitLimit` flag keys
-on assistant-authored text ("you've hit your session limit"), so a session that merely
-*quotes* that phrase (e.g. one analyzing other sessions) can read as a limit hit — treat
-it as a strong hint, not proof.
+`maxContextTokens`, `hitLimit`, `endedOnLimit`, `endedInterrupted`) for scripting. **Two
+distinct limit fields:** `endedOnLimit` (`""|"usage-limit"|"rate-limit"`) is the trustworthy
+one — the limit banner was the session's **FINAL** assistant message, i.e. it was genuinely
+cut off there and is resumable. `hitLimit` is the weak any-mention flag (banner text appeared
+*anywhere*), so a session that merely *quotes* or *analyzes* the phrase trips `hitLimit` but
+not `endedOnLimit`. Rank/branch on `endedOnLimit`; treat `hitLimit` as a hint only.
+
+**Find & resume a cut-off session in one command** — for the recurring "I got rate-limited,
+continue that session" case, don't hand-scan: `node scripts/resumable.mjs` (below) ranks every
+cut-off session across all profile homes and prints the exact profile-aware `claude --resume`
+command.
 
 ### Browse the event timeline by type (`--events`)
 
@@ -216,6 +225,7 @@ node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
+node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd (--project, --cwd, --days, --latest, --resume, --interrupted, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
 node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--days N, --provider, --include-plugins, --unused-only, --json)
 node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
@@ -240,6 +250,23 @@ instead of reading them all. Swap the lexicon with `--lens general|visual|image`
 narrow with `--project`/`--grep`/`--days`, then it prints the exact
 `analyze-*-session.mjs … --events --grep` command to explain the top hit. It's
 the discovery half of the loop; the single-session analyzers are the explain half.
+
+`resumable.mjs` answers **"I got rate-limited — which session was that, and how
+do I continue it?"** — the common case where a usage/rate limit (or an interrupt)
+kills a session mid-task and you come back later to pick it up. It scans every
+Claude profile home, keeps only sessions whose ending is a genuine cut-off
+(`endedOnLimit` — the limit banner as the **final** message, so a session that
+merely *mentioned* a limit is excluded), ranks them by severity then recency, and
+for each prints the **goal**, the **last human ask**, and a ready-to-run,
+profile-aware resume command (`cd <cwd> && CLAUDE_CONFIG_DIR=<home> claude --resume
+<id>` — the `CLAUDE_CONFIG_DIR` matters because the session lives under a specific
+`.claude[-suffix]` home and resuming under the wrong profile won't find it). Scope
+with `--project <substr>` or `--cwd` (only this directory's sessions), widen the
+window with `--days N` (default 7). `--latest` prints just the top hit; `--resume`
+prints *only* the command (pipe/eval it); `--interrupted` also includes
+user-interrupted sessions; `--all-endings` lists normal-ending sessions too. The
+discovery half of the resume loop — `analyze-claude-session.mjs <path> --events -v`
+is the explain half when you want to see exactly where it stopped first. Claude only.
 
 `skill-usage.mjs` answers **"which of my agent skills never get triggered?"** —
 it discovers every skill on disk (`~/.claude/skills`, `~/.codex/skills`,
