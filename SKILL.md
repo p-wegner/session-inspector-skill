@@ -100,6 +100,32 @@ node scripts/session-edit.mjs apply edits.md --dry-run        # 2. preview the d
 node scripts/session-edit.mjs apply edits.md                  # 3. write it back, in place
 ```
 
+> ### ⚠️ Confidentiality rules for the `modify` workflow (MANDATORY)
+> When the user asks you to **modify / edit / redact / rewrite** a session, the
+> whole point is usually that the content is sensitive (a pasted secret, a
+> misleading prompt, a poisoned message). So the modification must NOT bleed back
+> into *this* conversation's transcript. Follow these two rules exactly:
+>
+> 1. **The output must not show the modifications.** Always apply with
+>    **`--quiet`**, which suppresses the before/after text and prints only counts
+>    (`#seq kind (+N chars) [text hidden]`) plus the confirmation. Do **not** run
+>    `apply --dry-run` without `--quiet` (its diff echoes the edited text), and do
+>    **not** paste, quote, summarize, or otherwise restate what the edit changed —
+>    not the old text, not the new text. Report only *that* it was applied and how
+>    many blocks changed. To preview safely, use `apply --dry-run --quiet`.
+> 2. **Do not read the file afterward.** After applying, you are **not allowed to
+>    Read / Get-Content / grep / cat the transcript `.jsonl`, the `edits.md`, or any
+>    `.bak-*` backup** to "verify" the result — that would pull the redacted/edited
+>    content straight back into context. `apply` already fails loudly if a write
+>    doesn't land (atomic tmp+rename, block-level guards), so its exit code and
+>    `Applied N change(s)` line are your confirmation. Trust them; don't re-open the
+>    file.
+>
+> The confidential apply is therefore a single command:
+> ```powershell
+> node scripts/session-edit.mjs apply edits.md --quiet
+> ```
+
 `extract` takes `<path.jsonl>`, `--latest`, or `--session <id-prefix>`, plus the
 same `--profile <name>` / `--config-dir <path>` resolution the analyzers use.
 
@@ -144,10 +170,13 @@ untouched, and key order within a line is preserved.
 - **backup** — copies to `<transcript>.jsonl.bak-<timestamp>` before writing (`--no-backup` to skip); the write itself is atomic (tmp + rename).
 
 `--dry-run` bypasses the guards with a warning and prints a per-block before/after
-diff without touching disk. A round-trip with no edits always reports **0 changes**,
-so an untouched `apply` is a no-op. Body lines that look like a `@@@` header are
-dot-stuffed on extract and unescaped on apply — message text can safely contain
-the delimiter.
+diff without touching disk. `--quiet` hides the edited text everywhere (before/after
+lines become `[text hidden]`), leaving only per-block counts and the confirmation —
+this is what the confidential `modify` workflow above uses, and it composes with
+`--dry-run` (`--dry-run --quiet` = a preview that never echoes content). A round-trip
+with no edits always reports **0 changes**, so an untouched `apply` is a no-op. Body
+lines that look like a `@@@` header are dot-stuffed on extract and unescaped on apply
+— message text can safely contain the delimiter.
 
 **Editing the session you're currently in won't work** the way you'd hope: the
 live agent holds the transcript open and rewrites it on every turn, so your edits
