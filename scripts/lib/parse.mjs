@@ -29,6 +29,21 @@ export function fmtTokens(n) {
   return String(n || 0);
 }
 function pushUnique(arr, v) { if (v && !arr.includes(v)) arr.push(v); }
+
+// A `Skill` / `Agent` (a.k.a. `Task`) tool_use is generic until you read its
+// input: the ACTUAL skill (`input.skill`) or subagent type (`input.subagent_type`)
+// is what a human wants to see on the board, in tool counts, and on the timeline —
+// otherwise every skill invocation collapses into one anonymous "Skill" chip.
+// Expand those into `Skill:<name>` / `Agent:<type>`; pass every other tool through.
+export function toolDisplayName(name, input) {
+  const n = name || "unknown";
+  if (!input || typeof input !== "object") return n;
+  if (n === "Skill" && typeof input.skill === "string" && input.skill.trim())
+    return `Skill:${input.skill.trim()}`;
+  if ((n === "Agent" || n === "Task") && typeof input.subagent_type === "string" && input.subagent_type.trim())
+    return `${n}:${input.subagent_type.trim()}`;
+  return n;
+}
 function repeatedFrom(commands) {
   const counts = new Map();
   for (const c of commands) {
@@ -128,15 +143,16 @@ export function parseClaude(lines) {
           else if (k === "rate-limit" && !stats.hitLimit) stats.hitLimit = "rate-limit";
         } else if (block.type === "tool_use") {
           stats.toolCalls++;
-          const name = block.name || "unknown";
+          const rawName = block.name || "unknown";
+          const name = toolDisplayName(rawName, block.input); // Skill:<name> / Agent:<type>
           toolNameById.set(block.id, name);
           const e = toolCounts.get(name) || { count: 0, failed: 0 };
           e.count++; toolCounts.set(name, e);
           const fp = block.input?.file_path || block.input?.notebook_path;
           if (fp) {
-            if (CLAUDE_READ_TOOLS.has(name)) pushUnique(stats.filesRead, fp);
-            else if (CLAUDE_EDIT_TOOLS.has(name)) pushUnique(stats.filesEdited, fp);
-            else if (CLAUDE_WRITE_TOOLS.has(name)) pushUnique(stats.filesWritten, fp);
+            if (CLAUDE_READ_TOOLS.has(rawName)) pushUnique(stats.filesRead, fp);
+            else if (CLAUDE_EDIT_TOOLS.has(rawName)) pushUnique(stats.filesEdited, fp);
+            else if (CLAUDE_WRITE_TOOLS.has(rawName)) pushUnique(stats.filesWritten, fp);
           }
           const cmd = block.input?.command || block.input?.cmd || block.input?.script;
           if (typeof cmd === "string") commands.push(cmd);
@@ -323,7 +339,7 @@ export function parseCopilot(lines) {
 export const EVENT_TYPES = ["user", "assistant", "thinking", "tool_call", "tool_error"];
 
 // Map a tool's input object to a compact one-line argument summary.
-const TOOL_ARG_KEYS = ["command", "cmd", "script", "pattern", "query", "url", "file_path", "notebook_path", "path", "description", "prompt"];
+const TOOL_ARG_KEYS = ["command", "cmd", "script", "pattern", "query", "url", "file_path", "notebook_path", "path", "description", "prompt", "args"];
 function toolArgSummary(input) {
   if (!input || typeof input !== "object") return "";
   for (const k of TOOL_ARG_KEYS) {
@@ -349,7 +365,7 @@ export function claudeEvents(lines) {
         if (block.type === "text" && block.text) ev.push({ ts, type: "assistant", tool: "", text: block.text });
         else if (block.type === "thinking" && block.thinking) ev.push({ ts, type: "thinking", tool: "", text: block.thinking });
         else if (block.type === "tool_use") {
-          const name = block.name || "unknown";
+          const name = toolDisplayName(block.name, block.input); // Skill:<name> / Agent:<type>
           toolNameById.set(block.id, name);
           ev.push({ ts, type: "tool_call", tool: name, text: toolArgSummary(block.input) });
         }
