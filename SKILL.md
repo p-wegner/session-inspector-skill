@@ -259,6 +259,8 @@ node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + wh
 node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--days N, --provider, --include-plugins, --unused-only, --json)
 node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
 node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + per-session goals (--project, --days, --top, --json)
+node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile since its weekly reset → terminal / --json / --html dashboard (--profile <name>, --config-dir, --since <ISO>, --no-auto-reset, --tz N)
+node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINED total → one switchable --html dashboard (--profiles a,b, --tz N, --max-windows N, --json)
 ```
 
 `waste.mjs` answers **"what cost unnecessary tokens?"** — it attributes each
@@ -317,6 +319,51 @@ session's time gives `avail` = sessions that ran *after* it existed, so a skill
 written last week isn't wrongly called dead. Board-independent (no DB). The
 git-history pass only runs for never-strong-invoked skills; narrow with `--days`
 for a fast windowed audit (`--no-git` skips creation-time entirely).
+
+`quota-report.mjs` answers **"what did my subscription do this billing week?"** —
+it scopes to ONE profile (`--profile <name>` ⇒ `~/.claude-<name>`, or
+`--config-dir <path>`) and, unlike `token-sinks.mjs` (which stat-filters whole
+FILES by mtime), filters **per turn** by the turn's own timestamp, so a session
+straddling the cutoff contributes only its post-cutoff turns. The default cutoff
+is the profile's **last weekly reset**, which it **auto-detects per profile** —
+different accounts anchor their weekly window on different weekday+times. It reads
+the profile's own `"You've hit your weekly limit · resets …"` banners (the
+`resets Jul 17, 12pm` / `resets 6am` forms), derives the reset weekday+clock in
+Europe/Berlin, and steps back in 7-day multiples to the most recent boundary
+at/before now (e.g. `andrena_team_5x` → Tue 6am, `andrena_team_5x_2` → Fri 12pm).
+Override the cutoff with `--since <ISO>`, disable detection with
+`--no-auto-reset` (falls back to Fri 12:00 Berlin), and set the UTC offset with
+`--tz N` (default 2 = CEST). The detected schedule + the banner it came from are
+shown in the dashboard's verification callout and in `meta.resetInfo`. **Subagent transcripts are
+included** (`<session>/subagents/agent-*.jsonl`) because they hit the API and burn
+the same quota. It reports totals (sessions, subagents, assistant turns, tool
+calls + errors, tokens, est. USD "subscription value" at pay-go rates), and
+breakdowns by model / project / day / hour-of-day (localized) / tool / top
+sessions, plus a **usage-limit banner timeline** (collapsed to distinct messages
+with a repeat count) that doubles as evidence for the reset window. `--json` for
+the full blob; `--html <file>` writes a **self-contained, theme-aware dashboard**
+(inline SVG charts, no external assets) you open locally. Cost model matches
+`token-sinks.mjs`. Claude only. Example:
+`node scripts/quota-report.mjs --profile andrena_team_5x_2 --html quota.html`.
+
+`quota-multi.mjs` is the **"complete picture"** companion to `quota-report.mjs`:
+one self-contained, switchable dashboard covering **every** `andrena_team_5x*`
+profile (or `--profiles a,b,…`), **every weekly reset window per profile**, plus
+a **Combined grand total** across all profiles. It parses each transcript ONCE
+(shared core in `lib/quota.mjs` — pricing, per-turn event parse, banner scan,
+`detectWeeklyReset`, `weeklyWindows`, `aggregate`) and slices each window in
+memory. Per profile it auto-detects the weekly anchor and generates weekly
+windows across that profile's data; profiles with **no weekly-limit banner yet**
+(only 5-hour session limits) are honestly flagged "anchor unknown" and shown as a
+single span. The **Combined** scope sums everything and breaks down **by profile**
+(windows are per-profile because each account resets on a different weekday, so
+Combined is a total, not a synchronized window). The HTML has a profile tab row
+(each with its total value) + per-profile window chips (`Profile total` + one per
+week); each view renders KPIs, token composition, value-by-day, hour-of-day, by
+model/project(/profile), tool table, top sessions, and a usage-limit timeline.
+`lib/quota.mjs` is the single source of truth for the accounting; reuse it for any
+new cross-profile quota view. Example:
+`node scripts/quota-multi.mjs --html quota-all.html`.
 
 `prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
 real human prompt into a length distribution, tone/format signals (lowercase
