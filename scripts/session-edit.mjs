@@ -15,7 +15,7 @@
  *   node scripts/session-edit.mjs extract --latest [-o edits.md]
  *   node scripts/session-edit.mjs extract <path.jsonl> [--include-thinking] [--include-tool-results]
  *   node scripts/session-edit.mjs extract --session 874e3950 --profile andrena_team_5x
- *   node scripts/session-edit.mjs apply edits.md [--dry-run] [--no-backup] [--force]
+ *   node scripts/session-edit.mjs apply edits.md [--dry-run] [--no-backup] [--force] [--quiet]
  *
  * Editable by default: human prompts (`user` string content) and assistant
  * `text` blocks. Thinking / tool_use / tool_result blocks are emitted as
@@ -286,12 +286,16 @@ function parseEditFile(path) {
 
 function cmdApply(argv) {
   const editPath = argv.slice(1).find((a) => !a.startsWith("--"));
-  if (!editPath) die("Usage: session-edit.mjs apply <edits.md> [--dry-run] [--no-backup] [--force]");
+  if (!editPath) die("Usage: session-edit.mjs apply <edits.md> [--dry-run] [--no-backup] [--force] [--quiet]");
   const p = resolve(editPath);
   if (!existsSync(p)) die("No such edit file: " + p);
 
   const dryRun = argv.includes("--dry-run");
   const force = argv.includes("--force");
+  // --quiet: never echo the edited TEXT (before/after) — print only counts and a
+  // confirmation. Used by the confidential `modify` workflow so redacted/secret
+  // content and rewritten prompts don't leak back into the calling agent's output.
+  const quiet = argv.includes("--quiet");
   const { meta, blocks } = parseEditFile(p);
 
   if (!SUPPORTED_VERSIONS.has(meta.version)) die(`Unsupported edit-file version ${meta.version ?? "?"} (supported: ${[...SUPPORTED_VERSIONS].join(", ")})`);
@@ -374,11 +378,19 @@ function cmdApply(argv) {
   console.log(`Changes:  ${changes.length}`);
   if (!changes.length) { console.log("\nNothing to apply."); return; }
 
-  for (const c of changes) {
-    const d = c.after.length - c.before.length;
-    console.log(`\n  #${c.seq} ${c.kind}  (${d >= 0 ? "+" : ""}${d} chars)`);
-    console.log(`    - ${firstLine(c.before)}`);
-    console.log(`    + ${firstLine(c.after)}`);
+  if (quiet) {
+    // Confidential path: show WHICH blocks change and by how much, never the text.
+    for (const c of changes) {
+      const d = c.after.length - c.before.length;
+      console.log(`  #${c.seq} ${c.kind}  (${d >= 0 ? "+" : ""}${d} chars) [text hidden]`);
+    }
+  } else {
+    for (const c of changes) {
+      const d = c.after.length - c.before.length;
+      console.log(`\n  #${c.seq} ${c.kind}  (${d >= 0 ? "+" : ""}${d} chars)`);
+      console.log(`    - ${firstLine(c.before)}`);
+      console.log(`    + ${firstLine(c.after)}`);
+    }
   }
 
   if (dryRun) { console.log("\n--dry-run: nothing written."); return; }
@@ -430,6 +442,6 @@ else {
   node scripts/session-edit.mjs extract --latest [-o edits.md]
   node scripts/session-edit.mjs extract <path.jsonl> [--include-thinking] [--include-tool-results]
   node scripts/session-edit.mjs extract --session <id-prefix> [--profile <name> | --config-dir <path>]
-  node scripts/session-edit.mjs apply <edits.md> [--dry-run] [--no-backup] [--force]`);
+  node scripts/session-edit.mjs apply <edits.md> [--dry-run] [--no-backup] [--force] [--quiet]`);
   process.exit(cmd ? 1 : 0);
 }
