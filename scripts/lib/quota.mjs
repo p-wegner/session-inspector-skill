@@ -10,6 +10,7 @@
 import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { classify } from "./prompts.mjs";
+import { toolDisplayName } from "./parse.mjs";
 
 // ── pricing ($/1M; cache-read 0.1x in, cache-write 1.25x in) ──────────────────
 export const PRICING = [
@@ -46,7 +47,7 @@ export function parseFileEvents(path) {
     const s = line.trim(); if (!s) continue;
     let o; try { o = JSON.parse(s); } catch { continue; }
     if (o.type === "assistant" && Array.isArray(o.message?.content))
-      for (const c of o.message.content) if (c.type === "tool_use") idToName.set(c.id, c.name);
+      for (const c of o.message.content) if (c.type === "tool_use") idToName.set(c.id, toolDisplayName(c.name, c.input));
   }
   const events = [];
   for (const line of lines) {
@@ -60,7 +61,7 @@ export function parseFileEvents(path) {
         i: u.input_tokens || 0, o: u.output_tokens || 0,
         cw: u.cache_creation_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } });
       if (Array.isArray(m.content)) for (const c of m.content)
-        if (c.type === "tool_use") events.push({ t: "tc", ms, name: c.name });
+        if (c.type === "tool_use") events.push({ t: "tc", ms, name: toolDisplayName(c.name, c.input) });
     }
     if (o.type === "user" && Array.isArray(o.message?.content))
       for (const c of o.message.content)

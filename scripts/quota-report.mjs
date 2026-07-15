@@ -29,6 +29,7 @@ import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "
 import { join } from "path";
 import { homedir } from "os";
 import { classify } from "./lib/prompts.mjs";
+import { toolDisplayName } from "./lib/parse.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -205,7 +206,7 @@ function parseFile(path, project, isSubagent) {
     const s = line.trim(); if (!s) continue;
     let o; try { o = JSON.parse(s); } catch { continue; }
     if (o.type === "assistant" && Array.isArray(o.message?.content)) {
-      for (const c of o.message.content) if (c.type === "tool_use") idToName.set(c.id, c.name);
+      for (const c of o.message.content) if (c.type === "tool_use") idToName.set(c.id, toolDisplayName(c.name, c.input));
     }
   }
   for (const line of lines) {
@@ -251,7 +252,8 @@ function parseFile(path, project, isSubagent) {
       if (Array.isArray(m.content)) {
         for (const c of m.content) if (c.type === "tool_use") {
           toolCalls++;
-          let tc = toolCounts.get(c.name); if (!tc) { tc = { calls: 0, errors: 0 }; toolCounts.set(c.name, tc); }
+          const tname = toolDisplayName(c.name, c.input);
+          let tc = toolCounts.get(tname); if (!tc) { tc = { calls: 0, errors: 0 }; toolCounts.set(tname, tc); }
           tc.calls++;
           const dg = byDay.get(day); if (dg) dg.toolCalls++;
         }
