@@ -261,7 +261,21 @@ node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-contex
 node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + per-session goals (--project, --days, --top, --json)
 node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile since its weekly reset → terminal / --json / --html dashboard (--profile <name>, --config-dir, --since <ISO>, --no-auto-reset, --tz N)
 node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINED total → one switchable --html dashboard (--profiles a,b, --tz N, --max-windows N, --json)
+node scripts/tool-friction.mjs    # TOOLING-IMPROVEMENT candidates — recurring cross-session command CHAINS to fuse/fix (--project, --grep, --n 2,3, --min-sessions, --json)
 ```
+
+`tool-friction.mjs` answers **"what should we change in the tools
+themselves, not in how we prompt?"** — it's the fleet tool for a use case
+beyond debugging one session or ranking pain: mining MANY sessions for
+recurring ordered chains of *different* commands (e.g. `grep → cd`,
+`git status → git add`, `grep → npm run coverage:check`), each a candidate
+for a combined verb, a changed default, a preflight guard, or a batch mode.
+This is distinct from `repeatedCommands`/`incidents.mjs`'s `reruns` (the same
+command re-run in one session — a failure/retry signal); a chain recurring
+across MANY sessions is a friction signal from the **tool's own shape**. Full
+strategy catalog (8 named patterns, worked examples, and a
+detect→validate→prototype→re-measure workflow) in
+`references/tooling-improvement.md`.
 
 `waste.mjs` answers **"what cost unnecessary tokens?"** — it attributes each
 session's content to buckets (tool_result by tool, Write/Edit args, user
