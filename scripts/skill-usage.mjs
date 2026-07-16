@@ -43,13 +43,30 @@
  *   node scripts/skill-usage.mjs --project-dir C:\repo  # add a repo's .claude/.codex skills
  *   node scripts/skill-usage.mjs --unused-only    # print only the never-triggered list
  *   node scripts/skill-usage.mjs --json
+ *
+ *   ── Repo-scoped audit (the "which of THIS repo's skills are dead weight?" case) ──
+ *   node scripts/skill-usage.mjs --project shift-app          # scope sessions AND the
+ *       project-skill universe to one repo (matches folder / cwd / git-remote;
+ *       `-`/`_`/separators are normalized, so `shift-app` == `shift_app`). "avail"
+ *       then means "project sessions since the skill existed".
+ *   node scripts/skill-usage.mjs --cwd                        # shorthand: --project <this cwd>
+ *   node scripts/skill-usage.mjs --project shift-app --repo-only   # report ONLY skills
+ *       DEFINED in the matched repo's .claude/.codex/skills (drop user-level globals) —
+ *       the exact "intersection of skills IN this repo × sessions IN this repo".
+ *   node scripts/skill-usage.mjs --project shift-app --repo-only --cost   # + TOKEN TAX:
+ *       measures each skill via the token-budget CLI (tokt.js skill --json) — Tier-0
+ *       alwaysOn (name+desc, paid every turn) and Tier-1 onInvoke (SKILL.md body). A
+ *       dead SMALL skill is cheap; a dead LARGE one is real waste, so the dead/loaded-only
+ *       buckets get ranked by tax (waste≈alwaysOn×avail). tokt.js is found via $TOKT_BIN,
+ *       the sibling token-budget skill, or the known repo/profile locations; absent → skip.
  */
 
 import { readFileSync, readdirSync, statSync, existsSync, realpathSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, basename } from "path";
 import { homedir } from "os";
+import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
-import { discover } from "./lib/sessions.mjs";
+import { discover, projectIdentity } from "./lib/sessions.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -60,13 +77,46 @@ const days = parseInt(val("--days", "0"), 10) || 0;   // 0 = all time
 const provider = val("--provider", "all");
 const includePlugins = has("--include-plugins");
 const unusedOnly = has("--unused-only");
+// --repo-only: report ONLY skills defined in a matched repo's .claude/.codex/skills
+// (source "project"), dropping user-level globals. Answers "skills IN this repo" as
+// opposed to "all skills available to this repo's sessions". Implies the repo scope.
+const repoOnly = has("--repo-only");
 const jsonOut = has("--json");
 const top = parseInt(val("--top", "0"), 10) || 0;
 const extraProjectDirs = vals("--project-dir");
 const noGit = has("--no-git");
+// --cost: measure each reported skill's TOKEN tax via the token-budget CLI
+// (tokt.js skill --json → Tier-0 alwaysOn = name+description paid every turn,
+// Tier-1 onInvoke = SKILL.md body paid when it fires). A dead SMALL skill is
+// cheap; a dead LARGE one is real waste — this ranks by that. Opt-in: one node
+// subprocess per reported skill.
+const withCost = has("--cost");
+// --project <substr>: scope BOTH the session set AND the project-skill universe to
+// one repo (matches folder name / cwd / git-remote, same as incidents.mjs).
+// --cwd: shorthand for --project <this-process's-cwd>, i.e. "skills of the repo I'm in".
+const projectQ = (has("--cwd") ? process.cwd() : val("--project", "")).toLowerCase();
 
 const HOME = homedir();
 const realOrSelf = (p) => { try { return realpathSync(p); } catch { return p; } };
+
+// Collapse `-`, `_`, whitespace and path separators to a single `-` so the
+// hyphenated Claude session folder (`C--projects-papershift-shift-app`) and the
+// underscored real repo path (`…\papershift\shift_app`) compare equal. Without
+// this, `--project shift-app` matches sessions but not the repo root, so
+// project-skill discovery silently finds nothing.
+const projNorm = (s) => (s || "").toLowerCase().replace(/[-_\s/\\]+/g, "-");
+const projectQN = projNorm(projectQ);
+
+// True when a working dir / repo root matches the --project substring. Matches the
+// same haystack incidents.mjs uses (dir basename, raw path, git-remote-derived
+// identity), but separator-normalized so `-`/`_` differences never split a match.
+function projectMatch(cwd, folder = "") {
+  if (!projectQ) return true;
+  if (!cwd && !folder) return false;
+  const id = cwd ? projectIdentity(cwd) : { project: "", projectKey: "" };
+  const hay = projNorm([folder, cwd, id.project, id.projectKey].join(" "));
+  return hay.includes(projectQN);
+}
 
 // ── skill discovery ───────────────────────────────────────────────────────────
 // Returns Map<name, { sources: Set<"user|project|plugin">, paths: Set<string> }>
@@ -156,6 +206,47 @@ function gitRoot(cwd) {
   } catch { return cwd; }
 }
 
+// ── token cost via the token-budget CLI (tokt.js) ─────────────────────────────
+// The same skill dir found under many worktrees has identical content, so pick one
+// stable path (prefer non-worktree, shortest) — matches skillCreatedAt's ordering.
+function primaryPath(paths) {
+  return [...paths].sort((a, b) => (/\bworktrees\b/i.test(a) - /\bworktrees\b/i.test(b)) || a.length - b.length)[0];
+}
+// Locate tokt.js: explicit $TOKT_BIN, then the token-budget skill junctioned as a
+// sibling of this skill, then the known repo / user-profile locations.
+let _toktBin;
+function toktBin() {
+  if (_toktBin !== undefined) return _toktBin;
+  const here = dirname(fileURLToPath(import.meta.url));           // .../session-inspector/scripts
+  const skillsDir = dirname(dirname(here));                       // .../skills
+  const cands = [
+    process.env.TOKT_BIN,
+    join(skillsDir, "token-budget", "bin", "tokt.js"),
+    join(HOME, ".claude", "skills", "token-budget", "bin", "tokt.js"),
+    "C:/projects/andrena/token-budget/bin/tokt.js",
+  ].filter(Boolean);
+  _toktBin = cands.find((p) => existsSync(p)) || null;
+  return _toktBin;
+}
+const costCache = new Map();   // skillDir -> { alwaysOn, onInvoke, fullyExpanded } | null
+function measureSkillCost(skillDir) {
+  if (!skillDir) return null;
+  if (costCache.has(skillDir)) return costCache.get(skillDir);
+  const bin = toktBin();
+  let out = null;
+  if (bin) {
+    try {
+      const raw = execFileSync("node", [bin, "skill", skillDir, "--json"], {
+        encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 20000, maxBuffer: 8 << 20,
+      });
+      const j = JSON.parse(raw);
+      out = { alwaysOn: j.tiers?.alwaysOn ?? 0, onInvoke: j.tiers?.onInvoke ?? 0, fullyExpanded: j.fullyExpanded ?? 0 };
+    } catch { out = null; }
+  }
+  costCache.set(skillDir, out);
+  return out;
+}
+
 function discoverSkills(sessionCwds) {
   const acc = new Map();
   // user-level
@@ -163,11 +254,14 @@ function discoverSkills(sessionCwds) {
   skillsUnder(join(HOME, ".codex", "skills"), "user", acc);
   skillsUnder(join(HOME, ".copilot", "skills"), "user", acc);
 
-  // project-level: cwd-of-this-process repo + every distinct session cwd + --project-dir
+  // project-level: cwd-of-this-process repo + every distinct session cwd + --project-dir.
+  // With --project, only repos matching the substring are added, so a repo-scoped audit
+  // never pulls in a sibling project's .claude/skills (e.g. agentic-kanban's).
   const roots = new Set();
-  roots.add(gitRoot(process.cwd()));
-  for (const p of extraProjectDirs) roots.add(p);
-  for (const c of sessionCwds) if (c && existsSync(c)) roots.add(realOrSelf(c));
+  const selfRoot = gitRoot(process.cwd());
+  if (projectMatch(selfRoot, basename(selfRoot))) roots.add(selfRoot);
+  for (const p of extraProjectDirs) roots.add(p);   // explicit --project-dir always honoured
+  for (const c of sessionCwds) if (c && existsSync(c) && projectMatch(c, basename(c))) roots.add(realOrSelf(c));
   const seenReal = new Set();
   for (const r of roots) {
     if (!r) continue;
@@ -217,14 +311,23 @@ const RE_CWD = /"cwd":"((?:[^"\\]|\\.)*)"/;   // first cwd occurrence (claude/co
 // usage[name] = { strongInv, weakRefs, sessions:Set, providers:Set, last:0, first:Inf }
 const usage = new Map();
 const cwds = new Set();
-let scanned = 0, bytes = 0;
+const matchedTimes = [];   // mtimes of sessions kept after --project filtering (avail denominator)
+let scanned = 0, matched = 0, skippedProject = 0, bytes = 0;
 const t0 = Date.now();
 for (const s of sessions) {
   let text;
   try { text = readFileSync(s.path, "utf-8"); } catch { continue; }
   scanned++; bytes += text.length;
   const cm = text.match(RE_CWD);
-  if (cm) { try { cwds.add(JSON.parse('"' + cm[1] + '"')); } catch { cwds.add(cm[1]); } }
+  let cwd = "";
+  if (cm) { try { cwd = JSON.parse('"' + cm[1] + '"'); } catch { cwd = cm[1]; } }
+  // --project: keep only sessions whose repo matches. Folder name (from the transcript's
+  // parent dir) is a fallback so path-encoded projects match even when no cwd line exists.
+  const folder = basename(dirname(s.path));
+  if (projectQ && !projectMatch(cwd, folder)) { skippedProject++; continue; }
+  matched++;
+  if (cwd) cwds.add(cwd);
+  matchedTimes.push(s.mtime.getTime());
   const { strong, weak } = scanSession(text, s.provider);
   const all = new Set([...strong.keys(), ...weak.keys()]);
   const t = s.mtime.getTime();
@@ -240,12 +343,16 @@ for (const s of sessions) {
   }
   if (!jsonOut && scanned % 200 === 0) process.stderr.write(`\r  scanned ${scanned}/${sessions.length} sessions…`);
 }
-if (!jsonOut) process.stderr.write(`\r  scanned ${scanned} sessions (${(bytes / 1e6).toFixed(0)}MB) in ${((Date.now() - t0) / 1000).toFixed(1)}s\n`);
+if (!jsonOut) process.stderr.write(`\r  scanned ${scanned} sessions (${(bytes / 1e6).toFixed(0)}MB) in ${((Date.now() - t0) / 1000).toFixed(1)}s${projectQ ? `  ·  ${matched} matched project "${projectQ}" (${skippedProject} skipped)` : ""}\n`);
 
-const skills = discoverSkills(cwds);
+const allSkills = discoverSkills(cwds);   // full universe — keep for orphan detection
+// --repo-only narrows the REPORTED universe to repo-defined skills, but a user-level
+// skill invoked in the logs must not then be mislabeled an on-disk orphan.
+const skills = repoOnly ? new Map([...allSkills].filter(([, d]) => d.sources.has("project"))) : allSkills;
 
-// scanned-session times sorted ascending → count sessions that ran AFTER a skill existed
-const sessTimes = sessions.map((s) => s.mtime.getTime()).sort((a, b) => a - b);
+// scanned-session times sorted ascending → count sessions that ran AFTER a skill existed.
+// With --project this is the MATCHED set, so "avail" means "project sessions since it existed".
+const sessTimes = matchedTimes.sort((a, b) => a - b);
 const lowerBound = (t) => { let lo = 0, hi = sessTimes.length; while (lo < hi) { const mid = (lo + hi) >> 1; if (sessTimes[mid] < t) lo = mid + 1; else hi = mid; } return lo; };
 const availableSessionsSince = (t) => (t == null ? sessTimes.length : sessTimes.length - lowerBound(t));
 
@@ -267,6 +374,7 @@ for (const [name, def] of skills) {
     last: u ? u.last : 0,
     first: u ? u.first : 0,
     triggered: !!u,
+    alwaysOn: null, onInvoke: null, fullyExpanded: null,   // filled by --cost
   };
   rows.push(row);
 }
@@ -279,8 +387,28 @@ function ensureAvail(r) {
   return r;
 }
 for (const r of rows) if (!r.triggered || r.strongInv === 0) ensureAvail(r);
+
+// --cost: measure each reported skill's token tax (one tokt.js subprocess per skill).
+let costUnavailable = false;
+if (withCost) {
+  if (!toktBin()) {
+    costUnavailable = true;
+    if (!jsonOut) process.stderr.write("  --cost: token-budget CLI (tokt.js) not found — set $TOKT_BIN or junction the token-budget skill.\n");
+  } else {
+    let done = 0;
+    for (const r of rows) {
+      const c = measureSkillCost(primaryPath(r.paths));
+      if (c) { r.alwaysOn = c.alwaysOn; r.onInvoke = c.onInvoke; r.fullyExpanded = c.fullyExpanded; }
+      // wasted = the always-on description tax paid across sessions where it was available
+      // but never fired (a per-session lower bound — it's actually paid every TURN).
+      if (c && r.availableSessions != null && r.strongInv === 0) r.wastedTax = c.alwaysOn * r.availableSessions;
+      if (!jsonOut && ++done % 10 === 0) process.stderr.write(`\r  measuring token cost ${done}/${rows.length}…`);
+    }
+    if (!jsonOut) process.stderr.write(`\r  measured token cost of ${rows.length} skills via ${basename(dirname(dirname(toktBin())))}          \n`);
+  }
+}
 // triggered names observed in logs but NOT found in any discovered root (orphans)
-const orphans = [...usage.keys()].filter((n) => !skills.has(n)).map((n) => {
+const orphans = [...usage.keys()].filter((n) => !allSkills.has(n)).map((n) => {
   const u = usage.get(n);
   return { name: n, strongInv: u.strongInv, weakRefs: u.weakRefs, sessions: u.sessions.size, providers: [...u.providers].sort(), last: u.last };
 }).filter((o) => o.strongInv > 0)   // ignore pure path-token noise for orphans
@@ -297,7 +425,7 @@ const live = rows.filter((r) => r.triggered).sort((a, b) => (b.strongInv + b.wea
 if (jsonOut) {
   console.log(JSON.stringify({
     window: days ? `${days}d` : "all-time",
-    provider, scannedSessions: scanned,
+    provider, project: projectQ || null, scannedSessions: scanned, matchedSessions: projectQ ? matched : scanned,
     discoveredSkills: skills.size, triggered: live.length, neverTriggeredButAvailable: dead.length, tooNew: tooNew.length,
     dead, tooNew, live: top ? live.slice(0, top) : live, orphans,
   }, null, 2));
@@ -308,16 +436,31 @@ if (jsonOut) {
 const bar = "─".repeat(64);
 const strongLive = live.filter((r) => r.strongInv > 0);
 const repoOf = (r) => { const p = r.paths.find((x) => /[/\\]\.(claude|codex)[/\\]skills[/\\]/.test(x)) || r.paths[0] || ""; return (p.replace(/[/\\]\.(claude|codex)[/\\]skills[/\\].*$/, "").split(/[/\\]/).pop()) || ""; };
+const ktok = (n) => (n == null ? "" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n));
+// per-turn always-on tax + on-invoke body, e.g. " t0=230 inv=7.6k"
+const costCol = (r) => (withCost && !costUnavailable && r.alwaysOn != null ? `  t0=${String(r.alwaysOn).padStart(4)} inv=${ktok(r.onInvoke).padStart(5)}` : "");
+// with --cost, rank the waste buckets by tax (big dead skills first), not by avail
+if (withCost && !costUnavailable) {
+  const byTax = (a, b) => (b.wastedTax || 0) - (a.wastedTax || 0) || (b.alwaysOn || 0) - (a.alwaysOn || 0);
+  dead.sort(byTax);
+}
 console.log(bar);
-console.log(`SKILL USAGE AUDIT   window=${days ? days + "d" : "all-time"}  provider=${provider}  sessions=${scanned}`);
+console.log(`SKILL USAGE AUDIT   window=${days ? days + "d" : "all-time"}  provider=${provider}  sessions=${projectQ ? `${matched} (of ${scanned}) matching project "${projectQ}"` : scanned}`);
 console.log(`discovered ${skills.size} skills · ${strongLive.length} agent-invoked · ${live.length - strongLive.length} loaded-only · ${dead.length} DEAD · ${tooNew.length} too-new${includePlugins ? "" : "   (plugins excluded; --include-plugins to add)"}`);
 console.log(`NEVER AGENT-INVOKED (no Skill-tool/slash/copilot call): ${dead.length + (live.length - strongLive.length)} of ${skills.size}`);
+if (withCost && !costUnavailable) {
+  const neverInvoked = [...dead, ...live.filter((r) => r.strongInv === 0)];
+  const tax = neverInvoked.reduce((s, r) => s + (r.alwaysOn || 0), 0);
+  const wasted = neverInvoked.reduce((s, r) => s + (r.wastedTax || 0), 0);
+  console.log(`TOKEN TAX of never-invoked skills: ${ktok(tax)} tok/turn always-on  ·  ≈${ktok(wasted)} tok paid across their available sessions (never fired)`);
+}
 console.log(bar);
 console.log(`\nNote: "weak"/loaded counts are inflated by worktree skill MATERIALIZATION (kanban copies its built-in\nskills into every worktree's .claude/skills, so their SKILL.md path appears even when no agent invokes them).\n"strong" = an agent actually fired the skill. "avail" = sessions that ran AFTER the skill existed (git\nfirst-add) — the FAIR denominator; a skill is only DEAD if it had the chance to fire (avail≥${NEW_THRESHOLD}). Codex emits no strong signal.`);
 
 console.log(`\n● NEVER TRIGGERED but WAS AVAILABLE (${dead.length}) — zero trace despite ≥${NEW_THRESHOLD} sessions after it existed`);
 if (!dead.length) console.log("  (none — every available skill left some trace)");
-for (const r of dead) console.log(`  ✗ ${r.name.padEnd(28)} avail=${String(r.availableSessions).padStart(4)}  since ${fmtDate(r.createdAt)}  [${r.sources.join(",")}] repo:${repoOf(r) || "?"}`);
+if (withCost && !costUnavailable && dead.length) console.log(`  (sorted by token tax; t0=always-on tok/turn, inv=SKILL.md body, waste≈t0×avail)`);
+for (const r of dead) console.log(`  ✗ ${r.name.padEnd(28)} avail=${String(r.availableSessions).padStart(4)}  since ${fmtDate(r.createdAt)}${costCol(r)}${withCost && !costUnavailable && r.wastedTax != null ? ` waste≈${ktok(r.wastedTax)}` : ""}  [${r.sources.join(",")}] repo:${repoOf(r) || "?"}`);
 
 if (tooNew.length) {
   console.log(`\n● TOO NEW / never available (${tooNew.length}) — created after (almost) all scanned sessions; no fair chance to fire`);
@@ -326,16 +469,17 @@ if (tooNew.length) {
 
 if (!unusedOnly) {
   console.log(`\n● TRIGGERED (${live.length})   strong=Skill-tool/slash/copilot-field · weak=SKILL.md loaded/read`);
-  console.log(`  ${"skill".padEnd(28)} ${"strong".padStart(7)} ${"weak".padStart(6)} ${"sess".padStart(5)}  last        providers`);
+  console.log(`  ${"skill".padEnd(28)} ${"strong".padStart(7)} ${"weak".padStart(6)} ${"sess".padStart(5)}${withCost && !costUnavailable ? `  ${"t0".padStart(4)} ${"inv".padStart(5)}` : ""}  last        providers`);
   for (const r of (top ? live.slice(0, top) : live)) {
-    console.log(`  ${r.name.padEnd(28)} ${String(r.strongInv).padStart(7)} ${String(r.weakRefs).padStart(6)} ${String(r.sessions).padStart(5)}  ${fmtDate(r.last)}  ${r.providers.join(",")}`);
+    console.log(`  ${r.name.padEnd(28)} ${String(r.strongInv).padStart(7)} ${String(r.weakRefs).padStart(6)} ${String(r.sessions).padStart(5)}${withCost && !costUnavailable ? `  ${String(r.alwaysOn ?? "").padStart(4)} ${ktok(r.onInvoke).padStart(5)}` : ""}  ${fmtDate(r.last)}  ${r.providers.join(",")}`);
   }
   // skills only ever read, never explicitly invoked — candidates that "fire" only via auto-injection
   const weakOnly = live.filter((r) => r.strongInv === 0);
   if (weakOnly.length) {
     console.log(`\n● REFERENCED BUT NEVER EXPLICITLY INVOKED (${weakOnly.length}) — only seen as a loaded/read SKILL.md, no Skill-tool/slash call`);
     console.log(`  (expected for Codex skills — Codex has no Skill tool; suspicious for Claude-only skills)`);
-    for (const r of weakOnly) console.log(`  ~ ${r.name.padEnd(28)} weak=${String(r.weakRefs).padStart(4)} avail=${String(r.availableSessions).padStart(4)} [${r.providers.join(",")}]`);
+      if (withCost && !costUnavailable) weakOnly.sort((a, b) => (b.wastedTax || 0) - (a.wastedTax || 0) || (b.alwaysOn || 0) - (a.alwaysOn || 0));
+    for (const r of weakOnly) console.log(`  ~ ${r.name.padEnd(28)} weak=${String(r.weakRefs).padStart(4)} avail=${String(r.availableSessions).padStart(4)}${costCol(r)}${withCost && !costUnavailable && r.wastedTax != null ? ` waste≈${ktok(r.wastedTax)}` : ""} [${r.providers.join(",")}]`);
   }
   if (orphans.length) {
     console.log(`\n● INVOKED BUT NOT FOUND ON DISK (${orphans.length}) — triggered in logs, no SKILL.md in scanned roots (uninstalled/renamed/removed)`);

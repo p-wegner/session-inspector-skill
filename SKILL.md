@@ -256,7 +256,7 @@ node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provid
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
 node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd (--project, --cwd, --days, --latest, --resume, --interrupted, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
-node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--days N, --provider, --include-plugins, --unused-only, --json)
+node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--project <substr>|--cwd, --repo-only, --cost, --days N, --provider, --include-plugins, --unused-only, --json)
 node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
 node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + per-session goals (--project, --days, --top, --json)
 node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile since its weekly reset → terminal / --json / --html dashboard (--profile <name>, --config-dir, --since <ISO>, --no-auto-reset, --tz N)
@@ -333,6 +333,35 @@ session's time gives `avail` = sessions that ran *after* it existed, so a skill
 written last week isn't wrongly called dead. Board-independent (no DB). The
 git-history pass only runs for never-strong-invoked skills; narrow with `--days`
 for a fast windowed audit (`--no-git` skips creation-time entirely).
+**Repo-scoped audit** — to answer "which of **this** repo's skills are dead weight
+/ badly described?" rather than the fleet-wide question, add `--project <substr>`
+(or `--cwd` for the current repo). It scopes **both** the session set **and** the
+project-skill universe to that one repo — so a Rails app's audit no longer drags
+in a sibling project's `.claude/skills`, and `avail` becomes "*this repo's*
+sessions since the skill existed". Matching is separator-normalized, so
+`--project shift-app` hits both the hyphenated Claude session folder
+(`C--…-shift-app`) and the underscored repo path (`…\shift_app`) — a mismatch that
+otherwise silently discovers zero project skills. Add `--repo-only` to report just
+the skills **defined in** the matched repo (dropping user-level globals) — the
+exact *skills-in-repo × sessions-in-repo* intersection. The most actionable signal
+this surfaces is **loaded-only** skills (weak>0, strong=0 over hundreds of matched
+sessions): present and paying context tax, but no agent ever fired them — a sign
+the skill is redundant *here* or its description doesn't match how work is framed
+(e.g. shift_app's generic `playwright-test-{planner,generator,healer}` never fire
+because the repo's e2e flow goes through `e2e-coverage-lean`/`e2e-test-author`).
+**Token tax** — add `--cost` to weight each dead/loaded-only skill by what it
+actually costs, because a dead *small* skill is cheap and a dead *large* one is
+real waste. It shells out to the `token-budget` skill's `tokt.js skill --json`
+(one subprocess per reported skill; opt-in) and reports the progressive-disclosure
+tiers the way an agent pays for them: **t0 = alwaysOn** (name+description, in the
+system prompt *every turn of every session* whether or not the skill fires) and
+**inv = onInvoke** (the SKILL.md body, loaded only when it triggers). The dead and
+loaded-only buckets are then ranked by tax (`waste ≈ t0 × avail` — a per-session
+lower bound on the always-on tokens paid while it never earned an invocation), and
+a headline sums the always-on tax of all never-invoked skills. `tokt.js` is located
+via `$TOKT_BIN`, the sibling `token-budget` skill (junctioned next to this one), or
+the known repo/profile paths; if none exist, `--cost` degrades to a one-line notice
+and the rest of the audit runs unchanged.
 
 `quota-report.mjs` answers **"what did my subscription do this billing week?"** —
 it scopes to ONE profile (`--profile <name>` ⇒ `~/.claude-<name>`, or
