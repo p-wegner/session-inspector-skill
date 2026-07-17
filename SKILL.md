@@ -73,9 +73,30 @@ node scripts/analyze-claude-session.mjs --latest --events --type err --json    #
 ```
 
 Flags: `--type a,b` (aliases: `err`/`call`/`asst`/`user`/`think`), `--grep <substr>`,
-`--limit N` (last N), `--verbose`/`-v` (full multi-line text), `--json`. Same flags work
-on the Codex and Copilot analyzers. In the **web UI** (session-sync), the detail pane has a
-**timeline** button with clickable per-type filter chips + a text filter over the same stream.
+`--limit N` (last N), `--around <seq> [--context N]` (only events within N seqs of a
+moment — the drill-down companion to `--friction` below), `--verbose`/`-v` (full
+multi-line text), `--json`. Same flags work on the Codex and Copilot analyzers. In the
+**web UI** (session-sync), the detail pane has a **timeline** button with clickable
+per-type filter chips + a text filter over the same stream.
+
+### Rank the friction moments in ONE session (`--friction`)
+
+"What was the most frictionful interaction in this session?" is one command — don't
+hand-compose error/repeat/user timeline queries. `--friction` (all three analyzers)
+ranks the session's concrete friction MOMENTS, most painful first: **interrupts**
+(user hit Esc mid-turn), **corrections** (human prompts matching the incidents.mjs
+defect lexicon), **error-clusters** (tool errors grouped by proximity, enriched with
+the CAUSING call before and the RECOVERY call after — flagging whether the agent
+retried the identical call or recovered with a corrected one), and **churn** (the same
+non-file tool call issued ≥3×). Each moment prints a ready `--events --around <seq>`
+drill-down. This is the per-session counterpart to `incidents.mjs` (which ranks MANY
+sessions); use incidents to find the session, `--friction` to find the moment in it.
+
+```powershell
+node scripts/analyze-claude-session.mjs <path|sessionId> --friction            # ranked moments
+node scripts/analyze-claude-session.mjs --latest --friction --top 5 --json     # machine-readable
+node scripts/analyze-claude-session.mjs <path> --events --around 21 --context 6 -v  # zoom into moment @#21
+```
 
 When the analyzer isn't enough and you need custom parsing, load the matching **manual recipe file** (PowerShell snippets, loaded on demand):
 - `references/claude-recipes.md` — find a session by issue #, quick overview, parse tail, detect "started but never responded", read last message / sent prompt, find by `stop_reason`.

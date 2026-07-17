@@ -478,9 +478,10 @@ export function resolveTypes(list) {
   return set;
 }
 
-/** Filter an event timeline by type set, substring, and tail limit. Keeps original seq. */
-export function filterEvents(events, { types, grep, limit } = {}) {
+/** Filter an event timeline by type set, substring, seq neighborhood, and tail limit. Keeps original seq. */
+export function filterEvents(events, { types, grep, limit, around, context = 5 } = {}) {
   let out = events;
+  if (around && around > 0) out = out.filter((e) => Math.abs(e.seq - around) <= context);
   if (types && types.size) out = out.filter((e) => types.has(e.type));
   if (grep) { const g = grep.toLowerCase(); out = out.filter((e) => `${e.tool} ${e.text}`.toLowerCase().includes(g)); }
   if (limit && limit > 0 && out.length > limit) out = out.slice(-limit);
@@ -520,6 +521,8 @@ export function eventTypeCounts(events) {
  *   --type a,b   include only these types (aliases ok: err, call, asst, …)
  *   --grep <s>   substring filter on tool + text
  *   --limit N    keep only the last N matching events
+ *   --around N   keep only events within --context of seq N (drill into a moment)
+ *   --context N  neighborhood radius for --around (default 5)
  *   --verbose    full multi-line text instead of one truncated line
  *   --json       emit the filtered event array as JSON
  * Returns the text to print.
@@ -531,12 +534,132 @@ export function runEventsMode(provider, content, argv) {
     types: resolveTypes(flagVal("--type") ? [flagVal("--type")] : []),
     grep: flagVal("--grep"),
     limit: Number(flagVal("--limit") || 0),
+    around: Number(flagVal("--around") || 0),
+    context: Number(flagVal("--context") || 5),
   });
   if (argv.includes("--json")) return JSON.stringify(filtered, null, 2);
   const counts = eventTypeCounts(all);
   const summary = EVENT_TYPES.filter((t) => counts[t]).map((t) => `${t} ${counts[t]}`).join("  ·  ");
   const header = `TIMELINE  ${filtered.length}/${all.length} events${summary ? `   (${summary})` : ""}`;
   return `${header}\n${"─".repeat(Math.min(header.length, 60))}\n${renderTimeline(filtered, { verbose: argv.includes("--verbose") || argv.includes("-v") })}`;
+}
+
+// ── Friction moments (single-session "where did it hurt" ranking) ────────────
+//
+// The per-session counterpart to incidents.mjs (which ranks MANY sessions):
+// given ONE session's normalized event stream, find and rank the concrete
+// MOMENTS of friction so "what was the most frictionful interaction here?" is
+// one command instead of hand-composed timeline queries. Moment kinds:
+//   interrupt      the human hit Esc mid-turn (strongest rework signal)
+//   correction     a human prompt matching the defect lexicon ("wrong", "still broken", …)
+//   error-cluster  one or more tool_error events close together, enriched with the
+//                  CAUSING call before the first error and the RECOVERY call after
+//                  the last (flagging a near-identical retry = wasted turn)
+//   churn          the same tool_call (tool + arg prefix) issued ≥3× (re-run struggle;
+//                  threshold 3 so legit before/after measurement pairs don't flag)
+// Same defect lexicon family as incidents.mjs so a "correction" means the same
+// thing fleet-wide and in-session.
+
+const CORRECTION_RE = /\b(still|again|nope|wrong|broken|doesn'?t|does not|isn'?t|not working|revert|undo|fix|missing|redo|regenerate|stuck|fails?|failing|error|crash|hang|why (isn'?t|does|won'?t)|that'?s not|not what)\b/i;
+const INTERRUPT_RE = /\[Request interrupted by user/;
+
+const norm = (s, n = 100) => String(s || "").replace(/\s+/g, " ").trim().slice(0, n);
+
+export function frictionMoments(events, { top = 10, clusterGap = 8 } = {}) {
+  const moments = [];
+
+  // interrupts + corrections (only real human prompts — classify() drops skill
+  // preambles and slash-UI noise that would otherwise trip the lexicon)
+  for (const e of events) {
+    if (e.type !== "user") continue;
+    if (INTERRUPT_RE.test(e.text)) {
+      moments.push({ kind: "interrupt", score: 8, seq: e.seq, seqEnd: e.seq, ts: e.ts, headline: "user interrupted the agent mid-turn", snippet: norm(e.text, 140) });
+      continue;
+    }
+    const c = classify(e.text);
+    if (c && c.kind === "human" && CORRECTION_RE.test(c.text)) {
+      moments.push({ kind: "correction", score: 6, seq: e.seq, seqEnd: e.seq, ts: e.ts, headline: "human course-correction", snippet: norm(c.text, 140) });
+    }
+  }
+
+  // error clusters: group tool_errors whose seqs are within clusterGap, then
+  // enrich each cluster with cause (last call before) and recovery (first call after)
+  const errors = events.filter((e) => e.type === "tool_error");
+  let i = 0;
+  while (i < errors.length) {
+    let j = i;
+    while (j + 1 < errors.length && errors[j + 1].seq - errors[j].seq <= clusterGap) j++;
+    const cluster = errors.slice(i, j + 1);
+    const first = cluster[0], last = cluster[cluster.length - 1];
+    const cause = [...events].reverse().find((e) => e.type === "tool_call" && e.seq < first.seq);
+    const recovery = events.find((e) => e.type === "tool_call" && e.seq > last.seq);
+    const retried = cause && recovery && cause.tool === recovery.tool && norm(cause.text, 4000) === norm(recovery.text, 4000);
+    const nearIdentical = !retried && cause && recovery && cause.tool === recovery.tool && norm(cause.text, 40) === norm(recovery.text, 40);
+    const tools = [...new Set(cluster.map((e) => e.tool).filter(Boolean))];
+    moments.push({
+      kind: "error-cluster",
+      score: 3 + 2 * (cluster.length - 1) + (retried ? 2 : 0),
+      seq: first.seq, seqEnd: last.seq, ts: first.ts,
+      headline: `${cluster.length} tool error${cluster.length > 1 ? "s" : ""}${tools.length ? ` (${tools.join(", ")})` : ""}${retried ? " — retried the identical call" : nearIdentical ? " — recovered with a corrected retry" : ""}`,
+      snippet: norm(first.text, 160),
+      cause: cause ? { seq: cause.seq, tool: cause.tool, text: norm(cause.text, 120) } : null,
+      recovery: recovery ? { seq: recovery.seq, tool: recovery.tool, text: norm(recovery.text, 120) } : null,
+    });
+    i = j + 1;
+  }
+
+  // churn: identical (tool + arg prefix) call issued ≥3 times. File tools are
+  // excluded — their arg summary is just the path, so repeated edits/reads of
+  // one file share a key without being the same action (normal iteration).
+  const CHURN_EXEMPT = new Set(["Read", "Edit", "MultiEdit", "Write", "NotebookRead", "NotebookEdit", "TodoWrite"]);
+  const byKey = new Map();
+  for (const e of events) {
+    if (e.type !== "tool_call" || CHURN_EXEMPT.has(e.tool)) continue;
+    const key = `${e.tool} ${norm(e.text)}`;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(e);
+  }
+  for (const occ of byKey.values()) {
+    if (occ.length < 3) continue;
+    moments.push({
+      kind: "churn",
+      score: 1 + 1.5 * (occ.length - 2),
+      seq: occ[0].seq, seqEnd: occ[occ.length - 1].seq, ts: occ[occ.length - 1].ts,
+      headline: `${occ.length}× same ${occ[0].tool} call (seqs ${occ.map((e) => e.seq).join(", ")})`,
+      snippet: norm(occ[0].text, 140),
+    });
+  }
+
+  moments.sort((a, b) => b.score - a.score || a.seq - b.seq);
+  return moments.slice(0, top).map((m, idx) => ({ rank: idx + 1, ...m }));
+}
+
+/**
+ * Shared `--friction` CLI mode for all three analyzers: rank this session's
+ * friction moments. Flags: --top N (default 10), --json. Returns text to print.
+ */
+export function runFrictionMode(provider, content, argv) {
+  const flagVal = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+  const events = extractEvents(provider, content.split("\n"));
+  const moments = frictionMoments(events, { top: Number(flagVal("--top") || 10) });
+  if (argv.includes("--json")) return JSON.stringify(moments, null, 2);
+  if (!moments.length) return "FRICTION  none detected — no tool errors, interrupts, corrections, or call churn in this session.";
+  const counts = {};
+  for (const m of moments) counts[m.kind] = (counts[m.kind] || 0) + 1;
+  const lines = [
+    `FRICTION  ${moments.length} moment(s), most frictionful first   (${Object.entries(counts).map(([k, v]) => `${k} ${v}`).join(" · ")})`,
+    "─".repeat(60),
+  ];
+  for (const m of moments) {
+    const at = m.seq === m.seqEnd ? `#${m.seq}` : `#${m.seq}–#${m.seqEnd}`;
+    lines.push(`${m.rank}. [${m.score.toFixed(1)}] ${m.kind}  @${at} ${(m.ts || "").slice(11, 19)}  ${m.headline}`);
+    if (m.snippet) lines.push(`     ${m.snippet}`);
+    if (m.cause) lines.push(`     cause    #${m.cause.seq} ${m.cause.tool}: ${m.cause.text}`);
+    if (m.recovery) lines.push(`     recovery #${m.recovery.seq} ${m.recovery.tool}: ${m.recovery.text}`);
+    lines.push(`     drill: --events --around ${m.seq} --context 6 -v`);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
 // ── Normalized cross-provider summary (for server / UI) ──────────────────────
