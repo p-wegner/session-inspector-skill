@@ -133,7 +133,7 @@ function listSessions(onlyWorktrees) {
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes("--json");
-const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--config-dir", "--profile"]);
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--config-dir", "--profile", "--session"]);
 const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
 if (args.includes("--list")) {
@@ -145,16 +145,71 @@ if (args.includes("--list")) {
   process.exit(0);
 }
 
+// Resolve a session locator that is NOT a filesystem path: a bare session-id (or
+// id-prefix), or a "<projectDir>/<sessionId>" locator (the form the statusline and
+// skill docs emit), with or without a trailing .jsonl. Scans every profile home via
+// listSessions(); honors --profile/--config-dir by restricting to that home.
+function findSessionByLocator(locator, argv = process.argv) {
+  const clean = String(locator).replace(/\.jsonl$/i, "");
+  const segs = clean.split(/[\\/]/).filter(Boolean);
+  const idPart = segs[segs.length - 1];
+  const dirPart = segs.length > 1 ? segs[segs.length - 2] : null;
+
+  let sessions = listSessions(false);
+
+  // Restrict to a single profile home when the caller named one.
+  if (argv.includes("--profile") || argv.includes("--config-dir")) {
+    const home = resolveConfigDir(argv);
+    const homeLeaf = basename(home).toLowerCase();
+    sessions = sessions.filter((s) => s.path.toLowerCase().includes(homeLeaf));
+  }
+
+  const exact = [];
+  const prefix = [];
+  for (const s of sessions) {
+    const id = s.name.replace(/\.jsonl$/i, "");
+    if (dirPart) {
+      const dirLeaf = s.dir.split(/[\\/]/).pop();
+      if (dirLeaf !== dirPart && !s.dir.includes(dirPart)) continue;
+    }
+    if (id === idPart) exact.push(s);
+    else if (id.startsWith(idPart)) prefix.push(s);
+  }
+  // Prefer an exact id match; fall back to prefix matches (both newest-first).
+  return exact.length ? exact : prefix;
+}
+
 let targetPath;
 if (args.includes("--latest")) {
   const sessions = listSessions(false);
   if (!sessions.length) { console.error("No sessions found."); process.exit(1); }
   targetPath = sessions[0].path;
-} else if (arg) {
-  targetPath = resolve(arg);
 } else {
-  console.log("Usage: node analyze-claude-session.mjs <path.jsonl> | --list [--worktrees] | --latest [--json]");
-  process.exit(1);
+  // A positional arg that names a real file wins; otherwise treat the positional
+  // OR --session <id> as a session locator and resolve it across profile homes.
+  const sessionFlagIdx = args.indexOf("--session");
+  const sessionArg = sessionFlagIdx >= 0 ? args[sessionFlagIdx + 1] : null;
+  if (arg && existsSync(resolve(arg)) && statSync(resolve(arg)).isFile()) {
+    targetPath = resolve(arg);
+  } else {
+    const locator = sessionArg || arg;
+    if (!locator) {
+      console.log("Usage: node analyze-claude-session.mjs <path.jsonl | sessionId | projectDir/sessionId> | --session <id> | --list [--worktrees] | --latest [--json]");
+      process.exit(1);
+    }
+    const matches = findSessionByLocator(locator, args);
+    if (!matches.length) {
+      console.error(`No session found matching "${locator}" (searched all profile homes). Try --list to browse.`);
+      process.exit(1);
+    }
+    if (matches.length > 1) {
+      console.error(`⚠ "${locator}" matched ${matches.length} sessions; using the most recent. Candidates:`);
+      for (const m of matches.slice(0, 5)) {
+        console.error(`    ${m.modified.toISOString().slice(0, 16)}  ${m.dir.slice(0, 48)}/${m.name.slice(0, 12)}`);
+      }
+    }
+    targetPath = matches[0].path;
+  }
 }
 
 const content = readFileSync(targetPath, "utf-8");
