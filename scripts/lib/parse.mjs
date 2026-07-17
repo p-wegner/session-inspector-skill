@@ -569,9 +569,12 @@ export function frictionMoments(events, { top = 10, clusterGap = 8 } = {}) {
   const moments = [];
 
   // interrupts + corrections (only real human prompts — classify() drops skill
-  // preambles and slash-UI noise that would otherwise trip the lexicon)
+  // preambles and slash-UI noise that would otherwise trip the lexicon). A
+  // correction only makes sense AFTER the agent has done something — the initial
+  // ask often contains lexicon words ("fix the failing build") without being rework.
+  const firstAgentSeq = events.find((e) => e.type !== "user")?.seq ?? Infinity;
   for (const e of events) {
-    if (e.type !== "user") continue;
+    if (e.type !== "user" || e.seq <= firstAgentSeq) continue;
     if (INTERRUPT_RE.test(e.text)) {
       moments.push({ kind: "interrupt", score: 8, seq: e.seq, seqEnd: e.seq, ts: e.ts, headline: "user interrupted the agent mid-turn", snippet: norm(e.text, 140) });
       continue;
