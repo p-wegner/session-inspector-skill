@@ -11,13 +11,14 @@
  *   node scripts/analyze-claude-session.mjs --list [--worktrees]
  *   node scripts/analyze-claude-session.mjs --latest
  *   node scripts/analyze-claude-session.mjs --json <path>   # machine-readable
- *   node scripts/analyze-claude-session.mjs --events <path> [--type tool_error] [--grep git] [--limit 50] [--verbose] [--json]
+ *   node scripts/analyze-claude-session.mjs --events <path> [--type tool_error] [--grep git] [--limit 50] [--around 21 --context 5] [--verbose] [--json]
+ *   node scripts/analyze-claude-session.mjs --friction <path> [--top 10] [--json]   # ranked in-session friction moments
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, resolve, basename, dirname } from "path";
 import { homedir } from "os";
-import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode } from "./lib/parse.mjs";
+import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
 import { claudeProjectDirs } from "./lib/config.mjs";
 
 /** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
@@ -133,7 +134,7 @@ function listSessions(onlyWorktrees) {
 
 const args = process.argv.slice(2);
 const jsonOut = args.includes("--json");
-const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--config-dir", "--profile", "--session"]);
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--config-dir", "--profile", "--session", "--around", "--context", "--top"]);
 const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
 if (args.includes("--list")) {
@@ -213,7 +214,9 @@ if (args.includes("--latest")) {
 }
 
 const content = readFileSync(targetPath, "utf-8");
-if (args.includes("--events")) {
+if (args.includes("--friction")) {
+  console.log(runFrictionMode("claude", content, args));
+} else if (args.includes("--events")) {
   console.log(runEventsMode("claude", content, args));
 } else if (jsonOut) {
   console.log(JSON.stringify(parseClaudeSession(content.split("\n")), null, 2));

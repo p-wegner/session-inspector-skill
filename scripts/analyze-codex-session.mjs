@@ -12,7 +12,7 @@
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join, resolve } from "path";
 import { homedir } from "os";
-import { parseCodex as parseCodexSession, fmtDuration as formatDuration, fmtTokens as formatTokens, runEventsMode } from "./lib/parse.mjs";
+import { parseCodex as parseCodexSession, fmtDuration as formatDuration, fmtTokens as formatTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
 
 function printSummary({ stats }) {
   console.log("═".repeat(60));
@@ -130,7 +130,7 @@ function listSessions(sessionsDir) {
 
 const args = process.argv.slice(2);
 const sessionsDir = findCodexSessionsDir();
-const VALUE_FLAGS = new Set(["--type", "--grep", "--limit"]);
+const VALUE_FLAGS = new Set(["--type", "--grep", "--limit", "--around", "--context", "--top"]);
 const eventsMode = args.includes("--events");
 const arg = args.find((a, i) => !a.startsWith("--") && !VALUE_FLAGS.has(args[i - 1]));
 
@@ -170,7 +170,9 @@ if (args.includes("--latest")) {
 }
 
 const content = readFileSync(targetPath, "utf-8");
-if (eventsMode) {
+if (args.includes("--friction")) {
+  console.log(runFrictionMode("codex", content, args));
+} else if (eventsMode) {
   console.log(runEventsMode("codex", content, args));
 } else {
   printSummary(parseCodexSession(content.split("\n")));
