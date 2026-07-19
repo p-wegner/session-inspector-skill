@@ -267,9 +267,14 @@ the machine-readable plan.
 
 ## Per-session vs fleet (aggregate across MANY sessions)
 
-This skill debugs **one** session. For **aggregate, time-scoped questions across MANY sessions** — "which tools fail most in the last 48h", "what's burning tokens", "what did I ask yesterday" — do **not** loop the per-session recipes. Use the bundled standalone fan-out scripts (they stat-filter by mtime FIRST, then parse only in-window files):
+This skill debugs **one** session. For **aggregate, time-scoped questions across MANY sessions** — "which tools fail most in the last 48h", "what's burning tokens", "what did I ask yesterday", "how did this batch of build-out sessions behave and which stack was cleaner" — do **not** loop the per-session recipes. Use the bundled standalone fan-out scripts (they stat-filter by mtime FIRST, then parse only in-window files).
+
+> **Fleet inspection is a first-class use case.** When the question is about a *batch* of sessions — a build-out, a sprint of tickets, a parallel fleet of builders — start with `fleet-stats.mjs` (distributions + outliers + `--by` comparison) and follow the ordered workflow, metric guide, and **predefined suggestion-category taxonomy** in **`references/fleet-inspection.md`**. That reference is the playbook for turning a fleet scan into ranked, correctly-filed improvement suggestions (generic → per-stack → compounding board features).
+>
+> **Do not headline cache-read as the cost.** In a multi-turn agentic workflow the raw token volume is cache-read-dominated *by construction* (every turn re-sends the prefix) — that's a tautology, not a finding. Report the things that actually vary: agent turns, peak context, sudden-growth spikes, tool-fail rate, and per-group deltas. `token-sinks.mjs` already prices cache-read in.
 
 ```powershell
+node scripts/fleet-stats.mjs      # FLEET SHAPE + COMPARISON — turns/context/duration/fail distributions, sudden-growth & outlier lists, --by stack|project|model|day comparison table (--project, --days, --top, --json)
 node scripts/token-sinks.mjs      # biggest token/cost sinks (--by project|day|model|provider|session, --days N, --json)
 node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|error|day, --sort rate, --json)
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
@@ -286,6 +291,23 @@ node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile si
 node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINED total → one switchable --html dashboard (--profiles a,b, --tz N, --max-windows N, --json)
 node scripts/tool-friction.mjs    # TOOLING-IMPROVEMENT candidates — recurring cross-session command CHAINS to fuse/fix (--project, --grep, --n 2,3, --min-sessions, --json)
 ```
+
+`fleet-stats.mjs` answers **"how did this batch of sessions behave, and which
+group was faster / cheaper / cleaner?"** — the orientation pass for any fleet
+question. It reports per-session **distributions** (agent turns, wall-clock
+duration, peak context, tool-fail rate — mean/median/p90/max), the **outlier
+lists** that break the pattern (biggest single-turn context jump = "sudden
+growth", longest context, most turns, worst fail rate, most re-runs, cut-offs),
+and — with `--by stack|project|model|day` — a **comparison table** (median
+turns/duration/context, fail%, re-runs, cut-offs, median+total cost per group)
+so "the Kotlin build-out took more turns and had a 2× fail rate vs the TS one"
+falls straight out. **`--by stack` is the robust axis for parallel build-outs**:
+cleaned worktrees lose their git remote so `--by project` can't separate them,
+but the stack is stamped on every command (`lib/stack.mjs`). Deliberately not a
+cost report — it surfaces the SHAPE and the group deltas, not the (tautological)
+cache-read total. Claude only (per-turn `usage`). Pairs with
+`context-spikes.mjs` (explain a sudden-growth outlier) and the taxonomy in
+`references/fleet-inspection.md`.
 
 `tool-friction.mjs` answers **"what should we change in the tools
 themselves, not in how we prompt?"** — it's the fleet tool for a use case
