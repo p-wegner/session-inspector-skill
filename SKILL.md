@@ -105,6 +105,55 @@ When the analyzer isn't enough and you need custom parsing, load the matching **
 
 **Tip — surface the current session in your statusline.** To make the *current* Claude session one copy-paste away (for inspecting it or handing it to a stronger model mid-task), show its `<project-folder>/<session-id>` locator in the Claude Code statusline. Setup in `references/statusline.md`.
 
+## Recover & continue a cut-off session's SUBAGENTS (`subagent-results.mjs`)
+
+When an orchestrator session spawns `Agent`/`Task` subagents and is then cut off
+(usage/rate limit, crash, interrupt), the subagents' work is **stranded** — and
+naively resuming re-dispatches them, paying the whole fan-out again. This tool
+enumerates every subagent the session dispatched, joins each back to the parent
+transcript by its `toolUseId`, and classifies **what actually happened to its
+result** so you continue from the real state instead of from zero:
+
+```powershell
+node scripts/subagent-results.mjs <path|sessionId|--latest>        # summary table + recovered results
+node scripts/subagent-results.mjs <locator> --unresolved           # only the ones needing action
+node scripts/subagent-results.mjs <locator> --full                 # full recovered text (no truncation)
+node scripts/subagent-results.mjs <locator> --id <agent-id>        # dump ONE subagent's full result/trail
+node scripts/subagent-results.mjs <locator> --brief -o cont.md     # write a continuation brief (markdown)
+node scripts/subagent-results.mjs <locator> --json                 # machine-readable
+```
+
+Subagent transcripts live at `<session-dir>/<sessionId>/subagents/agent-<id>.jsonl`
+with a sibling `agent-<id>.meta.json` (`{agentType, description, toolUseId,
+spawnDepth}`); `toolUseId` is the join key back to the parent's `Agent` tool_use.
+Resolves a bare session id / `projectDir/sessionId` locator / path across all
+profile homes, same as the analyzers (`--profile`/`--config-dir` to prefer one).
+
+**The classification and what to do with each** — this is the whole point; the
+statuses tell you *not to re-run* when the answer is already on disk:
+
+| Status | Meaning | Action |
+|---|---|---|
+| ✅ `processed` | Result was delivered **and** a substantive parent turn acted on it | none |
+| 📥 `delivered-unprocessed` | Subagent finished; result reached the parent but it was cut off **before adjudicating** (e.g. an async `<task-notification>` at the very tail) | **ACT on the recovered result — do NOT re-run** |
+| 📤 `undelivered-complete` | Subagent finished cleanly, but the parent never received it (async still-in-flight at cutoff) | **RE-INJECT the recovered result** |
+| ⚠️ `delivered-partial` / ⛔ `self-cutoff` | Subagent hit **its own** limit mid-work (shared-account limits cut parent *and* children together) — only a partial trail exists | **CONTINUE / RE-RUN from the partial trail** (not from scratch) |
+
+**The async trap it handles for you:** a background agent's *immediate*
+tool_result is only the `Async agent launched successfully` ACK — the real
+result arrives later as a `<task-notification>` user message. A "is there a
+tool_result for this id?" check therefore lies (everything looks delivered). This
+tool distinguishes ack → delivery (sync tool_result **or** notification) →
+whether a real assistant turn followed, and reads each subagent's own transcript
+to tell a clean finish (`end_turn`) from a self-cutoff (trailing limit banner).
+
+Pair it with the resume flow: run this **first** on a cut-off orchestrator to
+harvest any recoverable subagent output, feed the `--brief` into the continuation,
+and only re-run the subagents this tool marks `self-cutoff`/`delivered-partial`.
+The single-session analyzer (`--friction`, `--events`) explains where the *parent*
+stopped; this explains where its *children* stopped and which of their outputs
+survive.
+
 ## Edit a session's user/assistant messages (`session-edit.mjs`)
 
 The analyzers above are read-only. To **change what a session says** — fix a
@@ -211,6 +260,12 @@ running and how do I pick it back up" into one command. It classifies each
 session and decides — per a simple rule — whether to **resume in place** or
 **start fresh from a written handoff brief**, then prints the exact launch
 command (or opens a dedicated Windows Terminal tab per session).
+
+> **If the cut-off session dispatched subagents, run `subagent-results.mjs`
+> first** (section above). Resuming re-dispatches the whole fan-out; that tool
+> tells you which subagent outputs already survive on disk (act on / re-inject
+> them) versus which were themselves cut off and must actually be re-run — so the
+> continuation doesn't pay for work that's already done.
 
 ```powershell
 # Plan the most recent crash cluster (auto-detects the near-simultaneous kill):
@@ -594,6 +649,16 @@ In `--list`, when more than one home exists the dir label is prefixed with the h
 tag (`.claude-andrena_team_5x/C--projects-…`) so identically-named project dirs across
 profiles stay distinguishable. Codex (`~/.codex`) and Copilot (`~/.copilot`) are
 single-home and unaffected.
+
+**Resolving a session by id is cross-profile by default — `--profile` is a
+preference, never a filter.** Because rate limits force frequent mid-work profile
+switches, a session id (or `projectDir/sessionId` locator) is *usually* NOT under
+your current profile. So `analyze-claude-session.mjs <id>` and `session-edit.mjs
+--session <id>` **always search every sibling home** and resolve the (globally
+unique) id wherever it lives; passing `--profile`/`--config-dir` only floats that
+home's matches first. When a match resolves from a *different* profile than the one
+named, both scripts print a one-line `ℹ … (profile switch)` note so the switch is
+visible. Don't pre-`find` the `.jsonl` path or guess the profile — just pass the id.
 
 ## Directory naming convention (Claude)
 
