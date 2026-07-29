@@ -468,7 +468,9 @@ node scripts/context-spikes.mjs   # CONTEXT SPIKES — the single injections tha
 node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + per-session goals (--project, --days, --top, --json)
 node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile since its weekly reset → terminal / --json / --html dashboard (--profile <name>, --config-dir, --since <ISO>, --no-auto-reset, --tz N)
 node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINED total → one switchable --html dashboard (--profiles a,b, --tz N, --max-windows N, --json)
+node scripts/quota-month.mjs      # ALL team profiles over a FIXED CALENDAR RANGE ("the whole July") + week-by-week rollup → --html dashboard (--month YYYY-MM | --from/--to YYYY-MM-DD, --profiles a,b, --tz N, --json)
 node scripts/tool-friction.mjs    # TOOLING-IMPROVEMENT candidates — recurring cross-session command CHAINS to fuse/fix (--project, --grep, --n 2,3, --min-sessions, --json)
+node scripts/skill-genesis.mjs    # SKILL-GENESIS patterns — which interaction SHAPE led to a skill being created/improved: same-prompt, interactive-then-ask, lab-driven, compounding (--project, --skill <name>, --days N, --examples N, --json)
 ```
 
 `fleet-stats.mjs` answers **"how did this batch of sessions behave, and which
@@ -557,6 +559,28 @@ session's time gives `avail` = sessions that ran *after* it existed, so a skill
 written last week isn't wrongly called dead. Board-independent (no DB). The
 git-history pass only runs for never-strong-invoked skills; narrow with `--days`
 for a fast windowed audit (`--no-git` skips creation-time entirely).
+`skill-genesis.mjs` answers **"how do skills actually get born and improved on
+this machine?"** — a different question from `skill-usage.mjs` (does a skill
+ever fire) and `tool-friction.mjs` (which command chains repeat): of the
+sessions that touched a `SKILL.md` (Write = looks like genesis; Edit to it or
+to its `scripts/`/`references/`/`tools/`/`src/` = improvement), what shape was
+the human interaction that led there? It classifies each into **same-prompt**
+(the first human message asks for a thing AND asks for a skill/CLI wrapping it,
+in one breath — the highest-leverage shape, often naming a sibling skill as the
+template), **interactive-then-ask** (a task got done first — several tool
+calls — and only *later* in the session did a human message ask to turn it
+into a skill), **lab-driven** (the session invoked a `*-lab` companion
+meta-skill whose job is to improve another skill), and **compounding** (the
+first message explicitly references a prior session/skill — "continue",
+"extend the X skill", "as we did before"). A session can match more than one
+shape. Cheap-prefiltered (skips any transcript never mentioning `skills/`)
+before the full parse, so a multi-thousand-session fleet scan stays fast.
+Narrow with `--project <substr>` (repo scope) or `--skill <name>` (only
+sessions touching one named skill); `--examples N` prints more than the
+default 3 real snippets per shape. Pairs with `tooling-improvement.md`'s
+detect→validate→prototype loop — this is the "detect" step for the *skill
+authoring* pattern specifically, one level up from command-chain friction.
+
 **Repo-scoped audit** — to answer "which of **this** repo's skills are dead weight
 / badly described?" rather than the fleet-wide question, add `--project <substr>`
 (or `--cwd` for the current repo). It scopes **both** the session set **and** the
@@ -631,6 +655,25 @@ model/project(/profile), tool table, top sessions, and a usage-limit timeline.
 `lib/quota.mjs` is the single source of truth for the accounting; reuse it for any
 new cross-profile quota view. Example:
 `node scripts/quota-multi.mjs --html quota-all.html`.
+
+`quota-month.mjs` is the **calendar-range** view — "what did the team burn in the
+whole of July?" Neither of the other two can answer that: `quota-report.mjs` takes
+a single `--since` for ONE profile, and `quota-multi.mjs` slices by each account's
+own weekly reset, so a month is smeared across windows that start on different
+weekdays. This one takes an explicit wall-clock range (`--month 2026-07`, or
+`--from`/`--to`; Berlin wall-clock, `--to` exclusive) and reports **all
+`andrena_team_5x*` profiles combined + per profile** inside it. Same `lib/quota.mjs`
+accounting, so the numbers reconcile with the other two views.
+
+Range-specific behaviour worth knowing: days with no activity are **zero-filled**
+so a quiet day reads as a gap rather than as missing data; the daily chart scales
+to ~31 bars (weekends tinted, labels thinned, tooltips keep the detail); a
+**week-by-week table** (Mon–Sun, clipped to the range) sits above the panels; KPIs
+add **per-ACTIVE-day** next to per-calendar-day, which is the honest rate when the
+month is half idle. Per-profile chips still follow that account's *own* billing
+weeks, clipped to the range and marked `*` when the range cut them short. The
+personal `~/.claude` profile is **never** read — team seats only.
+`node scripts/quota-month.mjs --month 2026-07 --html quota-july-2026.html`.
 
 `prompt-style.mjs` answers "how do I talk to the agent?" — it aggregates every
 real human prompt into a length distribution, tone/format signals (lowercase
