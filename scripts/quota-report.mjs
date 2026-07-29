@@ -534,7 +534,7 @@ function render(){
   '</div>';
 
   const modelBars=barRows(R.byModel.filter(x=>x.cost>0),x=>x.model,x=>x.cost,(v,it)=>usd(v)+' · '+(v/t.cost*100).toFixed(0)+'%');
-  const projBars=barRows(R.byProject,x=>x.project.replace('C--projects-acme-','').replace('C--',''),x=>x.cost,(v)=>usd(v));
+  const projBars=barRows(R.byProject,x=>x.project.replace(/^C--projects-[^-]+-/,'').replace(/^C--/,''),x=>x.cost,(v)=>usd(v));
 
   const toolRows=R.byTool.slice(0,14).map(x=>{
     const rate=x.calls?(x.errors/x.calls*100):0;
@@ -544,7 +544,7 @@ function render(){
 
   const sessRows=R.sessions.slice(0,20).map(s=>'<tr>'+
     '<td class="goal" title="'+esc(s.firstPrompt||s.id)+'">'+esc(s.firstPrompt||'(no prompt)')+'</td>'+
-    '<td><span class="pill">'+esc(s.project.replace('C--projects-acme-','').replace('C--',''))+'</span></td>'+
+    '<td><span class="pill">'+esc(s.project.replace(/^C--projects-[^-]+-/,'').replace(/^C--/,''))+'</span></td>'+
     '<td>'+esc(s.model)+'</td>'+
     '<td class="n">'+usd(s.cost)+'</td><td class="n">'+num(s.turns)+'</td>'+
     '<td class="n">'+num(s.toolCalls)+'</td><td class="n">'+(s.durationMin>60?(s.durationMin/60).toFixed(1)+'h':Math.round(s.durationMin)+'m')+'</td></tr>').join('');
