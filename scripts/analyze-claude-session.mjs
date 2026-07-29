@@ -148,21 +148,23 @@ if (args.includes("--list")) {
 
 // Resolve a session locator that is NOT a filesystem path: a bare session-id (or
 // id-prefix), or a "<projectDir>/<sessionId>" locator (the form the statusline and
-// skill docs emit), with or without a trailing .jsonl. Scans every profile home via
-// listSessions(); honors --profile/--config-dir by restricting to that home.
+// skill docs emit), with or without a trailing .jsonl. ALWAYS scans every profile
+// home via listSessions() — session ids are globally-unique UUIDs, and rate-limit
+// driven profile switches mean the session is frequently NOT in the caller's current
+// profile. --profile/--config-dir is therefore a PREFERENCE (tiebreak toward that
+// home), never a hard filter that could hide the only real match in another profile.
 function findSessionByLocator(locator, argv = process.argv) {
   const clean = String(locator).replace(/\.jsonl$/i, "");
   const segs = clean.split(/[\\/]/).filter(Boolean);
   const idPart = segs[segs.length - 1];
   const dirPart = segs.length > 1 ? segs[segs.length - 2] : null;
 
-  let sessions = listSessions(false);
+  const sessions = listSessions(false);
 
-  // Restrict to a single profile home when the caller named one.
+  // Preferred home leaf (if the caller named one) — used only to rank, not to filter.
+  let preferLeaf = null;
   if (argv.includes("--profile") || argv.includes("--config-dir")) {
-    const home = resolveConfigDir(argv);
-    const homeLeaf = basename(home).toLowerCase();
-    sessions = sessions.filter((s) => s.path.toLowerCase().includes(homeLeaf));
+    preferLeaf = basename(resolveConfigDir(argv)).toLowerCase();
   }
 
   const exact = [];
@@ -177,7 +179,17 @@ function findSessionByLocator(locator, argv = process.argv) {
     else if (id.startsWith(idPart)) prefix.push(s);
   }
   // Prefer an exact id match; fall back to prefix matches (both newest-first).
-  return exact.length ? exact : prefix;
+  const pool = exact.length ? exact : prefix;
+  // If a profile was named, float its matches to the front (stable) — but keep the
+  // others so a session that moved to a different profile is still resolvable.
+  if (preferLeaf && pool.length > 1) {
+    pool.sort((a, b) => {
+      const av = a.path.toLowerCase().includes(preferLeaf) ? 0 : 1;
+      const bv = b.path.toLowerCase().includes(preferLeaf) ? 0 : 1;
+      return av - bv;
+    });
+  }
+  return pool;
 }
 
 let targetPath;
@@ -202,6 +214,15 @@ if (args.includes("--latest")) {
     if (!matches.length) {
       console.error(`No session found matching "${locator}" (searched all profile homes). Try --list to browse.`);
       process.exit(1);
+    }
+    // If the caller named a profile but the session actually lives elsewhere (a
+    // rate-limit profile switch), say so instead of silently resolving cross-profile.
+    if (args.includes("--profile") || args.includes("--config-dir")) {
+      const preferLeaf = basename(resolveConfigDir(args)).toLowerCase();
+      if (!matches[0].path.toLowerCase().includes(preferLeaf)) {
+        const actual = matches[0].path.split(/[\\/]/).find((p) => /^\.claude/i.test(p)) || "another profile";
+        console.error(`ℹ "${locator}" not in the named profile — resolved from ${actual} (profile switch).`);
+      }
     }
     if (matches.length > 1) {
       console.error(`⚠ "${locator}" matched ${matches.length} sessions; using the most recent. Candidates:`);

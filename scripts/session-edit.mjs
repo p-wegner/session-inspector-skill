@@ -52,8 +52,7 @@ function resolveConfigDir(argv) {
   return join(homedir(), ".claude");
 }
 
-function listSessions(argv) {
-  const base = join(resolveConfigDir(argv), "projects");
+function listSessionsIn(base) {
   const out = [];
   if (!existsSync(base)) return out;
   for (const dir of readdirSync(base)) {
@@ -64,6 +63,26 @@ function listSessions(argv) {
       const p = join(dirPath, f);
       out.push({ path: p, id: f.replace(/\.jsonl$/, ""), dir, modified: statSync(p).mtime });
     }
+  }
+  return out;
+}
+
+function listSessions(argv) {
+  const base = join(resolveConfigDir(argv), "projects");
+  return listSessionsIn(base).sort((a, b) => b.modified - a.modified);
+}
+
+// Scan EVERY sibling ~/.claude* home. Rate-limit-driven profile switches mean a
+// session id is frequently NOT under the caller's current/named profile, so id
+// resolution must not dead-end on a single home. Returns newest-first.
+function listSessionsAllHomes() {
+  const home = homedir();
+  const out = [];
+  let entries;
+  try { entries = readdirSync(home); } catch { return out; }
+  for (const e of entries) {
+    if (!/^\.claude([-_].+)?$/i.test(e)) continue;
+    for (const s of listSessionsIn(join(home, e, "projects"))) out.push(s);
   }
   return out.sort((a, b) => b.modified - a.modified);
 }
@@ -77,8 +96,17 @@ function resolveTarget(argv, positional) {
   const idx = argv.indexOf("--session");
   if (idx >= 0 && argv[idx + 1]) {
     const want = argv[idx + 1];
-    const hits = listSessions(argv).filter((s) => s.id.startsWith(want));
-    if (!hits.length) die(`No session matching id prefix "${want}"`);
+    let hits = listSessions(argv).filter((s) => s.id.startsWith(want));
+    // Fall back to all sibling homes if the named/default profile has no match —
+    // the session may have moved to another profile after a rate-limit switch.
+    if (!hits.length) {
+      hits = listSessionsAllHomes().filter((s) => s.id.startsWith(want));
+      if (hits.length) {
+        const actual = hits[0].path.split(/[\\/]/).find((p) => /^\.claude/i.test(p)) || "another profile";
+        console.error(`ℹ "${want}" not in the named/default profile — resolved from ${actual} (profile switch).`);
+      }
+    }
+    if (!hits.length) die(`No session matching id prefix "${want}" (searched all profile homes)`);
     if (hits.length > 1) die(`Ambiguous id prefix "${want}" — ${hits.length} matches:\n` + hits.map((h) => "  " + h.id).join("\n"));
     return hits[0].path;
   }
