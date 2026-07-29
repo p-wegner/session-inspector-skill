@@ -264,7 +264,7 @@ const dmon=s=>{try{return new Date(s).toLocaleDateString('en-GB',{timeZone:'Euro
 const dayName=s=>new Date(s+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
 const dayNum=s=>String(+s.slice(8,10));
 const shortProf=n=>n.replace('andrena_team_','');
-const shortProj=p=>(p||'').replace('C--projects-acme-','').replace(/^C--/,'');
+const shortProj=p=>(p||'').replace(/^C--projects-[^-]+-/,'').replace(/^C--/,'');
 
 let state={scope:'combined',win:'total'};
 
