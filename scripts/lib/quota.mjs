@@ -14,6 +14,7 @@ import { toolDisplayName } from "./parse.mjs";
 
 // ── pricing ($/1M; cache-read 0.1x in, cache-write 1.25x in) ──────────────────
 export const PRICING = [
+  { match: /fable|mythos/, in: 10, out: 50 },
   { match: /opus/, in: 5, out: 25 },
   { match: /sonnet/, in: 3, out: 15 },
   { match: /haiku/, in: 1, out: 5 },
