@@ -4,8 +4,10 @@
  * web UI). Lets this skill and the agent query sessions synced from any machine.
  *
  * Usage:
- *   node scripts/sync-query.mjs meta                         # devices / providers / projects / count
- *   node scripts/sync-query.mjs list [--device d] [--provider p] [--project x] [--limit n]
+ *   node scripts/sync-query.mjs meta                         # devices / users / profiles / providers / projects
+ *   node scripts/sync-query.mjs list [--device d] [--user u] [--profile p] [--provider p] [--project x] [--limit n]
+ *   node scripts/sync-query.mjs list --kind subagent          # only subagent transcripts
+ *   node scripts/sync-query.mjs list --parent <sessionId>     # a run's subagents/workflow agents
  *   node scripts/sync-query.mjs search "<text>" [--deep] [--provider p] ...
  *   node scripts/sync-query.mjs get <key>                    # print raw transcript
  *   node scripts/sync-query.mjs get <key> --save out.jsonl   # save raw transcript
@@ -26,13 +28,17 @@ import { serverUrl, flag } from "./lib/config.mjs";
 const argv = process.argv.slice(2);
 const SERVER = serverUrl(argv);
 const jsonOut = argv.includes("--json");
-const positional = argv.filter((a, i) => !a.startsWith("--") && argv[i - 1] !== "--server" && argv[i - 1] !== "--device" && argv[i - 1] !== "--provider" && argv[i - 1] !== "--project" && argv[i - 1] !== "--limit" && argv[i - 1] !== "--save");
+// Flags whose NEXT token is a value, not a positional. Keep in sync with qs()
+// below — a flag missing here would have its value read as the command.
+const VALUE_FLAGS = ["--server", "--device", "--user", "--profile", "--kind", "--parent",
+  "--provider", "--project", "--since", "--until", "--limit", "--save"];
+const positional = argv.filter((a, i) => !a.startsWith("--") && !VALUE_FLAGS.includes(argv[i - 1]));
 const cmd = positional[0];
 const here = dirname(fileURLToPath(import.meta.url));
 
 function qs() {
   const p = new URLSearchParams();
-  for (const k of ["device", "provider", "project", "since", "until", "limit"]) {
+  for (const k of ["device", "user", "profile", "kind", "parent", "provider", "project", "since", "until", "limit"]) {
     const v = flag(argv, `--${k}`); if (v) p.set(k, v);
   }
   if (argv.includes("--deep")) p.set("deep", "1");
@@ -41,11 +47,20 @@ function qs() {
 async function j(path) { const r = await fetch(`${SERVER}${path}`); if (!r.ok) { console.error(`✗ ${r.status} ${await r.text()}`); process.exit(1); } return r.json(); }
 
 function pad(s, n) { s = String(s ?? ""); return s.length > n ? s.slice(0, n - 1) + "…" : s.padEnd(n); }
+/**
+ * "who ran this" — user@device, except imported foreign corpora already carry
+ * the owner in the device tag (alice@LAPTOP), so prefixing again would render
+ * alice@alice@LAPTOP.
+ */
+function who(r) {
+  const d = String(r.device || "");
+  return r.user && !d.includes("@") ? `${r.user}@${d}` : d;
+}
 function printRows(rows) {
   if (jsonOut) { console.log(JSON.stringify(rows, null, 2)); return; }
   console.log(`${rows.length} sessions\n`);
   for (const r of rows) {
-    console.log(`${(r.mtime || "").slice(0, 16).replace("T", " ")}  ${pad(r.provider, 8)} ${pad(r.device, 14)} ${pad(r.project || r.cwd, 28)} ${pad((r.firstPrompt || "").replace(/\s+/g, " "), 40)}`);
+    console.log(`${(r.mtime || "").slice(0, 16).replace("T", " ")}  ${pad(r.provider, 8)} ${pad(who(r), 20)} ${pad(r.profile, 16)} ${pad(r.project || r.cwd, 26)} ${pad((r.firstPrompt || "").replace(/\s+/g, " "), 36)}`);
     console.log(`    ${r.key}`);
   }
 }
