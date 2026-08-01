@@ -14,27 +14,86 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { execFileSync } from "child_process";
-import { claudeProjectDirs } from "./config.mjs";
+import { claudeProjectDirs, profileOfProjectsDir } from "./config.mjs";
 
 export const PROVIDERS = ["claude", "codex", "copilot"];
 
 // ── Discovery ──────────────────────────────────────────────────────────────
 
+/**
+ * Claude writes more than one transcript per session:
+ *
+ *   projects/<slug>/<uuid>.jsonl                     the main conversation
+ *   projects/<slug>/<uuid>/subagents/agent-N.jsonl   one per spawned subagent
+ *   projects/<slug>/<uuid>/wf_<id>/agent-N.jsonl     one per workflow agent
+ *
+ * The nested ones are where most of the actual work happens on an agent-heavy
+ * setup — on this box they outnumber main transcripts ~5:1 — so anything that
+ * only reads the top level sees a small and badly skewed sample.
+ *
+ * They cannot be keyed like main transcripts: a subagent file records its
+ * PARENT's `sessionId`, so trusting that id would collapse every subagent of a
+ * session onto one key and overwrite the parent. Nested files therefore get a
+ * synthetic `<parentUuid>__<relative-path>` id, and carry `kind` +
+ * `parentSessionId` so they can be grouped back together.
+ */
+function walkNested(sessionDir, relParts, sessionId, profile, out) {
+  let entries;
+  try { entries = readdirSync(sessionDir, { withFileTypes: true }); } catch { return; }
+  for (const e of entries) {
+    const p = join(sessionDir, e.name);
+    if (e.isDirectory()) { walkNested(p, [...relParts, e.name], sessionId, profile, out); continue; }
+    if (!e.name.endsWith(".jsonl")) continue;
+    let st; try { st = statSync(p); } catch { continue; }
+    const rel = [...relParts, e.name].join("__").replace(/\.jsonl$/, "");
+    // Workflow runs sit deeper, under subagents/workflows/wf_<id>/, so classify
+    // on the whole relative path rather than just its first segment.
+    const parts = [...relParts, e.name];
+    const kind = parts.some((x) => x === "workflows" || /^wf_/.test(x)) ? "workflow"
+      : (relParts[0] === "subagents" ? "subagent" : "nested");
+    out.push({
+      provider: "claude", path: p, profile, kind, parentSessionId: sessionId,
+      sessionId: `${sessionId}__${rel}`, size: st.size, mtime: st.mtime,
+    });
+  }
+}
+
 function discoverClaude() {
   const out = [];
   for (const base of claudeProjectDirs()) {
+    // Which account this transcript ran under. Only Claude has per-account config
+    // dirs, so codex/copilot leave `profile` empty rather than faking one.
+    const profile = profileOfProjectsDir(base);
     for (const dir of readdirSync(base)) {
       const dirPath = join(base, dir);
-      let files;
-      try { files = readdirSync(dirPath).filter((f) => f.endsWith(".jsonl")); } catch { continue; }
-      for (const f of files) {
-        const p = join(dirPath, f);
-        const st = statSync(p);
-        out.push({ provider: "claude", path: p, sessionId: f.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime });
+      let entries;
+      try { entries = readdirSync(dirPath, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        const p = join(dirPath, e.name);
+        if (e.isDirectory()) {
+          // A per-session sidecar dir named after the session uuid.
+          walkNested(p, [], e.name, profile, out);
+          continue;
+        }
+        if (!e.name.endsWith(".jsonl")) continue;
+        let st; try { st = statSync(p); } catch { continue; }
+        out.push({
+          provider: "claude", path: p, profile, kind: "main", parentSessionId: "",
+          sessionId: e.name.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime,
+        });
       }
     }
   }
   return out;
+}
+
+/**
+ * The id to store a discovered transcript under. Only a main transcript may take
+ * the id embedded in its content; nested ones would report their parent's.
+ */
+export function resolveSessionId(s, meta) {
+  if (s.kind && s.kind !== "main") return s.sessionId;
+  return (meta && meta.sessionId) || s.sessionId;
 }
 
 function discoverCodex() {
@@ -51,7 +110,7 @@ function discoverCodex() {
           for (const f of readdirSync(ddir).filter((f) => f.endsWith(".jsonl"))) {
             const p = join(ddir, f);
             const st = statSync(p);
-            out.push({ provider: "codex", path: p, sessionId: f.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime });
+            out.push({ provider: "codex", path: p, profile: "", kind: "main", parentSessionId: "", sessionId: f.replace(/\.jsonl$/, ""), size: st.size, mtime: st.mtime });
           }
         }
       }
@@ -72,7 +131,7 @@ function discoverCopilot() {
     const eventsPath = join(full, "events.jsonl");
     if (!existsSync(eventsPath)) continue;
     const est = statSync(eventsPath);
-    out.push({ provider: "copilot", path: eventsPath, sessionId: dir, size: est.size, mtime: est.mtime });
+    out.push({ provider: "copilot", path: eventsPath, profile: "", kind: "main", parentSessionId: "", sessionId: dir, size: est.size, mtime: est.mtime });
   }
   return out;
 }

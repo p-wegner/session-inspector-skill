@@ -1,6 +1,6 @@
 /** Shared config for the session-sync server + clients. Host-agnostic. */
-import { join } from "path";
-import { homedir, hostname } from "os";
+import { join, basename, dirname } from "path";
+import { homedir, hostname, userInfo } from "os";
 import { existsSync, readdirSync, statSync } from "fs";
 
 export const DEFAULT_PORT = 8765;
@@ -45,6 +45,37 @@ export function claudeProjectDirs() {
   } catch { /* home unreadable — ignore */ }
 
   return out;
+}
+
+/**
+ * Which auth profile a Claude projects dir belongs to — the config-dir name with
+ * the `.claude` prefix stripped:
+ *
+ *   ~/.claude/projects                      -> "default"
+ *   ~/.claude-andrena_team_5x_2/projects    -> "andrena_team_5x_2"
+ *
+ * A profile is a separate *account*, so this is the field you filter on when
+ * bundling "everything that ran under my andrena subscriptions". Dirs reached via
+ * $CLAUDE_PROJECT_DIRS that don't follow the convention fall back to the dir name.
+ */
+export function profileOfProjectsDir(dir) {
+  const home = basename(dirname(dir));
+  if (home === ".claude") return "default";
+  const m = home.match(/^\.claude[-_](.+)$/);
+  return m ? m[1] : home;
+}
+
+/**
+ * Which human this corpus belongs to. Device tags separate *machines*; this
+ * separates *people*, so transcripts pooled from several developers stay
+ * attributable (and can't collide on a shared sessionId).
+ * Override with SESSION_SYNC_USER or --user.
+ */
+export function userName(argv = []) {
+  const i = argv.indexOf("--user");
+  if (i >= 0 && argv[i + 1]) return argv[i + 1];
+  if (process.env.SESSION_SYNC_USER) return process.env.SESSION_SYNC_USER;
+  try { return userInfo().username; } catch { return "unknown"; }
 }
 
 /** Server base URL clients talk to. Override with SESSION_SYNC_URL or --server. */

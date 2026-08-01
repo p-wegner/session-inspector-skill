@@ -9,22 +9,28 @@
  * Usage:
  *   node scripts/sync-push.mjs                       # push all providers, incremental
  *   node scripts/sync-push.mjs --provider claude     # one provider
+ *   node scripts/sync-push.mjs --profile andrena     # only auth profiles matching (substring)
  *   node scripts/sync-push.mjs --days 7              # only sessions touched in last 7 days
  *   node scripts/sync-push.mjs --dry-run             # show what WOULD upload
  *   node scripts/sync-push.mjs --force               # ignore local state, re-evaluate all
  *   node scripts/sync-push.mjs --server http://100.80.175.96:8765
- *   (SESSION_SYNC_URL / SESSION_SYNC_DEVICE env vars also work)
+ *   (SESSION_SYNC_URL / SESSION_SYNC_DEVICE / SESSION_SYNC_USER env vars also work)
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { discover, extractMeta, projectIdentity, readFile } from "./lib/sessions.mjs";
-import { serverUrl, deviceName, dataDir, flag } from "./lib/config.mjs";
+import { discover, extractMeta, projectIdentity, readFile, resolveSessionId } from "./lib/sessions.mjs";
+import { serverUrl, deviceName, userName, dataDir, flag } from "./lib/config.mjs";
 
 const argv = process.argv.slice(2);
 const SERVER = serverUrl(argv);
 const DEVICE = deviceName(argv);
+const USER = userName(argv);
 const provider = flag(argv, "--provider") || "all";
+const profileFilter = flag(argv, "--profile") || null;
+// main | subagent | workflow. Subagent transcripts outnumber main ones several
+// times over, so `--kind main` keeps a hub small when that's what you want.
+const kindFilter = flag(argv, "--kind") || null;
 const days = flag(argv, "--days") ? Number(flag(argv, "--days")) : null;
 const dryRun = argv.includes("--dry-run");
 const force = argv.includes("--force");
@@ -54,9 +60,14 @@ async function main() {
     const cutoff = Date.now() - days * 86400_000;
     sessions = sessions.filter((s) => s.mtime.getTime() >= cutoff);
   }
+  if (profileFilter) {
+    const needle = profileFilter.toLowerCase();
+    sessions = sessions.filter((s) => (s.profile || "").toLowerCase().includes(needle));
+  }
+  if (kindFilter) sessions = sessions.filter((s) => (s.kind || "main") === kindFilter);
 
   const counts = { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0 };
-  console.log(`Device ${DEVICE} → ${SERVER}  (${sessions.length} candidate sessions)\n`);
+  console.log(`${USER}@${DEVICE} → ${SERVER}  (${sessions.length} candidate sessions)\n`);
 
   for (const s of sessions) {
     const sig = `${s.mtime.getTime()}:${s.size}`;
@@ -65,17 +76,18 @@ async function main() {
     let content;
     try { content = readFile(s.path); } catch { counts.failed++; continue; }
     const meta = extractMeta(s.provider, content);
-    const sessionId = meta.sessionId || s.sessionId;
+    const sessionId = resolveSessionId(s, meta);
     const ident = projectIdentity(meta.cwd);
 
     if (dryRun) {
-      console.log(`  would push  [${s.provider}] ${ident.project || meta.cwd || sessionId}  (${(s.size / 1024).toFixed(0)}KB)`);
+      console.log(`  would push  [${s.provider}${s.profile ? `/${s.profile}` : ""}] ${ident.project || meta.cwd || sessionId}  (${(s.size / 1024).toFixed(0)}KB)`);
       counts.created++;
       continue;
     }
 
     const envelope = {
-      device: DEVICE, provider: s.provider, sessionId,
+      device: DEVICE, user: USER, profile: s.profile || "", provider: s.provider, sessionId,
+      kind: s.kind || "main", parentSessionId: s.parentSessionId || "",
       project: ident.project, projectKey: ident.projectKey, gitRemote: ident.gitRemote,
       cwd: meta.cwd, model: meta.model, startTime: meta.startTime,
       mtime: s.mtime.toISOString(),

@@ -777,6 +777,38 @@ push (local state file), continued sessions dedup in place by `(device,provider,
 and project identity is resolved via `git remote` so it's stable across machines.
 Full setup, config knobs, REST API, and privacy scope in `references/session-sync.md`.
 
+Every record also carries **`user`** (which human) and **`profile`** (which
+`~/.claude-*` auth profile / account) — filter with `--user` / `--profile` on
+`sync-query.mjs`, or the dropdowns in the web UI. `--profile` matches as a
+substring, so `--profile andrena` selects the whole `andrena_team_5x*` family.
+
+## Hand sessions over as a file: bundles (`session-bundle.mjs`)
+
+Session-sync is the live path between *your* machines. A **bundle** is the
+offline form — one zip of selected transcripts plus a manifest — for archiving a
+slice, or for **pooling corpora across several people** so compounding-engineering
+analysis runs over the whole population rather than one person's sessions.
+
+```powershell
+node scripts/session-bundle.mjs export --profile andrena --out team.zip   # from this box's profiles
+node scripts/session-bundle.mjs export --from server --days 30 --out last30.zip  # across ALL synced devices
+node scripts/session-bundle.mjs export --profile andrena --dry-run        # what would go in
+node scripts/session-bundle.mjs inspect team.zip                          # manifest summary, imports nothing
+node scripts/session-bundle.mjs import alice.zip --as-user alice          # merge someone else's corpus
+```
+
+- **Attribution survives the trip.** `import` stamps every record with the
+  bundle's `user` and tags foreign devices as `alice@LAPTOP`, so two people's
+  identical hostnames or sessionIds can't overwrite each other. Re-importing the
+  same bundle is a no-op (content-hash dedup).
+- **Sensitive projects are withheld by default.** Transcripts are raw and
+  unredacted, so export drops sessions whose project/cwd matches a deny pattern
+  (client work under NDA) and reports what it dropped. `--deny <regex>` /
+  `SESSION_BUNDLE_DENY` extend it; `--include-denied` overrides deliberately.
+  The manifest records only the *count* withheld, never the project names.
+- Filters mirror the query API: `--profile --provider --project --device --user
+  --days/--since/--until --limit`. `--format dir` skips the archiver entirely.
+
 ### Run the hub as a persistent service
 
 To keep the hub up across logout/reboot instead of babysitting `sync-server.mjs`,

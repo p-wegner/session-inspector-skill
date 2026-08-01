@@ -19,7 +19,7 @@
  *   GET  /api/health
  *   GET  /api/manifest?device=&provider=          -> [{key,hash,bytes,mtime}]   (for incremental push)
  *   POST /api/sessions                            upload one session (JSON envelope, see sync-push.mjs)
- *   GET  /api/sessions?device=&provider=&project=&q=&deep=1&since=&until=&limit=   -> [record]
+ *   GET  /api/sessions?device=&user=&profile=&provider=&project=&q=&deep=1&since=&until=&limit=   -> [record]
  *   GET  /api/sessions/get?key=<device/provider/sessionId>   -> {record, content}
  *   GET  /api/sessions/raw?key=...                -> text/plain transcript
  *   GET  /api/sessions/summary?key=...            -> {record, summary, lines}  (full parse: tools, files, tokens, last assistant msg)
@@ -103,6 +103,14 @@ function handleUpload(body, res) {
 
   const record = {
     key, device, provider, sessionId,
+    // `user` attributes a transcript to a human (corpora pooled from several
+    // developers stay separable); `profile` to a Claude auth profile/account.
+    // Both absent from pre-existing records and from older clients — every
+    // consumer must treat "" as "unknown", never filter it out implicitly.
+    user: env.user || "", profile: env.profile || "",
+    // main | subagent | workflow, plus the session a nested transcript belongs
+    // to, so a run and its subagents can be reassembled.
+    kind: env.kind || "main", parentSessionId: env.parentSessionId || "",
     project: env.project || "", projectKey: env.projectKey || "", gitRemote: env.gitRemote || "",
     cwd: env.cwd || "", model: env.model || "",
     startTime: env.startTime || "", mtime: env.mtime || "",
@@ -130,12 +138,18 @@ function handleManifest(url, res) {
 
 function matchRecord(r, params) {
   if (params.device && r.device !== params.device) return false;
+  if (params.user && r.user !== params.user) return false;
+  // Profile is matched as a substring: one `--profile andrena` selects the whole
+  // andrena_team_5x* family rather than needing each exact name.
+  if (params.profile && !((r.profile || "").toLowerCase().includes(params.profile.toLowerCase()))) return false;
+  if (params.kind && (r.kind || "main") !== params.kind) return false;
+  if (params.parent && r.parentSessionId !== params.parent) return false;
   if (params.provider && r.provider !== params.provider) return false;
   if (params.project && !(`${r.project} ${r.projectKey}`.toLowerCase().includes(params.project.toLowerCase()))) return false;
   if (params.since && (r.mtime || "") < params.since) return false;
   if (params.until && (r.mtime || "") > params.until) return false;
   if (params.q) {
-    const hay = `${r.project} ${r.cwd} ${r.model} ${r.firstPrompt} ${r.lastPrompt}`.toLowerCase();
+    const hay = `${r.project} ${r.cwd} ${r.model} ${r.user} ${r.profile} ${r.firstPrompt} ${r.lastPrompt}`.toLowerCase();
     let hit = hay.includes(params.q.toLowerCase());
     if (!hit && params.deep) {
       try { hit = readFileSync(storePath(r.device, r.provider, r.sessionId), "utf-8").toLowerCase().includes(params.q.toLowerCase()); } catch { /* gone */ }
@@ -148,6 +162,10 @@ function matchRecord(r, params) {
 function handleSearch(url, res) {
   const params = {
     device: url.searchParams.get("device"),
+    user: url.searchParams.get("user"),
+    profile: url.searchParams.get("profile"),
+    kind: url.searchParams.get("kind"),
+    parent: url.searchParams.get("parent"),
     provider: url.searchParams.get("provider"),
     project: url.searchParams.get("project"),
     q: url.searchParams.get("q"),
@@ -203,14 +221,19 @@ function handleEvents(url, res) {
 
 function handleMeta(res) {
   const devices = new Set(), providers = new Set(), projects = new Set();
+  const users = new Set(), profiles = new Set(), kinds = new Set();
   for (const r of Object.values(index)) {
     if (r.device) devices.add(r.device);
     if (r.provider) providers.add(r.provider);
     if (r.project) projects.add(r.project);
+    if (r.user) users.add(r.user);
+    if (r.profile) profiles.add(r.profile);
+    kinds.add(r.kind || "main");
   }
   sendJson(res, 200, {
     devices: [...devices].sort(), providers: [...providers].sort(),
-    projects: [...projects].sort(), count: Object.keys(index).length,
+    projects: [...projects].sort(), users: [...users].sort(), profiles: [...profiles].sort(),
+    kinds: [...kinds].sort(), count: Object.keys(index).length,
   });
 }
 
@@ -306,8 +329,11 @@ details[open]>summary:before{content:"▾ "}
   <h1>Session Sync</h1>
   <input id="q" placeholder="search prompts / cwd / model…">
   <label><input type="checkbox" id="deep"> deep (transcript text)</label>
+  <select id="user"><option value="">all users</option></select>
   <select id="device"><option value="">all devices</option></select>
+  <select id="profile"><option value="">all profiles</option></select>
   <select id="provider"><option value="">all agents</option></select>
+  <select id="kind"><option value="">all kinds</option></select>
   <input id="project" placeholder="project filter" style="width:140px">
   <span class="count" id="count"></span>
 </header>
@@ -323,21 +349,30 @@ async function loadMeta(){
   const m=await j('/api/meta');
   for(const d of m.devices)$('#device').insertAdjacentHTML('beforeend',\`<option>\${d}</option>\`);
   for(const p of m.providers)$('#provider').insertAdjacentHTML('beforeend',\`<option>\${p}</option>\`);
+  for(const u of (m.users||[]))$('#user').insertAdjacentHTML('beforeend',\`<option>\${u}</option>\`);
+  for(const p of (m.profiles||[]))$('#profile').insertAdjacentHTML('beforeend',\`<option>\${p}</option>\`);
+  for(const k of (m.kinds||[]))$('#kind').insertAdjacentHTML('beforeend',\`<option>\${k}</option>\`);
 }
 function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+// user@device, unless the device tag already names its owner (imported foreign
+// corpora arrive as alice@LAPTOP) — otherwise it renders alice@alice@LAPTOP.
+function who(r){const d=String(r.device||'');return esc(r.user&&!d.includes('@')?r.user+'@'+d:d);}
 async function search(){
   const p=new URLSearchParams();
   if($('#q').value)p.set('q',$('#q').value);
   if($('#deep').checked)p.set('deep','1');
   if($('#device').value)p.set('device',$('#device').value);
+  if($('#user').value)p.set('user',$('#user').value);
+  if($('#profile').value)p.set('profile',$('#profile').value);
   if($('#provider').value)p.set('provider',$('#provider').value);
+  if($('#kind').value)p.set('kind',$('#kind').value);
   if($('#project').value)p.set('project',$('#project').value);
   const rows=await j('/api/sessions?'+p.toString());
   $('#count').textContent=rows.length+' sessions';
   $('#list').innerHTML=rows.map(r=>\`<div class="row" data-key="\${encodeURIComponent(r.key)}">
-    <div class="t"><span class="badge \${r.provider}">\${r.provider}</span>\${esc(r.project||r.cwd||'(no project)')}</div>
+    <div class="t"><span class="badge \${r.provider}">\${r.provider}</span>\${(r.kind&&r.kind!=='main')?'<span class="badge">'+esc(r.kind)+'</span>':''}\${esc(r.project||r.cwd||'(no project)')}</div>
     <div class="m">\${esc((r.firstPrompt||'').slice(0,90))||'<span class=muted>(no prompt)</span>'}</div>
-    <div class="m">\${(r.mtime||'').slice(0,16).replace('T',' ')} · \${r.device} · \${r.lines} lines · \${(r.bytes/1024).toFixed(0)}KB</div>
+    <div class="m">\${(r.mtime||'').slice(0,16).replace('T',' ')} · \${who(r)}\${r.profile?' · '+esc(r.profile):''} · \${r.lines} lines · \${(r.bytes/1024).toFixed(0)}KB</div>
   </div>\`).join('')||'<p class="muted" style="padding:12px">No matches.</p>';
   document.querySelectorAll('.row').forEach(el=>el.onclick=()=>open(el));
 }
@@ -367,7 +402,7 @@ async function open(el){
   $('#detail').innerHTML=\`<div id="meta">
     <div><b>project</b>\${esc(r.project)} <span class=muted>\${esc(r.projectKey)}</span></div>
     <div><b>agent</b><span class="badge \${r.provider}">\${r.provider}</span> \${esc(s.model||r.model)}\${x.cliVersion?' <span class=muted>v'+esc(x.cliVersion)+'</span>':''}\${x.copilotVersion?' <span class=muted>v'+esc(x.copilotVersion)+'</span>':''}</div>
-    <div><b>device</b>\${esc(r.device)}\${x.branch?' · '+esc(x.branch):''}</div>
+    <div><b>device</b>\${who(r)}\${r.profile?' · profile '+esc(r.profile):''}\${x.branch?' · '+esc(x.branch):''}</div>
     <div><b>cwd</b>\${esc(s.cwd||r.cwd)}</div>
     <div><b>modified</b>\${(r.mtime||'').replace('T',' ').slice(0,19)}</div>
   </div>
@@ -437,13 +472,13 @@ function renderBasic(r,key,err){
   $('#detail').innerHTML=\`<div id="meta">
     <div><b>project</b>\${esc(r.project)}</div>
     <div><b>agent</b><span class="badge \${r.provider}">\${r.provider}</span> \${esc(r.model)}</div>
-    <div><b>device</b>\${esc(r.device)}</div>
+    <div><b>device</b>\${who(r)}\${r.profile?' · profile '+esc(r.profile):''}</div>
     <div><b>cwd</b>\${esc(r.cwd)}</div>
   </div>\${err?'<p class="muted">parse unavailable: '+esc(err)+'</p>':''}
   <div class="sec"><h3>first prompt</h3><pre>\${esc(r.firstPrompt)||'<span class=muted>—</span>'}</pre></div>
   <div class="sec"><h3>last prompt</h3><pre>\${esc(r.lastPrompt)||'<span class=muted>—</span>'}</pre></div>\`;
 }
 let t;['#q','#project'].forEach(s=>$(s).oninput=()=>{clearTimeout(t);t=setTimeout(search,250);});
-['#device','#provider','#deep'].forEach(s=>$(s).onchange=search);
+['#device','#user','#profile','#provider','#kind','#deep'].forEach(s=>$(s).onchange=search);
 loadMeta();search();
 </script></body></html>`;
