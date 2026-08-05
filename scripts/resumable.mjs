@@ -21,7 +21,15 @@
  *   node scripts/resumable.mjs --latest            # print ONLY the top hit + its resume command
  *   node scripts/resumable.mjs --resume            # print ONLY the resume command for the top hit (scriptable)
  *   node scripts/resumable.mjs --top 20            # how many to list (default 12)
+ *   node scripts/resumable.mjs --include-instant   # list instant deaths individually too
  *   node scripts/resumable.mjs --json
+ *
+ * Instant deaths — sessions that died within seconds of launch with zero tool
+ * calls (typically a fleet launched into an exhausted profile window) — carry
+ * NOTHING to resume: `claude --resume` would reopen an empty session. They are
+ * grouped into one summary block per launch directory with "relaunch the work,
+ * don't resume" advice, instead of drowning the ranked list (observed: 53 such
+ * 1-turn corpses burying the two real resumable sessions).
  *
  * Then continue it:
  *   cd <cwd> && CLAUDE_CONFIG_DIR=<home> claude --resume <sessionId>
@@ -43,6 +51,7 @@ const days = parseInt(opt("--days", "7"), 10);
 const top = parseInt(opt("--top", "12"), 10);
 const includeInterrupted = has("--interrupted");
 const allEndings = has("--all-endings");
+const includeInstant = has("--include-instant");
 const latest = has("--latest");
 const resumeOnly = has("--resume");
 const asJson = has("--json");
@@ -98,9 +107,17 @@ function oneLine(t, n = 90) {
   return s.length > n ? `${s.slice(0, n)}…` : s;
 }
 
+// A session that died within moments of launch, having called no tool, has no
+// context worth resuming — the launch itself must be repeated (usually after the
+// limit window resets, or under a profile with headroom).
+function isInstantDeath(s) {
+  return (s.toolCalls || 0) === 0 && (s.assistantTurns || 0) <= 2 && (s.durationSec || 0) < 120;
+}
+
 // ── collect ──────────────────────────────────────────────────────────────────
 const sessions = discover("claude");
 const hits = [];
+const instant = [];
 
 for (const s of sessions) {
   if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
@@ -123,18 +140,38 @@ for (const s of sessions) {
     if (scwd !== cwdKey) continue;
   }
 
-  hits.push({
+  const hit = {
     end, stat, path: s.path, dir,
     project: idn.project,
     cutoff: stat.endTime,
     cutoffLocal: localTime(stat.endTime),
     mtime: s.mtime,
     resume: resumeCommand(stat, s.path),
-  });
+  };
+  if (!includeInstant && end.rank >= 2 && isInstantDeath(stat)) instant.push(hit);
+  else hits.push(hit);
 }
 
 // rank: severity desc, then recency desc
 hits.sort((a, b) => (b.end.rank - a.end.rank) || (new Date(b.cutoff) - new Date(a.cutoff)));
+
+// Group instant deaths by launch directory (the parent of each session's cwd —
+// a fleet launched into worktrees of one repo collapses to a single line).
+function instantGroups(list) {
+  const groups = new Map();
+  for (const h of list) {
+    const cwd = (h.stat.cwd || "?").replace(/\\/g, "/");
+    const key = cwd.includes("/") ? cwd.slice(0, cwd.lastIndexOf("/")) : cwd;
+    const g = groups.get(key) || { parent: key, kind: h.end.kind, count: 0, first: h.cutoff, last: h.cutoff, sessions: [] };
+    g.count++;
+    if (h.cutoff < g.first) g.first = h.cutoff;
+    if (h.cutoff > g.last) g.last = h.cutoff;
+    g.sessions.push({ sessionId: h.stat.sessionId, cwd: h.stat.cwd, cutoff: h.cutoff, path: h.path });
+    groups.set(key, g);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+const instGroups = instantGroups(instant);
 
 // ── output ────────────────────────────────────────────────────────────────────
 if (resumeOnly) {
@@ -164,13 +201,28 @@ if (asJson) {
     resumeBash: h.resume.bash,
     resumePwsh: h.resume.pwsh,
   }));
-  console.log(JSON.stringify(latest ? out[0] || null : out, null, 2));
+  console.log(JSON.stringify(latest ? out[0] || null : { resumable: out, instantDeaths: instGroups }, null, 2));
   process.exit(0);
+}
+
+function printInstantGroups() {
+  if (!instGroups.length) return;
+  console.log(`\n${"─".repeat(72)}`);
+  console.log(`INSTANT DEATHS (${instant.length}) — died in seconds with zero tool calls; NOTHING to resume`);
+  console.log(`Cause is almost always a launch into an exhausted limit window. RELAUNCH the`);
+  console.log(`work (after the reset / under a profile with headroom) instead of resuming.`);
+  console.log("─".repeat(72));
+  for (const g of instGroups.slice(0, 8)) {
+    console.log(`  ${String(g.count).padStart(3)}× under ${g.parent}   ${localTime(g.first)} → ${localTime(g.last)}   (${g.kind})`);
+  }
+  if (instGroups.length > 8) console.log(`  … ${instGroups.length - 8} more group(s) (--json for all)`);
+  console.log(`  (--include-instant lists them individually)`);
 }
 
 if (!hits.length) {
   console.log(`No cut-off/resumable sessions found${projectQ ? ` for project "${projectQ}"` : ""}${cwdKey ? " in this directory" : ""} in the last ${days} day(s).`);
-  console.log("Try: --days 30, drop --project/--cwd, or --all-endings to list normal-ending sessions too.");
+  if (!instant.length) console.log("Try: --days 30, drop --project/--cwd, or --all-endings to list normal-ending sessions too.");
+  printInstantGroups();
   process.exit(0);
 }
 
@@ -194,3 +246,4 @@ for (const h of shown) {
 if (!latest && hits.length > shown.length) {
   console.log(`\n… ${hits.length - shown.length} more. Use --top ${hits.length} to see all, or --latest for just the top one.`);
 }
+if (!latest) printInstantGroups();
