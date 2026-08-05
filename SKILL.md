@@ -98,6 +98,40 @@ node scripts/analyze-claude-session.mjs --latest --friction --top 5 --json     #
 node scripts/analyze-claude-session.mjs <path> --events --around 21 --context 6 -v  # zoom into moment @#21
 ```
 
+### Continue a cut-off session's MACHINE state (`--handoff`)
+
+**Run this FIRST when asked to continue a cut-off session.** The summary explains
+what happened; `--handoff` (Claude analyzer only) surfaces what the session left
+RUNNING or PARKED on the machine — the load-bearing state a continuation needs
+and the at-a-glance panel can't show:
+
+- **Background / detached processes** — every `run_in_background` shell call and
+  every detach-shaped command (`Start-Process`, `nohup`, `start /b`,
+  `-WindowStyle Hidden`), with the log paths named in the command. A detached
+  driver often *finished the work after the cut-off*: read its log before
+  re-doing anything.
+- **Monitors armed** — each Monitor call's description + watched paths; the
+  watched file holds the outcome the session never got to read.
+- **The session's TEMP scratchpad** — path, file count, size, newest mtime, plus
+  the files the session Write/Edit-ed there. This is OS-clearable storage;
+  **salvage anything load-bearing into a durable location first** (measured case:
+  the only surviving copy of a deleted run's synthesis returns lived there).
+- **Local services touched** (`127.0.0.1:<port>` hit counts), the last
+  **TodoWrite snapshot**, **TaskCreate** subjects, the tail **task notifications**
+  (delivered results nobody adjudicated), and the **subagent count** with the
+  exact `subagent-results.mjs` command.
+- Ends with the **last substantive assistant update** — the newest non-banner
+  text, i.e. where the narrative actually stopped.
+
+```powershell
+node scripts/analyze-claude-session.mjs <path|sessionId> --handoff          # panel
+node scripts/analyze-claude-session.mjs <sessionId> --handoff --json       # machine-readable
+```
+
+Pairs with `subagent-results.mjs` (children's results) and `resumable.mjs`
+(which session to continue): resumable → handoff → subagent-results is the full
+"pick a cut-off orchestrator back up" sequence.
+
 When the analyzer isn't enough and you need custom parsing, load the matching **manual recipe file** (PowerShell snippets, loaded on demand):
 - `references/claude-recipes.md` — find a session by issue #, quick overview, parse tail, detect "started but never responded", read last message / sent prompt, find by `stop_reason`.
 - `references/codex-recipes.md` — Codex `{timestamp,type,payload}` event types, list, parse tail, launch-failure detection, find user messages.
@@ -467,7 +501,7 @@ node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
-node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd (--project, --cwd, --days, --latest, --resume, --interrupted, --json)
+node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd; instant deaths grouped as relaunch-not-resume (--project, --cwd, --days, --latest, --resume, --interrupted, --include-instant, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
 node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--project <substr>|--cwd, --repo-only, --cost, --days N, --provider, --include-plugins, --unused-only, --json)
 node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
@@ -546,6 +580,13 @@ prints *only* the command (pipe/eval it); `--interrupted` also includes
 user-interrupted sessions; `--all-endings` lists normal-ending sessions too. The
 discovery half of the resume loop — `analyze-claude-session.mjs <path> --events -v`
 is the explain half when you want to see exactly where it stopped first. Claude only.
+**Instant deaths are grouped, not listed**: a session that died within seconds with
+zero tool calls (a fleet launched into an exhausted profile window — e.g. a kanban
+board relaunching 38 ticket agents straight into the limit banner) has NOTHING to
+resume, so `--resume`-ing it reopens an empty session. These collapse into one
+summary line per launch directory with relaunch-not-resume advice (individually
+listable with `--include-instant`; in `--json` they're the `instantDeaths` groups
+next to `resumable`).
 
 `skill-usage.mjs` answers **"which of my agent skills never get triggered?"** —
 it discovers every skill on disk (`~/.claude/skills`, `~/.codex/skills`,

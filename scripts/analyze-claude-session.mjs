@@ -13,12 +13,14 @@
  *   node scripts/analyze-claude-session.mjs --json <path>   # machine-readable
  *   node scripts/analyze-claude-session.mjs --events <path> [--type tool_error] [--grep git] [--limit 50] [--around 21 --context 5] [--verbose] [--json]
  *   node scripts/analyze-claude-session.mjs --friction <path> [--top 10] [--json]   # ranked in-session friction moments
+ *   node scripts/analyze-claude-session.mjs --handoff <path|id> [--json]  # continuation view: detached processes, monitors, scratchpad, todos, subagents
  */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join, resolve, basename, dirname } from "path";
 import { homedir } from "os";
 import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
+import { runHandoffMode } from "./lib/handoff.mjs";
 import { claudeProjectDirs } from "./lib/config.mjs";
 
 /** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
@@ -235,7 +237,9 @@ if (args.includes("--latest")) {
 }
 
 const content = readFileSync(targetPath, "utf-8");
-if (args.includes("--friction")) {
+if (args.includes("--handoff")) {
+  console.log(runHandoffMode(content, args, targetPath));
+} else if (args.includes("--friction")) {
   console.log(runFrictionMode("claude", content, args));
 } else if (args.includes("--events")) {
   console.log(runEventsMode("claude", content, args));
