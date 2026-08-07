@@ -17,10 +17,11 @@
  *   node scripts/session-edit.mjs extract --session 874e3950 --profile andrena_team_5x
  *   node scripts/session-edit.mjs apply edits.md [--dry-run] [--no-backup] [--force] [--quiet]
  *
- * Editable by default: human prompts (`user` string content) and assistant
- * `text` blocks. Thinking / tool_use / tool_result blocks are emitted as
- * truncated [read-only] context and are never written back — opt them in with
- * --include-thinking / --include-tool-results.
+ * Editable by default: human prompts (`user` string content), assistant
+ * `text` blocks, and `system` recap lines (subtype:"away_summary" — the recap
+ * shown when you resume a session after being away). Thinking / tool_use /
+ * tool_result blocks are emitted as truncated [read-only] context and are never
+ * written back — opt them in with --include-thinking / --include-tool-results.
  *
  * Never deletes lines: the uuid/parentUuid chain is left exactly as-is, so
  * `claude --resume <id>` still walks the transcript. Text is rewritten in place.
@@ -172,12 +173,25 @@ function collectBlocks(lines, opts) {
     if (!t) return;
     let o;
     try { o = JSON.parse(t); } catch { return; }
-    if (o.type !== "user" && o.type !== "assistant") return;
-    const content = o.message?.content;
+    if (o.type !== "user" && o.type !== "assistant" && o.type !== "system") return;
     const uuid = o.uuid || "";
 
     const push = (kind, index, text, editable) =>
       blocks.push({ seq: ++seq, kind, uuid, index, lineNo, text, editable, ts: o.timestamp || "" });
+
+    // The "recap" Claude Code shows when you resume a session after being away
+    // is a `system` line, subtype:"away_summary", whose text is a TOP-LEVEL
+    // string `content` (not under message). Make any system line that carries a
+    // string content editable — kind `system.<subtype>` (or just `system`),
+    // addressed by uuid#0.
+    if (o.type === "system") {
+      if (typeof o.content === "string") {
+        push(o.subtype ? `system.${o.subtype}` : "system", 0, o.content, true);
+      }
+      return;
+    }
+
+    const content = o.message?.content;
 
     if (o.type === "user" && typeof content === "string") {
       // isMeta / <command-*> / <system-reminder> lines are machinery, not prompts.
@@ -204,6 +218,13 @@ function collectBlocks(lines, opts) {
 
 /** Write `text` into the block addressed by (uuid, index) on a parsed line object. */
 function setBlockText(o, index, text) {
+  // system recap lines (subtype:"away_summary") carry a top-level string
+  // `content`, not message.content — write it directly.
+  if (o.type === "system") {
+    if (typeof o.content !== "string") return false;
+    o.content = text;
+    return true;
+  }
   const content = o.message?.content;
   if (typeof content === "string") { o.message.content = text; return true; }
   if (!Array.isArray(content)) return false;

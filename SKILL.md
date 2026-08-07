@@ -214,8 +214,11 @@ Let me check what's in the folder first…
 { "command": "ls -la" }
 ```
 
-**What's editable.** By default only human prompts (`user`) and assistant `text`
-blocks. `thinking`, `tool_use`, and `tool_result` blocks are emitted as
+**What's editable.** By default human prompts (`user`), assistant `text`
+blocks, and **`system` recap lines** (`subtype:"away_summary"` — the recap
+Claude Code shows when you resume a session after being away; kind shows as
+`system.away_summary`, addressed by `uuid#0` since its text is a top-level
+`content` string, not under `message`). `thinking`, `tool_use`, and `tool_result` blocks are emitted as
 **truncated `[read-only]` context** — they're there so you edit with the
 conversation in view, and their bodies are never written back. Widen the scope
 with `--include-thinking` / `--include-tool-results` (tool_result payloads are
