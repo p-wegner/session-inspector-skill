@@ -214,15 +214,20 @@ Let me check what's in the folder first…
 { "command": "ls -la" }
 ```
 
-**What's editable.** By default human prompts (`user`), assistant `text`
-blocks, and **`system` recap lines** (`subtype:"away_summary"` — the recap
-Claude Code shows when you resume a session after being away; kind shows as
-`system.away_summary`, addressed by `uuid#0` since its text is a top-level
-`content` string, not under `message`). `thinking`, `tool_use`, and `tool_result` blocks are emitted as
-**truncated `[read-only]` context** — they're there so you edit with the
-conversation in view, and their bodies are never written back. Widen the scope
-with `--include-thinking` / `--include-tool-results` (tool_result payloads are
-huge; prefer targeting them one session at a time).
+**What's editable.** By default everything textual: human prompts (`user`),
+assistant `text`, assistant `thinking`, `tool_result` payloads, and **`system`
+recap lines** (`subtype:"away_summary"` — the recap Claude Code shows when you
+resume a session after being away; kind shows as `system.away_summary`,
+addressed by `uuid#0` since its text is a top-level `content` string, not under
+`message`).
+
+`tool_use` inputs are always **truncated `[read-only]` context** — they're there
+so you edit with the conversation in view, and are never written back.
+
+Narrow the scope with `--no-thinking` / `--no-tool-results` when you only mean
+to fix a prompt — tool_result payloads are bulky and blow up the extract on a
+long session. (`--include-thinking` / `--include-tool-results` are still
+accepted as no-ops; they're the default now.)
 
 **It never deletes or reorders lines.** Text is rewritten in place, so `uuid` /
 `parentUuid` stay intact and `claude --resume <id>` still walks the transcript.
