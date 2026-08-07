@@ -13,15 +13,15 @@
  *
  * Usage:
  *   node scripts/session-edit.mjs extract --latest [-o edits.md]
- *   node scripts/session-edit.mjs extract <path.jsonl> [--include-thinking] [--include-tool-results]
+ *   node scripts/session-edit.mjs extract <path.jsonl> [--no-thinking] [--no-tool-results]
  *   node scripts/session-edit.mjs extract --session 874e3950 --profile andrena_team_5x
  *   node scripts/session-edit.mjs apply edits.md [--dry-run] [--no-backup] [--force] [--quiet]
  *
- * Editable by default: human prompts (`user` string content), assistant
- * `text` blocks, and `system` recap lines (subtype:"away_summary" — the recap
- * shown when you resume a session after being away). Thinking / tool_use /
- * tool_result blocks are emitted as truncated [read-only] context and are never
- * written back — opt them in with --include-thinking / --include-tool-results.
+ * Editable by default: human prompts (`user` string content), assistant `text`
+ * blocks, `system` recap lines (subtype:"away_summary" — the recap shown when
+ * you resume a session after being away), assistant `thinking`, and
+ * `tool_result` payloads. Narrow the scope with --no-thinking /
+ * --no-tool-results. `tool_use` inputs stay read-only context always.
  *
  * Never deletes lines: the uuid/parentUuid chain is left exactly as-is, so
  * `claude --resume <id>` still walks the transcript. Text is rewritten in place.
@@ -251,9 +251,13 @@ function cmdExtract(argv) {
   const src = resolveTarget(argv, positional);
   if (!existsSync(src)) die("No such transcript: " + src);
 
+  // Editable by DEFAULT. --no-thinking / --no-tool-results narrow the scope back
+  // to prompts + assistant text (tool_result payloads are huge, so that is still
+  // the right call when extracting a long session just to fix a prompt).
+  // --include-* are kept as accepted no-ops for backwards compatibility.
   const opts = {
-    includeThinking: argv.includes("--include-thinking"),
-    includeToolResults: argv.includes("--include-tool-results"),
+    includeThinking: !argv.includes("--no-thinking"),
+    includeToolResults: !argv.includes("--no-tool-results"),
   };
   const buf = readFileSync(src);
   const lines = buf.toString("utf-8").split("\n");
@@ -489,7 +493,7 @@ else if (cmd === "apply") cmdApply(argv);
 else {
   console.log(`Usage:
   node scripts/session-edit.mjs extract --latest [-o edits.md]
-  node scripts/session-edit.mjs extract <path.jsonl> [--include-thinking] [--include-tool-results]
+  node scripts/session-edit.mjs extract <path.jsonl> [--no-thinking] [--no-tool-results]
   node scripts/session-edit.mjs extract --session <id-prefix> [--profile <name> | --config-dir <path>]
   node scripts/session-edit.mjs apply <edits.md> [--dry-run] [--no-backup] [--force] [--quiet]`);
   process.exit(cmd ? 1 : 0);
