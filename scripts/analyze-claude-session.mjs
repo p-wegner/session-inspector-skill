@@ -22,6 +22,7 @@ import { homedir } from "os";
 import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
 import { runHandoffMode } from "./lib/handoff.mjs";
 import { claudeProjectDirs } from "./lib/config.mjs";
+import { splitLocator } from "./lib/sessions.mjs";
 
 /** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
 function homeTag(projectsDir) {
@@ -149,17 +150,17 @@ if (args.includes("--list")) {
 }
 
 // Resolve a session locator that is NOT a filesystem path: a bare session-id (or
-// id-prefix), or a "<projectDir>/<sessionId>" locator (the form the statusline and
-// skill docs emit), with or without a trailing .jsonl. ALWAYS scans every profile
+// id-prefix), or a two-part locator in EITHER order — "<sessionId>/<projectDir>"
+// (what the status line emits: uuid first, so a narrow terminal truncates the folder
+// rather than the id) or "<projectDir>/<sessionId>" (Claude's on-disk layout, and
+// older docs) — with or without a trailing .jsonl. splitLocator() tells the two apart
+// by shape, so an 8-hex-digit stub copied off the status line resolves as-is. ALWAYS scans every profile
 // home via listSessions() — session ids are globally-unique UUIDs, and rate-limit
 // driven profile switches mean the session is frequently NOT in the caller's current
 // profile. --profile/--config-dir is therefore a PREFERENCE (tiebreak toward that
 // home), never a hard filter that could hide the only real match in another profile.
 function findSessionByLocator(locator, argv = process.argv) {
-  const clean = String(locator).replace(/\.jsonl$/i, "");
-  const segs = clean.split(/[\\/]/).filter(Boolean);
-  const idPart = segs[segs.length - 1];
-  const dirPart = segs.length > 1 ? segs[segs.length - 2] : null;
+  const { idPart, dirPart } = splitLocator(locator);
 
   const sessions = listSessions(false);
 
@@ -169,19 +170,26 @@ function findSessionByLocator(locator, argv = process.argv) {
     preferLeaf = basename(resolveConfigDir(argv)).toLowerCase();
   }
 
+  // The dir hint is a TIEBREAK, not a filter that may hide the answer: the status
+  // line shortens the folder for width ("C--projects-andrena-comet" -> "andrena-comet"),
+  // and a session can be resumed from a different cwd, so a hint that matches nothing
+  // must not turn a good id into "not found". Match on the id first, narrow by dir after.
+  const matchDir = (s) => {
+    if (!dirPart) return true;
+    const want = dirPart.toLowerCase();
+    return s.dir.toLowerCase().includes(want) || s.path.toLowerCase().includes(want);
+  };
   const exact = [];
   const prefix = [];
   for (const s of sessions) {
     const id = s.name.replace(/\.jsonl$/i, "");
-    if (dirPart) {
-      const dirLeaf = s.dir.split(/[\\/]/).pop();
-      if (dirLeaf !== dirPart && !s.dir.includes(dirPart)) continue;
-    }
     if (id === idPart) exact.push(s);
     else if (id.startsWith(idPart)) prefix.push(s);
   }
   // Prefer an exact id match; fall back to prefix matches (both newest-first).
-  const pool = exact.length ? exact : prefix;
+  let pool = exact.length ? exact : prefix;
+  const inDir = pool.filter(matchDir);
+  if (inDir.length) pool = inDir;
   // If a profile was named, float its matches to the front (stable) — but keep the
   // others so a session that moved to a different profile is still resolvable.
   if (preferLeaf && pool.length > 1) {
@@ -209,7 +217,7 @@ if (args.includes("--latest")) {
   } else {
     const locator = sessionArg || arg;
     if (!locator) {
-      console.log("Usage: node analyze-claude-session.mjs <path.jsonl | sessionId | projectDir/sessionId> | --session <id> | --list [--worktrees] | --latest [--json]");
+      console.log("Usage: node analyze-claude-session.mjs <path.jsonl | sessionId | sessionId/projectDir> | --session <id> | --list [--worktrees] | --latest [--json]");
       process.exit(1);
     }
     const matches = findSessionByLocator(locator, args);

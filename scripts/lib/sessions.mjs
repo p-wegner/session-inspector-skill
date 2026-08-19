@@ -266,3 +266,34 @@ export function projectIdentity(cwd) {
 export function readFile(path) {
   return readFileSync(path, "utf-8");
 }
+
+// ── Locator parsing ────────────────────────────────────────────────────────
+
+/** Does this segment look like a session id (or an id prefix)? UUIDs are hex
+ *  groups joined by single dashes, so a project folder ("C--projects-andrena",
+ *  "andrena-comet") never qualifies: it has non-hex letters, or doubled dashes. */
+export function looksLikeSessionId(seg) {
+  return /^[0-9a-f]{4,}(-[0-9a-f]{1,12})*-?$/i.test(seg);
+}
+
+/**
+ * Split a session locator into { idPart, dirPart }, in EITHER order.
+ *
+ * The status line emits "<id-prefix>/<project-folder>" — uuid first, so a narrow
+ * terminal truncates the folder rather than the id. Older docs, and Claude's own
+ * on-disk layout, use the reverse "<project-folder>/<id>". Both must resolve, so
+ * decide by shape rather than by position: whichever of the last two segments
+ * looks like a session id is the id, the other is the folder hint.
+ */
+export function splitLocator(locator) {
+  const clean = String(locator).replace(/\.jsonl$/i, "");
+  const segs = clean.split(/[\/]/).filter(Boolean);
+  if (!segs.length) return { idPart: "", dirPart: null };
+  if (segs.length === 1) return { idPart: segs[0], dirPart: null };
+  const a = segs[segs.length - 2];
+  const b = segs[segs.length - 1];
+  // Trailing segment wins ties (a real path is <dir>/<uuid>); only a clear
+  // "first looks like an id, second doesn't" flips the order.
+  if (looksLikeSessionId(a) && !looksLikeSessionId(b)) return { idPart: a, dirPart: b };
+  return { idPart: b, dirPart: a };
+}

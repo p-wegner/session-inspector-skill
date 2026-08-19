@@ -23,7 +23,21 @@ object on **stdin**. The three fields that matter here:
 
 `transcript_path` already **is** the path the analyzer wants, so the locator is
 really just a compact, human-selectable rendering of it:
-`<project-folder>/<session-id>` ⇄ `~/.claude/projects/<project-folder>/<session-id>.jsonl`.
+`<session-id>/<project-folder>` ⇄ `~/.claude/projects/<project-folder>/<session-id>.jsonl`.
+
+**Put the id first, and shorten both parts.** A status line gets truncated on the
+right when the terminal is narrow, so whatever you print last is what disappears.
+The id is the key; the folder is only a hint. Printing `8e3f1bec/andrena-comet`
+instead of `C--projects-andrena-comet/8e3f1bec-4da1-…` means a narrow window still
+shows something you can paste. The resolver here handles it:
+
+- **Either order.** `<id>/<folder>` and `<folder>/<id>` both resolve — the segment
+  that *looks* like a uuid is taken as the id, whichever side it is on.
+- **Id prefixes.** 8 hex digits is plenty; the resolver prefix-matches, and reports
+  the candidates if a stub ever matches more than one session.
+- **The folder is a tiebreak, never a filter.** A shortened (`andrena-comet`) or
+  stale folder narrows the matches when it hits and is ignored when it doesn't, so
+  it can't turn a good id into "not found".
 
 ## Minimal setup
 
@@ -32,7 +46,8 @@ skill's "Node builtins" stance — save as `~/.claude/statusline-session.mjs`:
 
 ```js
 #!/usr/bin/env node
-// Prints "🔖 <project-folder>/<session-id>" for the current Claude Code session.
+// Prints "🔖 <session-id-prefix>/<project-folder>" for the current Claude Code
+// session — id first, so a narrow terminal truncates the folder, not the key.
 let raw = "";
 process.stdin.on("data", (c) => (raw += c));
 process.stdin.on("end", () => {
@@ -47,7 +62,12 @@ process.stdin.on("end", () => {
   } else if (d.cwd) {
     folder = d.cwd.replace(/[^a-zA-Z0-9]/g, "-"); // how Claude derives the project dir name
   }
-  const loc = folder && sid ? `${folder}/${sid}` : sid || "(no session)";
+  // First hex group is enough to resolve (prefix match); drop the "C--projects-"
+  // noise from the folder — it stays a substring of the real name, so it still
+  // works as the dir hint.
+  const short = sid.slice(0, 8);
+  folder = folder.replace(/^[a-zA-Z]--/, "").replace(/^projects-/, "");
+  const loc = short && folder ? `${short}/${folder}` : short || "(no session)";
   process.stdout.write(`\x1b[2m🔖\x1b[0m \x1b[35m${loc}\x1b[0m`); // dim bookmark + magenta locator
 });
 ```
@@ -83,12 +103,14 @@ Copy the locator from the status line, then either resolve it to a path or hand 
 to another agent:
 
 ```bash
-# locator  <project-folder>/<session-id>  →  the transcript file:
+# the locator works verbatim — no need to expand it to a path first:
+node scripts/analyze-claude-session.mjs 8e3f1bec/andrena-comet
+node scripts/analyze-claude-session.mjs 8e3f1bec          # id prefix alone is fine
 node scripts/analyze-claude-session.mjs ~/.claude/projects/<project-folder>/<session-id>.jsonl
 ```
 
 …or paste the locator to a fresh/stronger agent: *"use the session-inspector skill
-on `<project-folder>/<session-id>` — figure out why it stalled and finish it."*
+on `8e3f1bec/andrena-comet` — figure out why it stalled and finish it."*
 
 With [cross-machine sync](session-sync.md) running, the same locator is also
 searchable from any device: `node scripts/sync-query.mjs search "<session-id>"`,

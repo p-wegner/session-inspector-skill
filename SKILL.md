@@ -137,7 +137,7 @@ When the analyzer isn't enough and you need custom parsing, load the matching **
 - `references/codex-recipes.md` — Codex `{timestamp,type,payload}` event types, list, parse tail, launch-failure detection, find user messages.
 - `references/copilot-recipes.md` — Copilot `events.jsonl` event types, manual parse, workspace correlation, process logs, common-issue symptoms. (Some snippets read an agentic-kanban board API — **optional**, only relevant if you run that board; the local `events.jsonl` path always works.)
 
-**Tip — surface the current session in your statusline.** To make the *current* Claude session one copy-paste away (for inspecting it or handing it to a stronger model mid-task), show its `<project-folder>/<session-id>` locator in the Claude Code statusline. Setup in `references/statusline.md`.
+**Tip — surface the current session in your statusline.** To make the *current* Claude session one copy-paste away (for inspecting it or handing it to a stronger model mid-task), show its `<session-id>/<project-folder>` locator in the Claude Code statusline — id FIRST, so a narrow terminal truncates the folder rather than the key, and 8 hex digits is enough to resolve. Setup in `references/statusline.md`.
 
 ## Recover & continue a cut-off session's SUBAGENTS (`subagent-results.mjs`)
 
@@ -160,8 +160,11 @@ node scripts/subagent-results.mjs <locator> --json                 # machine-rea
 Subagent transcripts live at `<session-dir>/<sessionId>/subagents/agent-<id>.jsonl`
 with a sibling `agent-<id>.meta.json` (`{agentType, description, toolUseId,
 spawnDepth}`); `toolUseId` is the join key back to the parent's `Agent` tool_use.
-Resolves a bare session id / `projectDir/sessionId` locator / path across all
-profile homes, same as the analyzers (`--profile`/`--config-dir` to prefer one).
+Resolves a bare session id (or id *prefix*) / a two-part locator in either order
+(`sessionId/projectDir` — what the status line shows — or `projectDir/sessionId`) /
+a path, across all profile homes, same as the analyzers (`--profile`/`--config-dir`
+to prefer one). The folder half is a tiebreak, never a filter, so a shortened or
+stale folder can't hide a valid id.
 
 **The classification and what to do with each** — this is the whole point; the
 statuses tell you *not to re-run* when the answer is already on disk:
@@ -900,7 +903,7 @@ single-home and unaffected.
 
 **Resolving a session by id is cross-profile by default — `--profile` is a
 preference, never a filter.** Because rate limits force frequent mid-work profile
-switches, a session id (or `projectDir/sessionId` locator) is *usually* NOT under
+switches, a session id (or a `sessionId/projectDir` locator, in either order) is *usually* NOT under
 your current profile. So `analyze-claude-session.mjs <id>` and `session-edit.mjs
 --session <id>` **always search every sibling home** and resolve the (globally
 unique) id wherever it lives; passing `--profile`/`--config-dir` only floats that
