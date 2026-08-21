@@ -161,10 +161,22 @@ Subagent transcripts live at `<session-dir>/<sessionId>/subagents/agent-<id>.jso
 with a sibling `agent-<id>.meta.json` (`{agentType, description, toolUseId,
 spawnDepth}`); `toolUseId` is the join key back to the parent's `Agent` tool_use.
 Resolves a bare session id (or id *prefix*) / a two-part locator in either order
-(`sessionId/projectDir` — what the status line shows — or `projectDir/sessionId`) /
-a path, across all profile homes, same as the analyzers (`--profile`/`--config-dir`
-to prefer one). The folder half is a tiebreak, never a filter, so a shortened or
-stale folder can't hide a valid id.
+(`sessionId/projectDir` or `projectDir/sessionId` — Claude's own on-disk layout,
+where the id half is the **full** uuid because that is the transcript filename) /
+an **ACP agent name** (`projectSlug--sid8`, which is what the status line now
+shows — see below) / a path, across all profile homes, same as the analyzers
+(`--profile`/`--config-dir` to prefer one). The folder half is a tiebreak, never a
+filter, so a shortened or stale folder can't hide a valid id.
+
+**Paste whatever is on the status line.** It used to print its own
+`🔖 <sid8>/<folder>` locator; since 2026-08-21 it prints the name the ACP hook
+registered instead (`C--projects-andrena-acp--869f8e8a`), so that the identity on
+screen is also a bus address. Both resolve. The ACP shape is tried only as a
+**fallback**, after the ordinary parse finds nothing, so no locator that worked
+before can change meaning — in particular a bare project-folder name
+(`C--projects-andrena-acp`, doubled dashes and all) is still read as a folder, not
+split into an id. `splitAcpAgentName` / `locatorCandidates` in `lib/sessions.mjs`;
+covered by `scripts/test/locator.test.mjs`.
 
 **The classification and what to do with each** — this is the whole point; the
 statuses tell you *not to re-run* when the answer is already on disk:
