@@ -45,7 +45,7 @@ import { readFileSync, readdirSync, statSync, existsSync, writeFileSync } from "
 import { join, resolve, basename, dirname } from "path";
 import { homedir } from "os";
 import { claudeProjectDirs } from "./lib/config.mjs";
-import { splitLocator } from "./lib/sessions.mjs";
+import { locatorCandidates } from "./lib/sessions.mjs";
 
 const BANNER = /hit your (session|usage|weekly) limit|resets \d+(:\d+)?\s*(am|pm)/i;
 
@@ -96,19 +96,25 @@ function resolveTarget() {
   if (existsSync(resolve(positional)) && statSync(resolve(positional)).isFile()) return resolve(positional);
   // locator: bare id / prefix / sessionId+projectDir in either order (the status
   // line emits uuid-first; Claude's on-disk layout is folder-first)
-  const { idPart, dirPart } = splitLocator(positional);
   const all = listAll();
   const preferLeaf = (has("--profile") || has("--config-dir")) ? basename(resolveConfigDir()).toLowerCase() : null;
-  const exact = [], prefix = [];
-  for (const s of all) {
-    if (s.id === idPart) exact.push(s);
-    else if (s.id.startsWith(idPart)) prefix.push(s);
+  // Each reading of the locator in turn; the first that resolves wins. The primary
+  // parse is unchanged; an ACP agent name (what the status line now shows) is a
+  // fallback, so no locator that worked before changes meaning.
+  let pool = [];
+  for (const { idPart, dirPart } of locatorCandidates(positional)) {
+    const exact = [], prefix = [];
+    for (const s of all) {
+      if (s.id === idPart) exact.push(s);
+      else if (s.id.startsWith(idPart)) prefix.push(s);
+    }
+    // Dir hint narrows, but never hides: the status line shortens the folder for width,
+    // so a hint that matches nothing must not turn a good id into "not found".
+    pool = exact.length ? exact : prefix;
+    const inDir = dirPart ? pool.filter((s) => s.path.toLowerCase().includes(dirPart.toLowerCase())) : [];
+    if (inDir.length) pool = inDir;
+    if (pool.length) break;
   }
-  // Dir hint narrows, but never hides: the status line shortens the folder for width,
-  // so a hint that matches nothing must not turn a good id into "not found".
-  let pool = exact.length ? exact : prefix;
-  const inDir = dirPart ? pool.filter((s) => s.path.toLowerCase().includes(dirPart.toLowerCase())) : [];
-  if (inDir.length) pool = inDir;
   if (!pool.length) fail(`No session matching "${positional}" (searched all profile homes).`);
   if (preferLeaf && pool.length > 1) pool.sort((a, b) =>
     (a.path.toLowerCase().includes(preferLeaf) ? 0 : 1) - (b.path.toLowerCase().includes(preferLeaf) ? 0 : 1));
