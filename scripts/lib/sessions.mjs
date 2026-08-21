@@ -285,6 +285,56 @@ export function looksLikeSessionId(seg) {
  * decide by shape rather than by position: whichever of the last two segments
  * looks like a session id is the id, the other is the folder hint.
  */
+/**
+ * An ACP agent name -> { idPart, dirPart }, or null if it is not one.
+ *
+ * The status line shows the name the ACP hook registered ("<project-slug>--<sid8>",
+ * acp.js sessionAgentName) so that what is on screen is also a bus address. It has
+ * no slash, so splitLocator() would take the whole string for one id and never match.
+ * The two halves are joined by a DOUBLED dash, which a uuid never contains.
+ *
+ * Deliberately conservative, and only ever consulted as a fallback (see
+ * locatorCandidates), so it declines anything already meaningful:
+ *   "C--projects-andrena-acp"  -> null   tail is not id-shaped; a bare Claude
+ *                                        project-folder name stays a folder
+ *   a bare uuid                -> null   no doubled dash
+ *   "<folder>/<full-uuid>"     -> never reaches here; the primary parse wins
+ */
+export function splitAcpAgentName(seg) {
+  const str = String(seg || "");
+  if (looksLikeSessionId(str)) return null;          // already a plain id / prefix
+  const i = str.lastIndexOf("--");
+  if (i <= 0) return null;
+  const head = str.slice(0, i);
+  const tail = str.slice(i + 2);
+  // sessionAgentName() slices the session id to 8 chars, so the tail is a short hex
+  // stub. Require id shape on the tail, and require the head NOT to be one — that is
+  // what keeps a folder name (doubled dashes, non-hex letters) out of here.
+  if (!tail || !looksLikeSessionId(tail) || looksLikeSessionId(head)) return null;
+  return { idPart: tail, dirPart: head };
+}
+
+/**
+ * Every interpretation of a locator worth trying, best first.
+ *
+ * splitLocator() remains the primary parse and is unchanged, so every form that
+ * resolved before resolves identically: a bare full uuid, "<folder>/<full-uuid>"
+ * (Claude's on-disk layout — the id half is the FULL uuid, because that is the
+ * transcript filename), "<sid8>/<folder>" (the older status-line locator), either
+ * with or without a trailing .jsonl, and a bare project-folder name. The ACP agent
+ * name is APPENDED, so it can only rescue a locator that would otherwise resolve to
+ * nothing; it can never reinterpret one that already works.
+ */
+export function locatorCandidates(locator) {
+  const primary = splitLocator(locator);
+  const out = [primary];
+  const clean = String(locator).replace(/.jsonl$/i, "");
+  const segs = clean.split(/[/]/).filter(Boolean);
+  const acp = splitAcpAgentName(segs[segs.length - 1] || "");
+  if (acp && !(acp.idPart === primary.idPart && acp.dirPart === primary.dirPart)) out.push(acp);
+  return out;
+}
+
 export function splitLocator(locator) {
   const clean = String(locator).replace(/\.jsonl$/i, "");
   const segs = clean.split(/[\/]/).filter(Boolean);

@@ -22,7 +22,7 @@ import { homedir } from "os";
 import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
 import { runHandoffMode } from "./lib/handoff.mjs";
 import { claudeProjectDirs } from "./lib/config.mjs";
-import { splitLocator } from "./lib/sessions.mjs";
+import { locatorCandidates } from "./lib/sessions.mjs";
 
 /** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
 function homeTag(projectsDir) {
@@ -160,9 +160,18 @@ if (args.includes("--list")) {
 // profile. --profile/--config-dir is therefore a PREFERENCE (tiebreak toward that
 // home), never a hard filter that could hide the only real match in another profile.
 function findSessionByLocator(locator, argv = process.argv) {
-  const { idPart, dirPart } = splitLocator(locator);
-
   const sessions = listSessions(false);
+  // Each reading of the locator in turn; the first that resolves wins. The primary
+  // parse is unchanged, so an ACP agent name copied off the status line can only
+  // rescue a locator that would otherwise have found nothing.
+  for (const { idPart, dirPart } of locatorCandidates(locator)) {
+    const found = matchSessions(sessions, idPart, dirPart, argv);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+function matchSessions(sessions, idPart, dirPart, argv) {
 
   // Preferred home leaf (if the caller named one) — used only to rank, not to filter.
   let preferLeaf = null;
