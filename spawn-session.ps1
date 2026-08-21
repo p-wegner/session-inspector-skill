@@ -15,16 +15,39 @@
 param(
     [string]$Path,
     [string]$Prompt,
+    [string]$PromptFile,
     [string]$ProfileDir,
     [string]$SessionId,
     [string]$LaunchConfigDir,
     [switch]$DetectOnly,
     [switch]$NoPrompt,
     [switch]$SafeMode,
+    [switch]$NoTrust,
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Forward
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue', deliberately, NOT 'Stop'. This script's whole job is shelling out to
+# native tools (node, git, claude), and under 'Stop' PowerShell 5.1 turns any line a
+# native command writes to stderr into a terminating ErrorRecord. That killed the
+# launcher on first use: trust-folder.mjs printed a SUCCESS message, PowerShell raised
+# NativeCommandError, and the tab dropped to a prompt with claude never started.
+# Errors here are handled by exit code, explicitly, where they occur.
+$ErrorActionPreference = 'Continue'
+
+# The prompt arrives as a FILE, not as an argument, whenever the caller can manage it.
+# Windows Terminal splits its command line on ';' *after* cmd/PowerShell quoting is
+# already satisfied, so a correctly-quoted prompt containing a semicolon is torn in
+# half and wt tries to run the remainder as a program. A path contains nothing wt
+# reinterprets. -Prompt is kept for direct callers and short text.
+if ($PromptFile) {
+    if (Test-Path -LiteralPath $PromptFile) {
+        try { $Prompt = [System.IO.File]::ReadAllText($PromptFile) } catch {
+            Write-Host "  [spawn-session] cannot read prompt file: $PromptFile" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "  [spawn-session] prompt file not found: $PromptFile" -ForegroundColor Yellow
+    }
+}
 
 # --- The target repo ---------------------------------------------------------
 if (-not $Path) {
@@ -151,6 +174,34 @@ if ($SafeMode) {
     $modeLabel = "default (not determined)"
 }
 
+# --- Pre-accept the folder-trust dialog --------------------------------------
+# "Do you trust the files in this folder?" is a BLOCKING first-run prompt, per
+# (profile, folder). Spawning into a profile that has never opened this repo — the
+# normal case when handing work to another subscription — parks the new session on a
+# question nobody is watching, turning an unattended handoff into a silent hang.
+# Observed on first real use.
+# Delegated to node, NOT done here: PS 5.1's ConvertTo-Json defaults to -Depth 2, so a
+# round-trip through it would truncate a 60-100 KB nested .claude.json into rubbish.
+$trustNote = ""
+if (-not $NoTrust) {
+    $trustScript = Join-Path $PSScriptRoot "trust-folder.mjs"
+    if (Test-Path -LiteralPath $trustScript) {
+        # No 2>&1 here - see the $ErrorActionPreference note at the top. The helper puts
+        # its status on stdout precisely so this call does not need to touch stderr.
+        $out = (& node $trustScript --config-dir "$env:CLAUDE_CONFIG_DIR" --path "$Path" | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0) {
+            $trustNote = if ($out -like 'already-trusted*') { "already trusted" } else { "accepted for this profile" }
+        } else {
+            # Say so rather than launching into a prompt that will look like a hang.
+            $trustNote = "COULD NOT PRE-ACCEPT - expect a trust prompt ($out)"
+        }
+    } else {
+        $trustNote = "helper missing - expect a trust prompt if this profile is new here"
+    }
+} else {
+    $trustNote = "skipped (-NoTrust)"
+}
+
 # --- Scrub the launching session's identity ----------------------------------
 # `wt.exe` DOES hand the launching process's environment to the new tab, so a session
 # spawned from inside Claude Code inherits that session's markers. Two symptoms, both
@@ -209,6 +260,8 @@ Write-Host "  spawn-session" -ForegroundColor Cyan
 Write-Host "  repo    : " -NoNewline -ForegroundColor DarkGray; Write-Host $Path
 Write-Host "  branch  : " -NoNewline -ForegroundColor DarkGray; Write-Host "$branch$dirty"
 Write-Host "  profile : " -NoNewline -ForegroundColor DarkGray; Write-Host $profileLabel
+Write-Host "  trust   : " -NoNewline -ForegroundColor DarkGray
+Write-Host $trustNote -ForegroundColor $(if ($trustNote -like "*COULD NOT*") { "Yellow" } else { "Gray" })
 Write-Host "  perms   : " -NoNewline -ForegroundColor DarkGray
 # Printed always, never only when permissive: an inherited bypass that nobody
 # announced is the one outcome here worth being loud about.
@@ -233,6 +286,7 @@ if ($DetectOnly) {
     Write-Host "  [spawn-session] detect-only; not launching." -ForegroundColor Cyan
     Write-Host "  resolved-profile=$($env:CLAUDE_CONFIG_DIR)"
     Write-Host "  detected-mode=$inheritedMode"
+    Write-Host "  trust=$trustNote"
     Write-Host "  claude-args=$($modeArgs -join ' ')"
     exit 0
 }
