@@ -44,6 +44,8 @@ spawn code-metrics -W                  a new WINDOW instead of a tab
 spawn code-metrics -p 5x_4             a specific profile (short names work)
 spawn code-metrics -safe               do not inherit this session's permission mode
 spawn code-metrics -detect             resolve profile+mode, print them, launch nothing
+spawn code-metrics -p 5x_4 -handoff -m "..."   hand work over and report WHO took it
+spawn code-metrics -notrust            do not pre-accept the folder-trust dialog
 spawn code-metrics -n                  dry run - print, spawn nothing
 spawn code-metrics -dsp                forward --dangerously-skip-permissions
 ```
@@ -84,6 +86,53 @@ a session spawned from a bypass-mode parent stalls on its first tool call waitin
 human who is looking at another tab. It is printed in the banner every time, yellow when
 permissive; `-safe` opts out.
 
+## Handing work over to another subscription
+
+The case this exists for: this session is out of budget, and the work should continue on
+another account.
+
+```
+spawn code-metrics -p 5x_4 -handoff -m "what I was doing and why I am stopping"
+```
+
+- A **brief** is written to `~/.spawn-session/handoffs/<ts>--<slug>.md` (durable, never
+  `%TEMP%`): your note, the target repo's measured git state, and — if `session-inspector`
+  is installed — its `--handoff` panel of background processes, armed monitors, scratchpad
+  and unadjudicated subagent results. Every section names its source; a missing analyzer
+  degrades to "note + git state" and says so.
+- The new session is **seeded to take over**: read the brief, then the repo's own docs,
+  report what it actually finds, propose before editing.
+- The launcher then **waits and names the recipient**, read back from the ACP roster
+  (snapshot before, diff after) because the child's session id does not exist at launch:
+
+```
+[spawn] HANDOFF RECEIPT
+  continued by : C--projects-andrena-code-metrics-skill--20189b4c
+  brief        : C:\Users\pwegner\.spawn-session\handoffs\...md
+  reach it     : node ".../acp.js" send --to C--...--20189b4c --msg "..."
+```
+
+The id half of that name is the new session's real session-id prefix, so it doubles as a
+`claude --resume` handle. A timeout, an unreachable bus, or two new sessions appearing at
+once exit non-zero and say "do NOT treat this as a completed handoff".
+
+**Closing the outgoing session is your `/exit`.** The tool reports that the handoff is
+complete and who holds the work; it does not close anything itself. Note that a session
+cannot self-verify its own colours or transcript banner — only someone looking at the tab
+can — so if you want the new tab certified healthy, look at it.
+
+## The folder-trust prompt
+
+"Do you trust the files in this folder?" is a blocking first-run prompt, per (profile,
+folder) — so spawning into a profile that has never opened the repo parks the session on a
+question nobody is watching. The launcher pre-accepts it in that profile's `.claude.json`
+(atomic write, one `.bak`, merged so `allowedTools` and friends survive); `-notrust` opts
+out, and a failure is announced rather than left to look like a hang.
+
+Done in node, not PowerShell, because **PS 5.1's `ConvertTo-Json` defaults to `-Depth 2`**
+and would truncate a 60–100 KB nested config into rubbish. Verified against a copy of a
+real 99 KB config: one entry changed, one flag flipped, everything else byte-identical.
+
 ## The environment leak it handles
 
 `wt.exe` passes the launching process's environment to the new tab. Verified with a
@@ -113,4 +162,4 @@ forwarding the environment.
 | `session-inspector` | inspect, resume, or recover **past** sessions |
 | agentic-kanban | launching agents in **worktrees** of a board project — don't bypass it with this |
 
-_Docs last synced with the code at `HEAD` (2026-08-21)._
+_Docs last synced with the code at `c0b8027`+ (2026-08-21)._
