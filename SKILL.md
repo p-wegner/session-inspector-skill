@@ -220,6 +220,41 @@ refused with the candidates listed rather than resolved by guess: landing on the
 account is the failure this flag exists to prevent. An unresolvable name falls back to
 the inherited profile and says so out loud.
 
+## Spawning a BATCH — capture each identity as you go
+
+Spawning several sessions and then diffing the ACP roster at the end tells you *that* N
+sessions came up, but **not which is which**: registration order does not follow spawn
+order. Measured — four sessions launched in the order `5x, 5x_2, 5x_3, 5x_4` registered as
+`42249379, 1a3df5b9, c54904dc, 56c2b369`, and asking them directly showed the first two
+were the reverse of the order they were launched in. All four profiles were covered exactly
+once; only the inferred name-to-profile mapping was wrong.
+
+So for a batch, pass **`-wait` per spawn** — it snapshots and diffs around that one launch,
+so the name it prints belongs to that profile. Do not reconstruct the mapping afterwards
+from ordering.
+
+If you must confirm placement after the fact, ask the sessions over ACP; a live session's
+profile is not readable from disk (`lastSessionId` in `.claude.json` is written at
+shutdown, so it names the PREVIOUS session).
+
+## What a spawned session cannot tell you about itself
+
+Two questions to stop asking a spawned session, because its answer will be confidently
+wrong:
+
+**Colours.** A session reports the environment of its own *tool subprocesses*, and Claude
+Code sets `NO_COLOR=1` there deliberately so tool output is not ANSI-polluted. Asked
+whether it has colours, all four batch sessions answered "no - NO_COLOR=1 is set", which is
+true of their tool env and says nothing about the TUI. (Verified: this launching session's
+PowerShell tool env also carries `NO_COLOR=1`, unset by anyone here.) The TUI's rendering
+is only observable by a human looking at the tab.
+
+**The startup banner.** Not visible from inside either. Confirm transcript saving instead by
+checking that `<profile>/projects/<slug>/<sid>.jsonl` exists and is growing — that is a fact
+on disk rather than a self-report.
+
+A spawned session declining to certify these is the correct answer, not an unhelpful one.
+
 ## When NOT to use it
 
 - **You want this conversation continued elsewhere** → `cfork` (claude-pick).

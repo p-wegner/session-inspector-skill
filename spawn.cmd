@@ -171,21 +171,6 @@ rem silently lost and the session would come up on the default profile.
 set "INHERIT=%CLAUDE_CONFIG_DIR%"
 if defined PROF set "INHERIT=%PROF%"
 
-if defined DRY (
-  echo [spawn] DRY RUN - nothing spawned
-  echo   target  : %DEST%
-  echo   title   : claude %LEAF%
-  echo   window  : %WINARG%
-  echo   profile : %INHERIT%
-  echo   bare    : %BARE%
-  echo   session : %CLAUDE_CODE_SESSION_ID%  - permission mode read from its transcript
-  echo   safe    : %SAFE%
-  echo   handoff : %HANDOFF%   wait: %WAIT%   notrust: %NOTRUST%
-  echo   forward : %FWD%
-  echo   prompt  : %MSG%
-  echo   via-file: staged at spawn time to keep wt away from any semicolon
-  exit /b 0
-)
 
 rem Move the prompt OFF the wt command line. wt splits on ';' after cmd quoting is
 rem already satisfied, so a prompt containing a semicolon gets torn in half and wt tries
@@ -202,6 +187,42 @@ if not defined PROMPTFILE (
 )
 :noprompt
 
+rem Build the optional arguments ONLY when they have a value. An empty `-Foo ""` loses
+rem its quotes crossing cmd -> wt -> PowerShell, so the launcher receives a bare `-Foo`
+rem followed by the NEXT switch and dies with "Missing an argument for parameter" - the
+rem tab then sits at a PowerShell prompt with claude never started. Measured: `-b`
+rem (no prompt file) broke all four spawns this way, and `-n` could not catch it because
+rem a dry run exits before this line.
+set "PFARG="
+set "PROFARG="
+set "SIDARG="
+set "LCDARG="
+if defined PROMPTFILE set "PFARG=-PromptFile "%PROMPTFILE%""
+if defined INHERIT set "PROFARG=-ProfileDir "%INHERIT%""
+if defined CLAUDE_CODE_SESSION_ID set "SIDARG=-SessionId "%CLAUDE_CODE_SESSION_ID%""
+if defined CLAUDE_CONFIG_DIR set "LCDARG=-LaunchConfigDir "%CLAUDE_CONFIG_DIR%""
+
+rem The dry run lives HERE, after the arguments are assembled - not before. It used to
+rem print a summary built from variables that were still empty, so it reported a launch
+rem that did not match the one wt would receive, and missed the empty `-PromptFile`
+rem defect entirely. A dry run that cannot show the real argv is worse than none.
+if defined DRY (
+  echo [spawn] DRY RUN - nothing spawned
+  echo   target  : %DEST%
+  echo   title   : claude %LEAF%
+  echo   window  : %WINARG%
+  echo   profile : %INHERIT%
+  echo   bare    : %BARE%
+  echo   session : %CLAUDE_CODE_SESSION_ID%  - permission mode read from its transcript
+  echo   safe    : %SAFE%
+  echo   handoff : %HANDOFF%   wait: %WAIT%   notrust: %NOTRUST%
+  echo   forward : %FWD%
+  echo   prompt  : %MSG%
+  echo   via-file: staged at spawn time to keep wt away from any semicolon
+  echo   ps-args : %PFARG% %PROFARG% %SIDARG% %LCDARG% %BARE% %SAFE% %NOTRUST% %FWD%
+  exit /b 0
+)
+
 rem Snapshot the ACP roster BEFORE spawning: the new session's id does not exist yet,
 rem so "which name is new" is the only way to learn who took the work.
 set "BASE=%TEMP%\spawn-acp-baseline-%RANDOM%.txt"
@@ -209,8 +230,7 @@ if defined WAIT node "%ROOT%wait-for-agent.mjs" --snapshot "%BASE%" --cwd "%DEST
 
 wt.exe %WINARG% -d "%DEST%" --title "claude %LEAF%" ^
   powershell -NoLogo -NoExit -ExecutionPolicy Bypass -File "%ROOT%spawn-session.ps1" ^
-  -Path "%DEST%" -PromptFile "%PROMPTFILE%" -ProfileDir "%INHERIT%" ^
-  -SessionId "%CLAUDE_CODE_SESSION_ID%" -LaunchConfigDir "%CLAUDE_CONFIG_DIR%" ^
+  -Path "%DEST%" %PFARG% %PROFARG% %SIDARG% %LCDARG% ^
   %BARE% %SAFE% %DETECT% %NOTRUST% %FWD%
 
 if errorlevel 1 (
