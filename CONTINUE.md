@@ -40,6 +40,23 @@ inherited markers. That consolidation is the reason `-resume` exists here.
 - **ledger** — `~/.spawn-session/ledger.jsonl` gets one line per spawn; confirmed
   written on a live launch.
 
+## Resume is no longer the recommended path (2026-08-22)
+
+`-resume` stays, but it is **not** what the tooling now advises for a cut-off
+session, and the open question below matters much less as a result. Two structural
+reasons, both worst in exactly the case that makes you reach for it:
+
+- **It cannot cross profiles.** The session is pinned to the account it ran on —
+  and a session is normally cut off *because that account hit its limit*.
+- **The cache is dead by then.** 1-hour TTL, so the first turn re-writes the whole
+  context at 2x instead of reading it at 0.1x. Measured across the five real
+  cut-offs on this box: $11.24 cold against $0.56 warm, before any new work.
+
+So prefer `-handoff -from <session-id>`, which runs on any account (`-p auto`) and
+costs cents. `-from` is the flag that makes this possible at all: before it,
+`-handoff` always described the *calling* session. The rule lives in
+session-inspector's `lib/resume-economics.mjs`.
+
 ## Unverified — and specifically what is not proven
 
 **Whether `-resume` actually continues the prior conversation.** The wiring is
@@ -71,8 +88,11 @@ caller feeding ids from `session-resume --between` should expect it.
 
 ## Next steps
 
-- [ ] Settle the registry-id question above by eye, then record the answer here.
+- [ ] Settle the registry-id question above by eye, then record the answer here. LOW priority now that handoff, not resume, is the recommended path.
 - [ ] `-batch` has only been dry-run end to end. Run one real approved plan.
+- [ ] Verified by dry run only: `-from` + `-handoff` writing a brief for another
+      profile's session. The brief header and machine-state panel were checked;
+      a real launch off that brief has not been done.
 - [ ] Consider having `preflight` warn (not refuse) when the target is a *worktree*
       of a repo that has a live session at its root — currently only an exact cwd
       match counts as a duplicate.
