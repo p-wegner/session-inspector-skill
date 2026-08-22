@@ -24,14 +24,17 @@
  *     --force       ignore the capacity refusal (never the approval gate)
  *     --no-wait     do not wait for each session to register on the ACP bus
  */
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join, dirname } from "path";
+import { writeFileSync, existsSync } from "fs";
+import { join, dirname, resolve } from "path";
 import { tmpdir } from "os";
 import { execFileSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
+// One repo now, so the schema, the validation and the gate are shared with the
+// tool that WRITES these plans instead of being a second copy of both.
+import { readPlan, approvedEntries, gateHelp } from "../scripts/lib/spawn-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCHEMA = "spawn-plan/1";
+const INSPECTOR = resolve(HERE, "..", "scripts");
 
 const argv = process.argv.slice(2);
 const has = (n) => argv.includes(n);
@@ -44,30 +47,21 @@ if (!planPath) {
   console.error("usage: batch.mjs <plan.json> [--dry-run] [--force] [--no-wait]");
   console.error("");
   console.error("Write a plan first:");
-  console.error("  node <session-inspector>/scripts/continuations.mjs --plan plan.json");
+  console.error(`  node "${join(INSPECTOR, "continuations.mjs")}" --plan plan.json`);
   process.exit(1);
 }
-if (!existsSync(planPath)) { console.error(`[batch] no such plan file: ${planPath}`); process.exit(1); }
+const read = readPlan(planPath);
+if (!read.ok) { console.error(`[batch] ${read.error}`); process.exit(1); }
+const plan = read.plan;
 
-let plan;
-try { plan = JSON.parse(readFileSync(planPath, "utf-8")); } catch (e) {
-  console.error(`[batch] plan is not valid JSON: ${e.message}`); process.exit(1);
-}
-if (plan.schema !== SCHEMA) {
-  console.error(`[batch] unexpected plan schema "${plan.schema}" (expected "${SCHEMA}")`);
-  process.exit(1);
-}
-
-const all = Array.isArray(plan.candidates) ? plan.candidates : [];
-const approved = all.filter((c) => c.approved === true);
+const all = plan.candidates;
+const approved = approvedEntries(plan);
 
 // ── the gate ────────────────────────────────────────────────────────────────
 if (!approved.length) {
   console.error(`[batch] NOTHING APPROVED — refusing to launch (${all.length} candidate(s) in the plan).`);
   console.error("");
-  console.error("This is the human gate, not an error. Someone has to pick:");
-  console.error(`  interactive : node <session-inspector>/scripts/continuations.mjs --review "${planPath}"`);
-  console.error(`  explicit    : node <session-inspector>/scripts/continuations.mjs --approve "${planPath}" --pick 1,3`);
+  for (const line of gateHelp(planPath, `node "${join(INSPECTOR, "continuations.mjs")}"`)) console.error(line);
   process.exit(3);
 }
 
