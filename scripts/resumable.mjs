@@ -40,6 +40,7 @@ import { readFileSync, statSync } from "fs";
 import { basename, dirname } from "path";
 import { discover, projectIdentity } from "./lib/sessions.mjs";
 import { parseClaude } from "./lib/parse.mjs";
+import { findSuccessors, successorLabel, strongLinks } from "./lib/successor.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -52,6 +53,8 @@ const top = parseInt(opt("--top", "12"), 10);
 const includeInterrupted = has("--interrupted");
 const allEndings = has("--all-endings");
 const includeInstant = has("--include-instant");
+const includeSubagents = has("--include-subagents");
+const includeContinued = has("--include-continued");
 const latest = has("--latest");
 const resumeOnly = has("--resume");
 const asJson = has("--json");
@@ -72,10 +75,25 @@ function ending(s) {
 }
 
 // ── home + resume command ────────────────────────────────────────────────────
-// Session path: <home>/projects/<projectDir>/<id>.jsonl
-//   dirname ×1 = .../projects/<dir>, ×2 = .../projects, ×3 = <home>
-function homeDir(path) { return dirname(dirname(dirname(path))); }
-function projectDirName(path) { return basename(dirname(path)); }
+// A main transcript is <home>/projects/<projectDir>/<id>.jsonl, but a subagent's
+// is <home>/projects/<projectDir>/<parentId>/subagents/agent-<id>.jsonl — two
+// levels deeper. Counting `dirname` hops therefore lands on the PROJECT DIR for
+// nested transcripts, and CLAUDE_CONFIG_DIR pointed at a project dir cannot
+// resolve anything (measured: every subagent row printed an unusable resume
+// command). Anchor on the `projects` path segment instead, which is fixed for
+// every layout.
+function homeDir(path) {
+  const parts = String(path).split(/[\\/]/);
+  const i = parts.lastIndexOf("projects");
+  if (i > 0) return parts.slice(0, i).join("\\");
+  return dirname(dirname(dirname(path)));
+}
+function projectDirName(path) {
+  const parts = String(path).split(/[\\/]/);
+  const i = parts.lastIndexOf("projects");
+  if (i >= 0 && parts[i + 1]) return parts[i + 1];
+  return basename(dirname(path));
+}
 
 function resumeCommand(s, path) {
   const home = homeDir(path);
@@ -121,6 +139,12 @@ const instant = [];
 
 for (const s of sessions) {
   if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+  // A subagent is not independently resumable — `claude --resume` takes the
+  // PARENT's id, and a shared-account limit kills parent and children together,
+  // so one cut-off orchestrator contributes a whole fan-out of look-alike rows.
+  // Measured: 9 of the top 10 rows were one parent's 20 research subagents,
+  // burying the 3 real cut-offs. Recover their output with subagent-results.mjs.
+  if (!includeSubagents && (s.kind || "main") !== "main") continue;
   let content;
   try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
   const stat = parseClaude(content.split("\n"));
@@ -141,7 +165,8 @@ for (const s of sessions) {
   }
 
   const hit = {
-    end, stat, path: s.path, dir,
+    end, stat, path: s.path, dir, kind: s.kind || "main",
+    parentSessionId: s.parentSessionId || "",
     project: idn.project,
     cutoff: stat.endTime,
     cutoffLocal: localTime(stat.endTime),
@@ -152,8 +177,28 @@ for (const s of sessions) {
   else hits.push(hit);
 }
 
+// ── has someone already picked this up? ──────────────────────────────────────
+// A cut-off session whose work another session finished is not work — it is
+// noise that outranks everything real, because severity+recency both favour it.
+const succ = findSuccessors(
+  hits.filter((h) => h.kind === "main").map((h) => ({ sessionId: h.stat.sessionId, path: h.path, endTime: h.cutoff })),
+  sessions,
+);
+for (const h of hits) {
+  h.successors = succ.get(h.stat.sessionId) || [];
+  h.strong = strongLinks(h.successors);
+  h.successorLabel = successorLabel(h.successors);
+}
+// Only a machine-written handoff (ledger/brief) is grounds for hiding a session.
+// A same-repo id mention stays in the list, annotated — it is a hint to check,
+// not a fact, and treating it as one silently drops real cut-off work.
+const continued = hits.filter((h) => h.strong.length);
+const openHits = includeContinued ? hits : hits.filter((h) => !h.strong.length);
+
 // rank: severity desc, then recency desc
-hits.sort((a, b) => (b.end.rank - a.end.rank) || (new Date(b.cutoff) - new Date(a.cutoff)));
+openHits.sort((a, b) => (b.end.rank - a.end.rank) || (new Date(b.cutoff) - new Date(a.cutoff)));
+hits.length = 0;
+hits.push(...openHits);
 
 // Group instant deaths by launch directory (the parent of each session's cwd —
 // a fleet launched into worktrees of one repo collapses to a single line).
@@ -198,10 +243,20 @@ if (asJson) {
     durationSec: h.stat.durationSec,
     assistantTurns: h.stat.assistantTurns,
     path: h.path,
+    kind: h.kind,
+    parentSessionId: h.parentSessionId,
+    resumable: h.kind === "main",
+    successors: h.successors,
     resumeBash: h.resume.bash,
     resumePwsh: h.resume.pwsh,
   }));
-  console.log(JSON.stringify(latest ? out[0] || null : { resumable: out, instantDeaths: instGroups }, null, 2));
+  console.log(JSON.stringify(latest ? out[0] || null : {
+    resumable: out,
+    alreadyContinued: continued.map((h) => ({
+      sessionId: h.stat.sessionId, cutoff: h.cutoff, by: h.successors, note: h.successorLabel,
+    })),
+    instantDeaths: instGroups,
+  }, null, 2));
   process.exit(0);
 }
 
@@ -228,7 +283,7 @@ if (!hits.length) {
 
 const shown = latest ? hits.slice(0, 1) : hits.slice(0, top);
 console.log("═".repeat(72));
-console.log(`RESUMABLE SESSIONS  —  ${hits.length} cut-off session(s), last ${days || "∞"} day(s)`);
+console.log(`RESUMABLE SESSIONS  —  ${hits.length} open cut-off session(s), last ${days || "∞"} day(s)`);
 console.log("═".repeat(72));
 
 for (const h of shown) {
@@ -239,8 +294,28 @@ for (const h of shown) {
   if (s.aiTitle) console.log(`  goal:     ${oneLine(s.aiTitle)}`);
   if (s.lastPrompt) console.log(`  last ask: ${oneLine(s.lastPrompt)}`);
   console.log(`  ran:      ${s.assistantTurns} turns · ${Math.round((s.durationSec || 0) / 60)}m · cwd ${s.cwd || "?"}`);
-  console.log(`  resume →  ${process.platform === "win32" ? h.resume.pwsh : h.resume.bash}`);
+  if (h.successorLabel) console.log(`  ALREADY:  ${h.successorLabel} — check before redoing any of it`);
+  if (h.kind === "main") {
+    console.log(`  resume →  ${process.platform === "win32" ? h.resume.pwsh : h.resume.bash}`);
+  } else {
+    // Nested transcripts have no resume of their own; the parent carries the
+    // conversation and subagent-results.mjs recovers what the child produced.
+    console.log(`  NOTE:     this is a ${h.kind} transcript — not independently resumable.`);
+    console.log(`  parent →  ${h.parentSessionId || "?"}`);
+    console.log(`  recover → node scripts/subagent-results.mjs ${h.parentSessionId || "<parent>"} --unresolved`);
+  }
   console.log(`  inspect → node scripts/analyze-claude-session.mjs "${h.path}" --events -v`);
+}
+
+if (!latest && continued.length && !includeContinued) {
+  console.log(`\n${"─".repeat(72)}`);
+  console.log(`ALREADY CONTINUED (${continued.length}) — cut off, but another session picked the work up`);
+  console.log(`Resuming these duplicates work that is already done. --include-continued to rank them anyway.`);
+  console.log("─".repeat(72));
+  for (const h of continued.slice(0, 8)) {
+    console.log(`  ${h.stat.sessionId.slice(0, 8)}  ${h.cutoffLocal}  ${h.resume.tag}/${h.dir}  →  ${h.successorLabel}`);
+  }
+  if (continued.length > 8) console.log(`  … ${continued.length - 8} more (--json for all)`);
 }
 
 if (!latest && hits.length > shown.length) {

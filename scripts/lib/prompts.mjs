@@ -41,6 +41,12 @@ export function classify(raw) {
 
   // automated agent traffic that lands in user entries
   if (/^\[SESSION HANDOFF/.test(text)) return { kind: "automated", text };
+  // launcher-GENERATED seed prompts (spawn-session -handoff, session-resume
+  // FRESH tabs). A custom `-m` message is a human instruction and stays human;
+  // these two are templates a script wrote, and counting them as typed prompts
+  // inflates every prompt-style/human-driven measure by one per spawned session.
+  if (/^You are TAKING OVER work from another Claude session/.test(text)) return { kind: "automated", text };
+  if (/^Resume prior work\. Read the handoff brief at /.test(text)) return { kind: "automated", text };
   if (/^You are the autonomous BOARD MONITOR/.test(text)) return { kind: "automated", text };
   if (/^Base directory for this skill:/.test(text)) return { kind: "automated", text };
   // injected continuation summary (context compaction handoff)
