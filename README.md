@@ -48,6 +48,12 @@ spawn code-metrics -p 5x_4 -handoff -m "..."   hand work over and report WHO too
 spawn code-metrics -notrust            do not pre-accept the folder-trust dialog
 spawn code-metrics -n                  dry run - print, spawn nothing
 spawn code-metrics -dsp                forward --dangerously-skip-permissions
+
+spawn code-metrics -mf prompt.txt      seed from a FILE (use this from a script/agent)
+spawn code-metrics -p auto             the account with the most quota headroom
+spawn -batch plan.json                 launch every APPROVED entry of a spawn plan
+spawn <repo> -resume <session-id>      reopen an existing session instead of a new one
+spawn code-metrics -force              skip the preflight refusals
 ```
 
 Anything unrecognised is forwarded to `claude` verbatim. `-h` / `--help` prints the
@@ -62,6 +68,67 @@ rather than starting a session in an unintended directory.
 `BACKLOG.md` and `CLAUDE.md`, report what is actually true today — separating
 verified from merely claimed — and *propose* next steps without editing until you
 confirm. Replace it with `-m`, or drop it with `-b`.
+
+### Pass the prompt as a FILE, not as an argument (`-mf`)
+
+`-m` is fine when **you** type it at a shell. From a script, or from another agent,
+use `-mf <file>`. This is not a style preference — a long `-m` cannot reliably cross
+`bash → cmd`. A real launch died on nothing but parentheses:
+
+```
+"plus" kann syntaktisch an dieser Stelle nicht verarbeitet werden.
+```
+
+The launcher already refuses to put prompt text on the `wt.exe` command line (see
+[The environment leak it handles](#the-environment-leak-it-handles) and `write-text.mjs`)
+because Windows Terminal splits on `;` *after* quoting is satisfied. `-mf` closes
+the same class one level up, at the caller. `-m -` reads the prompt from stdin and
+fails loudly if stdin is empty, rather than seeding a blank session.
+
+### It refuses two things before launching
+
+A preflight runs unless you pass `-force`:
+
+- **a second session in a checkout that already has one** — two agents in one
+  working tree is how you get cross-author commits and a Stop hook handing one
+  session another's in-flight work. It names the session that is already there.
+- **no RAM headroom for another session** — measured: four sessions were once
+  launched into a box already swapping at ~9,500 hard faults/sec, because nothing
+  asked. Uses `fleet snapshot`'s `headroomProcesses`, which is the right metric for
+  whole sessions (it is the wrong one for in-process subagents).
+
+If `fleet` is not installed the capacity check is **skipped and says so** — an
+unavailable check must never read as a passed one.
+
+### Launch a whole approved plan (`-batch`)
+
+Spawning four continuations by hand is four near-identical invocations. Instead,
+[session-inspector](https://github.com/p-wegner/session-inspector-skill)'s
+`continuations.mjs` writes a plan of candidates — each with a target, a profile, a
+seed message and a summary — with every entry `approved: false`. A human picks, then:
+
+```powershell
+spawn -batch plan.json
+```
+
+`-batch` launches **only** entries marked `approved: true`, and exits 3 with the
+review instructions if none are. That is the point: the human gate cannot be
+forgotten, only answered. Every message travels as a file, each entry gets its own
+profile, and the run ends with a receipt table naming the session that took each
+piece of work.
+
+### Who took the work: the ledger
+
+Every spawn appends one line to `~/.spawn-session/ledger.jsonl` — source session,
+target repo, profile, and (with `-wait`) the ACP name of the session that took over.
+
+This exists because a handoff brief only records the **source** side, so nothing on
+disk said who picked the work up, and session tooling was left inferring it from
+text. That inference is actively harmful: a session that merely *mentions* another's
+id looks identical to one that continued it, and acting on the guess hid two
+genuinely open cut-off sessions behind one fleet-tool run. The ledger is the record
+that removes the guess — `session-inspector`'s `resumable.mjs` reads it to mark a
+session "already continued" instead of recommending it again.
 
 ## Why two files
 
