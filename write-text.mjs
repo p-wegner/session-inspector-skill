@@ -32,11 +32,30 @@ const flag = (n, d = null) => {
 const out = flag("--out");
 // Not defaulted to "": an empty prompt and a missing --text are different mistakes, and
 // silently writing an empty file would spawn a session with no instructions at all.
-const text = flag("--text", null);
+let text = flag("--text", null);
+const useStdin = argv.includes("--stdin");
 
-if (!out || text === null) {
-  process.stderr.write('usage: write-text.mjs --out <file> --text "<text>"\n');
+if (!out || (text === null && !useStdin)) {
+  process.stderr.write('usage: write-text.mjs --out <file> (--text "<text>" | --stdin)\n');
   process.exit(64);
+}
+
+if (useStdin) {
+  // Same rule as --text: an EMPTY read is a failure, not an empty prompt. A caller
+  // whose stdin is the null device (any agent tool) would otherwise stage a blank
+  // file and spawn a session with no instructions — the exact silent corruption
+  // this script exists to prevent.
+  try {
+    const { readFileSync: rf } = await import("node:fs");
+    text = rf(0, "utf8");
+  } catch (e) {
+    process.stderr.write(`[write-text] cannot read stdin: ${e.message}\n`);
+    process.exit(65);
+  }
+  if (!String(text).trim()) {
+    process.stderr.write("[write-text] stdin was empty — refusing to stage a blank prompt\n");
+    process.exit(65);
+  }
 }
 
 try {

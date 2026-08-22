@@ -19,6 +19,13 @@ param(
     [string]$ProfileDir,
     [string]$SessionId,
     [string]$LaunchConfigDir,
+    # RESUME an existing session instead of starting a fresh one. Exists so there
+    # is exactly ONE launcher on this machine: session-inspector's session-resume
+    # used to write its own .cmd, which set CLAUDE_CONFIG_DIR and nothing else —
+    # so every session it relaunched inherited CLAUDE_CODE_CHILD_SESSION=1 from
+    # the launching agent and SILENTLY saved no transcript, defeating the point of
+    # resuming it. The scrub below is the reason to route through here.
+    [string]$ResumeId,
     [switch]$DetectOnly,
     [switch]$NoPrompt,
     [switch]$SafeMode,
@@ -272,7 +279,10 @@ if ($scrubbed.Count -gt 0) {
     Write-Host "  scrubbed: " -NoNewline -ForegroundColor DarkGray
     Write-Host "$($scrubbed.Count) inherited marker(s) - $($scrubbed -join ', ')" -ForegroundColor DarkGray
 }
-if (-not $NoPrompt -and $Prompt) {
+if ($ResumeId) {
+    Write-Host "  resuming: " -NoNewline -ForegroundColor DarkGray
+    Write-Host $ResumeId
+} elseif (-not $NoPrompt -and $Prompt) {
     Write-Host "  seeded  : " -NoNewline -ForegroundColor DarkGray
     Write-Host $(if ($Prompt.Length -gt 90) { $Prompt.Substring(0, 90) + "..." } else { $Prompt })
 }
@@ -296,7 +306,13 @@ if ($DetectOnly) {
 # which Claude Code treats as the first turn of an interactive session — so the
 # session is seeded but still yours to steer.
 $argv = @()
-if (-not $NoPrompt -and $Prompt) { $argv += $Prompt }
+if ($ResumeId) {
+    # A resume takes the session id and no seed: the conversation IS the context,
+    # and a positional prompt alongside --resume would be a new first turn.
+    $argv += @("--resume", $ResumeId)
+} elseif (-not $NoPrompt -and $Prompt) {
+    $argv += $Prompt
+}
 if ($modeArgs) { $argv += $modeArgs }
 # Forwarded flags go LAST so an explicit one the caller typed wins over the inherited
 # mode rather than being silently overridden by it.

@@ -43,6 +43,13 @@ set "DETECT="
 set "HANDOFF="
 set "NOTRUST="
 set "WAIT="
+set "MSGFILE="
+set "NEEDMSGFILE="
+set "RESUMEID="
+set "NEEDRESUME="
+set "FORCE="
+set "BATCH="
+set "NEEDBATCH="
 
 :parse
 if "%~1"=="" goto resolve
@@ -62,8 +69,37 @@ if defined NEEDPROF (
   shift
   goto parse
 )
+if defined NEEDMSGFILE (
+  set "MSGFILE=%~1"
+  set "NEEDMSGFILE="
+  shift
+  goto parse
+)
+if defined NEEDRESUME (
+  set "RESUMEID=%~1"
+  set "NEEDRESUME="
+  shift
+  goto parse
+)
+if defined NEEDBATCH (
+  set "BATCH=%~1"
+  set "NEEDBATCH="
+  shift
+  goto parse
+)
 if /i "%~1"=="-m" (
   set "NEEDMSG=1"
+) else if /i "%~1"=="-mf" (
+  rem Prompt from a FILE. The caller-side twin of the -PromptFile trap below: a long
+  rem -m cannot survive bash -> cmd (parentheses alone killed a real launch), and no
+  rem amount of quoting fixes the class. A path is inert to every layer.
+  set "NEEDMSGFILE=1"
+) else if /i "%~1"=="-batch" (
+  set "NEEDBATCH=1"
+) else if /i "%~1"=="-resume" (
+  set "NEEDRESUME=1"
+) else if /i "%~1"=="-force" (
+  set "FORCE=1"
 ) else if /i "%~1"=="-p" (
   set "NEEDPROF=1"
 ) else if /i "%~1"=="-W" (
@@ -109,8 +145,13 @@ echo spawn [target] [-m "prompt"] [-p profile] [-W] [-b] [-dsp] [extra claude ar
 echo.
 echo   target   path, or a name under C:\projects\andrena (with or without -skill).
 echo            Default: code-metrics-skill.
-echo   -m       seed the first turn with this prompt.
-echo   -p       Claude profile (name, .claude-NAME, or a full path). Default: inherit.
+echo   -m       seed the first turn with this prompt ("-" reads it from stdin).
+echo   -mf      seed from a FILE - use this from a script or another agent.
+echo   -batch   launch every APPROVED entry of a spawn-plan JSON file.
+echo   -resume  reopen an existing session id instead of starting a fresh one.
+echo   -force   skip the preflight (duplicate-session and RAM-headroom refusals).
+echo   -p       Claude profile (name, .claude-NAME, full path, or "auto" for the
+echo            account with the most quota headroom). Default: inherit.
 echo   -W       new WINDOW instead of a new tab.
 echo   -b       bare - no seed prompt.
 echo   -dsp     forward --dangerously-skip-permissions.
@@ -124,6 +165,15 @@ echo   -notrust do not pre-accept the folder-trust dialog.
 exit /b 0
 
 :resolve
+
+rem --- batch mode ----------------------------------------------------------------
+rem A whole approved plan, launched in one call. Handled before target resolution
+rem because the plan carries its own targets and profiles.
+if not defined BATCH goto :nobatch
+node "%ROOT%batch.mjs" "%BATCH%" %FWD%
+exit /b %errorlevel%
+:nobatch
+
 if not defined TARGET set "TARGET=code-metrics"
 
 set "DEST="
@@ -142,6 +192,23 @@ rem relative one would resolve against the NEW tab's working directory, not this
 for %%I in ("%DEST%") do set "DEST=%%~fI"
 for %%I in ("%DEST%") do set "LEAF=%%~nxI"
 
+rem `-m -` is documented sugar for "read the prompt from stdin". It only works when
+rem stdin is actually a pipe; from a tool whose stdin is the null device it would
+rem silently seed an EMPTY prompt, so it fails loudly and names the fix instead.
+if not "%MSG%"=="-" goto :nostdin
+set "MSG="
+for /f "usebackq delims=" %%S in (`node "%ROOT%write-text.mjs" --out "%TEMP%\spawn-prompt-%RANDOM%%RANDOM%.txt" --stdin`) do set "MSGFILE=%%S"
+if not defined MSGFILE (
+  echo [spawn] -m - could not read a prompt from stdin. Use -mf ^<file^> instead:
+  echo         the prompt then travels as a path, which no shell layer reinterprets.
+  exit /b 1
+)
+:nostdin
+
+rem Brackets, not parentheses: this string is echoed inside a parenthesised `if`
+rem block, where a literal `)` closes the block early and truncates the line.
+if defined MSGFILE set "MSG=[from file %MSGFILE%]"
+if defined RESUMEID set "MSG=[resuming %RESUMEID%]"
 if not defined MSG set "MSG=Read CONTINUE.md and BACKLOG.md at the repo root, plus CLAUDE.md if present, then continue the work they describe. Begin by telling me the current state, what is verified vs merely claimed, and what you propose to do next - do not start editing until I confirm."
 
 rem --- handoff brief -------------------------------------------------------------
@@ -171,6 +238,19 @@ rem silently lost and the session would come up on the default profile.
 set "INHERIT=%CLAUDE_CONFIG_DIR%"
 if defined PROF set "INHERIT=%PROF%"
 
+rem -p auto: the account with the most quota headroom right now, rather than
+rem whichever one this shell happens to be on. Picking by hand is how a fan-out
+rem ends up stacked on one subscription's 5-hour window.
+if /i not "%PROF%"=="auto" goto :noauto
+set "INHERIT="
+for /f "usebackq delims=" %%A in (`node "%ROOT%preflight.mjs" --pick-profile`) do set "INHERIT=%%A"
+if not defined INHERIT (
+  echo [spawn] -p auto could not resolve a profile. Name one explicitly with -p.
+  exit /b 1
+)
+echo [spawn] -p auto resolved to %INHERIT%
+:noauto
+
 
 rem Move the prompt OFF the wt command line. wt splits on ';' after cmd quoting is
 rem already satisfied, so a prompt containing a semicolon gets torn in half and wt tries
@@ -179,6 +259,10 @@ rem says how" and wt failed with 0x80070002 trying to start `" the brief says ho
 rem A file path contains nothing wt reinterprets, so this closes the whole class.
 set "PROMPTFILE="
 if defined BARE goto :noprompt
+if defined RESUMEID goto :noprompt
+rem -mf: the file IS the prompt file. Nothing to stage, nothing to re-quote.
+if defined MSGFILE set "PROMPTFILE=%MSGFILE%"
+if defined MSGFILE goto :noprompt
 for /f "usebackq delims=" %%P in (`node "%ROOT%write-text.mjs" --out "%TEMP%\spawn-prompt-%RANDOM%%RANDOM%.txt" --text "%MSG%"`) do set "PROMPTFILE=%%P"
 if not defined PROMPTFILE (
   echo [spawn] could not stage the prompt file - aborting rather than spawning a
@@ -194,10 +278,12 @@ rem tab then sits at a PowerShell prompt with claude never started. Measured: `-
 rem (no prompt file) broke all four spawns this way, and `-n` could not catch it because
 rem a dry run exits before this line.
 set "PFARG="
+set "RESARG="
 set "PROFARG="
 set "SIDARG="
 set "LCDARG="
 if defined PROMPTFILE set "PFARG=-PromptFile "%PROMPTFILE%""
+if defined RESUMEID set "RESARG=-ResumeId "%RESUMEID%""
 if defined INHERIT set "PROFARG=-ProfileDir "%INHERIT%""
 if defined CLAUDE_CODE_SESSION_ID set "SIDARG=-SessionId "%CLAUDE_CODE_SESSION_ID%""
 if defined CLAUDE_CONFIG_DIR set "LCDARG=-LaunchConfigDir "%CLAUDE_CONFIG_DIR%""
@@ -219,9 +305,23 @@ if defined DRY (
   echo   forward : %FWD%
   echo   prompt  : %MSG%
   echo   via-file: staged at spawn time to keep wt away from any semicolon
-  echo   ps-args : %PFARG% %PROFARG% %SIDARG% %LCDARG% %BARE% %SAFE% %NOTRUST% %FWD%
+  echo   resume  : %RESUMEID%
+  echo   force   : %FORCE%
+  echo   ps-args : %PFARG% %RESARG% %PROFARG% %SIDARG% %LCDARG% %BARE% %SAFE% %NOTRUST% %FWD%
   exit /b 0
 )
+
+rem --- preflight -----------------------------------------------------------------
+rem Refuses a second session in a checkout that already has one, and a launch into
+rem a machine with no RAM headroom. Both were silent before: four sessions once went
+rem into a box already swapping, because nothing asked. -force overrides.
+if defined FORCE goto :nopreflight
+node "%ROOT%preflight.mjs" --target "%DEST%"
+if errorlevel 3 (
+  echo [spawn] not launching. Pass -force to override this check deliberately.
+  exit /b 3
+)
+:nopreflight
 
 rem Snapshot the ACP roster BEFORE spawning: the new session's id does not exist yet,
 rem so "which name is new" is the only way to learn who took the work.
@@ -239,6 +339,10 @@ if errorlevel 1 (
 )
 echo [spawn] opened: %DEST%
 
+rem Record the handover even when we cannot name the new session yet: the source
+rem side alone already tells a later "has this been picked up?" query more than
+rem text-matching a session id ever could.
+if not defined WAIT node "%ROOT%ledger.mjs" --source "%CLAUDE_CODE_SESSION_ID%" --repo "%DEST%" --profile "%INHERIT%" --brief "%HOFILE%" --kind spawn
 if not defined WAIT exit /b 0
 
 echo [spawn] waiting for the new session to register on the ACP bus...
@@ -252,6 +356,8 @@ if not defined NEWAGENT (
   echo         `node "C:/projects/andrena/acp/acp.js" list` yourself.
   exit /b 2
 )
+
+node "%ROOT%ledger.mjs" --source "%CLAUDE_CODE_SESSION_ID%" --repo "%DEST%" --profile "%INHERIT%" --agent "%NEWAGENT%" --brief "%HOFILE%" --kind handoff
 
 echo.
 echo [spawn] HANDOFF RECEIPT

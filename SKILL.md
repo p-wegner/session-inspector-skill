@@ -1,6 +1,6 @@
 ---
 name: spawn-session
-description: Open a NEW interactive Claude session in another repo, in a Windows Terminal tab, without disturbing the current session. Use when work belongs in a different repo than the one you are in — continuing code-metrics-skill from an agentic-kanban session, handing a repo its own driver, or parking a follow-up somewhere it can actually be done. Default target is code-metrics-skill.
+description: Open a NEW interactive Claude session in another repo, in a Windows Terminal tab, without disturbing the current session. Use when work belongs in a different repo than the one you are in — continuing code-metrics-skill from an agentic-kanban session, handing a repo its own driver, or parking a follow-up somewhere it can actually be done. Default target is code-metrics-skill. ALSO launches a whole APPROVED batch of sessions from a spawn-plan file (`-batch`, the human gate for session-inspector's continuations.mjs — only entries a person marked approved are started), RESUMES an existing session id (`-resume`), picks the account with the most quota headroom (`-p auto`), takes its seed prompt from a FILE (`-mf`, required from a script or agent), and REFUSES by default to open a second session in a checkout that already has one or to launch with no RAM headroom.
 ---
 
 # spawn-session
@@ -34,6 +34,12 @@ The human spelling from inside a session is `! spawn` once the repo is on PATH.
 | `-handoff` | write a brief, seed the new session with it, then **wait and report which session took over**. Implies `-wait`. The quota-handoff mode |
 | `-wait` | wait for the new session to register on ACP and name it |
 | `-notrust` | do not pre-accept the folder-trust dialog |
+| `-mf <file>` | seed from a FILE. **Use this, not `-m`, from a script or another agent** — a long `-m` cannot survive bash → cmd (parentheses alone killed a real launch) |
+| `-m -` | read the seed from stdin; fails loudly on empty rather than seeding a blank session |
+| `-batch <plan.json>` | launch every entry of a spawn plan marked `approved: true`, and nothing else. Exits 3 if none are |
+| `-resume <id>` | reopen an existing session instead of starting a fresh one (this is what session-inspector's `session-resume --launch` now calls) |
+| `-p auto` | the account with the most quota headroom right now, instead of whichever this shell is on |
+| `-force` | skip the preflight refusals (duplicate session in the checkout, no RAM headroom) |
 | `-n` | dry run — print what would be launched, spawn nothing |
 | `-dsp` | forward `--dangerously-skip-permissions` |
 
