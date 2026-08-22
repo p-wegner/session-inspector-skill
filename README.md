@@ -277,4 +277,4 @@ so both harnesses share one implementation.
 
 [MIT](LICENSE)
 
-_Docs last synced with the code at `dc7518e` (2026-08-22)._
+_Docs last synced with the code at `b814e17` (2026-08-22)._
