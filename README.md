@@ -10,6 +10,10 @@ went, and which tools keep failing. Works across three agents:
 | **Codex CLI** | `~/.codex/sessions/YYYY/MM/DD/` | JSONL (`{timestamp,type,payload}`) |
 | **GitHub Copilot CLI** | `~/.copilot/session-state/<uuid>/events.jsonl` | JSONL events |
 
+> The folder is `claude-session-tools`; the GitHub repo is still named
+> `session-inspector-skill` (renamed locally 2026-08-22, when the root stopped
+> being a skill and became a container for two). The remote URL is unchanged.
+
 ## Two skills in one repo
 
 This repo ships **two** agent skills, junctioned separately so each triggers on
@@ -290,7 +294,7 @@ Pointing a link at the repo root gives that skill no `SKILL.md`.
 
 ```powershell
 # Windows (junction), for every Claude profile you use
-$repo = "C:\path\to\session-inspector-skill"
+$repo = "C:\path\to\claude-session-tools"
 foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
   foreach ($skill in @("session-inspector", "spawn-session")) {
     $link = Join-Path $p.FullName "skills\$skill"
@@ -302,8 +306,8 @@ foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
 ```
 ```bash
 # macOS / Linux (symlink)
-ln -s /path/to/session-inspector-skill/session-inspector ~/.claude/skills/session-inspector
-ln -s /path/to/session-inspector-skill/spawn-session     ~/.claude/skills/spawn-session
+ln -s /path/to/claude-session-tools/session-inspector ~/.claude/skills/session-inspector
+ln -s /path/to/claude-session-tools/spawn-session     ~/.claude/skills/spawn-session
 ```
 
 Profiles do not share skills and there is no auto-propagation, which is why the
