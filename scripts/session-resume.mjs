@@ -69,7 +69,7 @@
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import { join, resolve, dirname } from "path";
 import { homedir, tmpdir } from "os";
-import { spawn } from "child_process";
+import { spawnSync } from "child_process";
 import { parseClaude } from "./lib/parse.mjs";
 
 // ── args ──────────────────────────────────────────────────────────────────────
@@ -385,24 +385,50 @@ function launchCfgFor(s) {
   // Each session's own profile by default; global override only if the user asked.
   return LAUNCH_CFG_OVERRIDE || s.profileDir || CONFIG_DIR;
 }
-function launcherContent(s, briefPath) {
-  const perm = s.permFlag ? s.permFlag + " " : "";
-  const lines = ["@echo off", `set "CLAUDE_CONFIG_DIR=${launchCfgFor(s)}"`, `cd /d "${s.cwd || process.cwd()}"`];
+// ── delegate to spawn-session ────────────────────────────────────────────────
+// This used to write its own per-session .cmd launcher, which set
+// CLAUDE_CONFIG_DIR, cd'd, and ran claude — and nothing else. That is the defect:
+// wt.exe hands the LAUNCHING process's environment to the new tab, so every
+// session relaunched from inside a Claude session inherited
+// CLAUDE_CODE_CHILD_SESSION=1, which turns transcript saving OFF. A resumed
+// session that saves no transcript cannot be resumed again — silently defeating
+// the entire point of this tool. spawn-session already scrubs those markers (and
+// CLAUDECODE, the parent's messaging socket/token), pre-accepts the trust dialog
+// and supplies TERM, so there is now ONE launcher on this machine instead of two,
+// and the better one wins.
+const SPLIT_LINES = /\r?\n/;
+const SPAWN_CMD = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
+const haveSpawn = existsSync(SPAWN_CMD);
+
+// A FRESH session is seeded with a pointer to its brief. The seed goes in a FILE
+// (`-mf`): prompt text on a command line is torn apart by wt's ';' handling and by
+// cmd's parentheses, and no amount of quoting closes that class.
+function seedFileFor(s, briefPath) {
+  const sp = join(briefDir(), `seed-${s.sessionId.slice(0, 8)}.txt`);
+  writeFileSync(sp, `Resume prior work. Read the handoff brief at ${briefPath} for context, then continue with its Next action.\n`, "utf-8");
+  return sp;
+}
+
+function spawnArgsFor(s, briefPath) {
+  const args = [s.cwd || process.cwd()];
+  const cfg = launchCfgFor(s);
+  if (cfg) args.push("-p", cfg);
   if (s.decision === "RESUME" || s.decision === "CONTINUE") {
-    lines.push(`claude ${perm}--resume ${s.sessionId}`);
+    args.push("-resume", s.sessionId);
   } else {
-    const seed = `Resume prior work. Read the handoff brief at ${briefPath} for context, then continue with its Next action.`;
-    lines.push(`claude ${perm}"${seed.replace(/"/g, "'")}"`);
+    args.push("-mf", seedFileFor(s, briefPath));
   }
-  return lines.join("\r\n") + "\r\n";
+  // The permission mode comes from THIS session's transcript, so the inherited
+  // mode of whoever is running the tool must not leak in: -safe means "do not
+  // inherit", and -dsp re-applies bypass only when the session actually had it.
+  if (s.permFlag === "--dangerously-skip-permissions") args.push("-dsp");
+  else args.push("-safe");
+  return args;
 }
-function wtArgsFor(s, launcherPath) {
-  const tag = s.decision === "FRESH" ? "✦" : "▶";
-  const title = `${tag}${s.sessionId.slice(0, 6)} ${clip(s.firstUser, 22)}`.replace(/["|;]/g, "");
-  return ["-w", "0", "nt", "--title", title, "cmd", "/k", launcherPath];
-}
-function fmtCmd(s, launcherPath) {
-  return "wt " + wtArgsFor(s, launcherPath).map((a) => /\s/.test(a) ? `"${a}"` : a).join(" ");
+
+function fmtCmd(s, briefPath) {
+  if (!haveSpawn) return `(spawn-session not installed at ${SPAWN_CMD} — resume by hand: claude --resume ${s.sessionId})`;
+  return `& "${SPAWN_CMD}" ` + spawnArgsFor(s, briefPath).map((a) => /\s/.test(a) ? `"${a}"` : a).join(" ");
 }
 
 // ── output ──────────────────────────────────────────────────────────────────
@@ -421,15 +447,11 @@ if (!sessions.length) {
 const dir = briefDir();
 mkdirSync(dir, { recursive: true });
 const briefPaths = new Map();
-const launcherPaths = new Map();
 for (const s of sessions) {
   if (s.decision === "DONE") continue;
   const bp = join(dir, `${s.sessionId.slice(0, 8)}.brief.md`);
   writeFileSync(bp, briefMarkdown(s), "utf-8");
   briefPaths.set(s.sessionId, bp);
-  const lp = join(dir, `resume-${s.sessionId.slice(0, 8)}.cmd`);
-  writeFileSync(lp, launcherContent(s, bp), "utf-8");
-  launcherPaths.set(s.sessionId, lp);
 }
 
 if (has("--json")) {
@@ -443,8 +465,7 @@ if (has("--json")) {
       decision: s.decision, why: s.why, rateLimit: s.rateLimit, pending: s.pending,
       firstUser: clip(s.firstUser, 300), lastAsst: clip(s.lastAsst, 300),
       briefPath: briefPaths.get(s.sessionId) || null,
-      launcher: launcherPaths.get(s.sessionId) || null,
-      command: s.decision === "DONE" ? null : fmtCmd(s, launcherPaths.get(s.sessionId)),
+      command: s.decision === "DONE" ? null : fmtCmd(s, briefPaths.get(s.sessionId)),
     })),
   }, null, 2));
   process.exit(0);
@@ -453,7 +474,7 @@ if (has("--json")) {
 if (has("--print-commands")) {
   for (const s of sessions) {
     if (s.decision === "DONE") continue;
-    console.log(fmtCmd(s, launcherPaths.get(s.sessionId)));
+    console.log(fmtCmd(s, briefPaths.get(s.sessionId)));
   }
   process.exit(0);
 }
@@ -475,7 +496,7 @@ for (const s of sessions) {
   const bp = briefPaths.get(s.sessionId);
   if (bp) console.log(`  brief: ${bp}`);
   if (s.decision !== "DONE") {
-    console.log(`  run:   \x1b[90m${fmtCmd(s, launcherPaths.get(s.sessionId))}${R}`);
+    console.log(`  run:   \x1b[90m${fmtCmd(s, briefPaths.get(s.sessionId))}${R}`);
   }
 }
 console.log(`\n${"─".repeat(72)}`);
@@ -497,11 +518,24 @@ if (has("--launch")) {
   ));
   if (!isWin) { console.log("\n(--launch spawns Windows Terminal tabs; not on Windows — use --print-commands.)"); process.exit(0); }
   console.log(`\nLaunching ${launchable.length} tab(s) [mode=${mode}]…`);
+  if (!haveSpawn) {
+    console.log(`
+spawn-session is not installed at ${SPAWN_CMD}.`);
+    console.log("Nothing launched — see --print-commands for the per-session lines.");
+    process.exit(2);
+  }
   for (const s of launchable) {
-    const wtArgs = wtArgsFor(s, launcherPaths.get(s.sessionId));
-    const child = spawn("wt", wtArgs, { detached: true, stdio: "ignore", shell: false });
-    child.unref();
-    console.log(`  ${s.decision} ${s.sessionId.slice(0, 8)} → tab opened`);
+    const args = spawnArgsFor(s, briefPaths.get(s.sessionId));
+    // Synchronous, and its output is surfaced: spawn-session runs a preflight that
+    // can REFUSE (a live session already in that checkout, no RAM headroom), and a
+    // refusal the caller cannot see is worse than no check at all.
+    const res = spawnSync(process.env.COMSPEC || "cmd.exe", ["/c", SPAWN_CMD, ...args], {
+      encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], timeout: 240000,
+    });
+    const out = `${res.stdout || ""}${res.stderr || ""}`;
+    const refused = /\[preflight\] REFUSE/.test(out);
+    console.log(`  ${s.decision} ${s.sessionId.slice(0, 8)} → ${refused ? "REFUSED by preflight" : res.status === 0 ? "tab opened" : `failed (exit ${res.status})`}`);
+    for (const line of out.split(SPLIT_LINES).filter((l) => /REFUSE|not launching/.test(l))) console.log(`      ${line.trim()}`);
   }
   console.log("Done. Each session is in its own titled tab (▶ resume · ✦ fresh).");
 }

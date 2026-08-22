@@ -28,6 +28,55 @@ The skill works at three levels, smallest to largest:
    work on into one small server, then browse/search the combined set from a web UI
    or the CLI. (See [Cross-machine sync](#cross-machine-sync-session-sync).)
 
+## "What should I pick up next?" — and spawning it
+
+The question that motivated this section is not *"which session broke?"* but
+*"which work is still open, and can you start sessions for it?"* — and the answer
+was **not** in the transcripts. It was in each repo's own `CONTINUE.md`.
+
+`continuations.mjs` joins the two halves — sessions (who worked where, what a
+limit cut off, what a human last asked) × repos (what their docs still list as
+open, what git says is unpushed or dirty) × the present (which repos already have
+a live session, which account has quota headroom) — and ranks the result with the
+reasoning shown.
+
+Nothing launches on its own. It writes a **plan** in which every candidate is
+`approved: false`, and [spawn-session](https://github.com/p-wegner/spawn-session)
+launches **only** approved entries. That is the human gate: it can be answered,
+never skipped.
+
+```bash
+node scripts/continuations.mjs                       # ranked shortlist, with reasons
+node scripts/continuations.mjs --plan plan.json      # write the plan (all unapproved)
+node scripts/continuations.mjs --review plan.json    # walk it interactively (y/n/a/q)
+node scripts/continuations.mjs --approve plan.json --pick 1,3
+& "C:\projects\andrena\spawn-session\spawn.cmd" -batch plan.json
+```
+
+### How to ask an agent for it
+
+You do not need the commands. Say what you want and the skill's own docs route it:
+
+| Say this | What the agent runs |
+|---|---|
+| "what should we continue working on?" | `continuations.mjs` — ranked, with reasons |
+| "what could we pick up, and spawn sessions for the good ones" | plan → shows you the summaries → gate → `-batch` |
+| "spread them across my profiles" | `--profiles`, one account per candidate |
+| "only this repo" | `--project <name>` |
+| "I got rate-limited — continue that session" | `resumable.mjs`, then `--resume` |
+| "which sessions hit a wall?" | `incidents.mjs` (friction), not this |
+
+Because an agent's stdin is not a terminal, an agent cannot answer `--review`
+itself. It presents the summaries, asks **you**, and records your answer with
+`--approve --pick 1,3`. If it never asks, the plan stays all-`false` and the
+launcher refuses — the gate holds either way.
+
+**What the summary tells you per candidate**, so the decision is one read: the
+repo and its git state, why it surfaced, its top open items *quoted from its own
+docs*, the last human instruction, the session that is the evidence, whether a
+cut-off session there was already picked up by someone else, and any conflict
+(a live session in that checkout).
+
 ## Layout
 
 ```
@@ -43,6 +92,7 @@ scripts/
   analyze-claude-session.mjs      # single Claude session  → structured summary
   analyze-codex-session.mjs       # single Codex session   → structured summary
   analyze-copilot-session.mjs     # single Copilot session → structured summary
+  continuations.mjs               # WHICH WORK to pick up next → ranked candidates → human-gated spawn plan
   session-edit.mjs                # extract → edit → apply: rewrite a Claude session's messages (WRITES)
   token-sinks.mjs                 # rank token/cost sinks across MANY sessions
   tool-failures.mjs               # rank failed tool calls across MANY sessions
@@ -54,6 +104,9 @@ scripts/
     sessions.mjs                  # shared discovery, metadata, git-remote project identity
     parse.mjs                     # shared full-transcript parsers (tools/files/tokens/last-msg) — used by analyzers AND the hub UI
     config.mjs                    # host-agnostic URL/port/device/data-dir resolution
+    provenance.mjs                # WHO started a session: human / board-launched / handoff-seeded / stop-hook
+    successor.mjs                 # has a cut-off session already been picked up? (ledger > brief > mention)
+    repo.mjs                      # a repo's own open items: CONTINUE.md / BACKLOG.md parsing + git state
 ```
 
 ## Quick start
@@ -63,6 +116,10 @@ scripts/
 node scripts/analyze-claude-session.mjs  --latest
 node scripts/analyze-codex-session.mjs   --latest
 node scripts/analyze-copilot-session.mjs --latest
+
+# What should I pick up next? (ranked, then a human-gated spawn plan)
+node scripts/continuations.mjs
+node scripts/continuations.mjs --plan plan.json
 
 # Aggregate across many local sessions
 node scripts/token-sinks.mjs    --days 7        # biggest token/cost sinks

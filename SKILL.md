@@ -1,6 +1,6 @@
 ---
 name: session-inspector
-description: Inspect and edit agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) — debug why sessions stopped, what they did, and whether they produced output; or rewrite the user/assistant messages of a Claude session in place. ALWAYS use this — never hand-read, grep, or hand-patch transcript .jsonl files directly — whenever asked about a specific session by id/path, "what was session X doing", or to edit/fix/rewrite what was said in a session. ALSO covers LIVE state: which Claude sessions are running right now and whether each is working or idle (`scripts/live.mjs`), and — before spawning parallel subagents — HOW MANY SUBAGENTS ARE FEASIBLE given token quota, RAM and CPU (`fleet capacity` / `fleet gate --count N`); consult it whenever about to fan out, parallelize, or decide a batch size. Self-contained — bundles its own analyzer scripts.
+description: Inspect and edit agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) — debug why sessions stopped, what they did, and whether they produced output; or rewrite the user/assistant messages of a Claude session in place. ALWAYS use this — never hand-read, grep, or hand-patch transcript .jsonl files directly — whenever asked about a specific session by id/path, "what was session X doing", or to edit/fix/rewrite what was said in a session. ALSO covers LIVE state: which Claude sessions are running right now and whether each is working or idle (`scripts/live.mjs`), and — before spawning parallel subagents — HOW MANY SUBAGENTS ARE FEASIBLE given token quota, RAM and CPU (`fleet capacity` / `fleet gate --count N`); consult it whenever about to fan out, parallelize, or decide a batch size. ALSO answers WHICH WORK TO PICK UP NEXT across every repo and profile, and turns the answer into a HUMAN-GATED spawn plan (`scripts/continuations.mjs`) — use it whenever asked what to continue working on, which sessions/work could or should be continued, what has good follow-up steps, or to open/spawn sessions for open work; it reads each repo's own CONTINUE.md/BACKLOG.md, not just transcripts, and nothing launches until a person approves. Self-contained — bundles its own analyzer scripts.
 argument-hint: [issue-number, keyword, --codex <path>, --copilot, edit]
 ---
 
@@ -15,6 +15,67 @@ Inspect session transcripts across all three supported agents. Each stores data 
 | Copilot CLI | `~/.copilot/session-state/<uuid>/events.jsonl` | Full JSONL transcripts per session |
 
 This skill is **self-contained**: the analyzer scripts under `scripts/` and the manual recipes under `references/` are bundled here and depend only on Node builtins (`fs`/`path`/`os`) — no external repo, server, or package install required. All commands below are run from **this skill's directory** (paths are relative to it). If your CWD is elsewhere, prefix with the skill path, e.g. `node <skill-dir>/scripts/analyze-claude-session.mjs --latest`.
+
+## WHICH WORK TO PICK UP NEXT → a human-gated spawn plan (`continuations.mjs`)
+
+**Start here when the ask is "what should we continue working on?", "what could we
+pick up?", "which sessions have good follow-up steps?", or "spawn sessions for
+them".** Do NOT hand-assemble this from `resumable.mjs` + a scan script + `awk`
+over CONTINUE.md files — that is exactly what this tool replaces.
+
+The thing to know before reasoning about it: **the answer is usually not in the
+transcripts.** They tell you where work STOPPED; what to DO next is written in each
+repo's `CONTINUE.md` / `BACKLOG.md`. Cut-offs are one input among several, and on a
+measured fleet only 3 of 321 "cut-off" hits were real.
+
+```powershell
+node scripts/continuations.mjs                      # ranked shortlist + why, per repo
+node scripts/continuations.mjs --days 14 --top 8
+node scripts/continuations.mjs --project kanban      # one repo
+node scripts/continuations.mjs --profiles 5x,5x_2,5x_3,5x_4   # accounts to spread across
+node scripts/continuations.mjs --json
+```
+
+It ranks REPOS (not sessions), joining: sessions in the window (who worked where,
+what a limit cut off, what a human last asked, and — via `lib/provenance.mjs` —
+whether a HUMAN drove it or the board launched it) × the repo's own open items ×
+git state (unpushed, dirty) × the present (a live session in that checkout, quota
+headroom per profile). Every score term appends its own reason, so the ranking is
+readable rather than trusted.
+
+Two exclusions, both always reported, never silent:
+- **a session is already live there** → not a candidate (spawning a second agent
+  into one checkout is how cross-author commits happen). `--include-live` overrides.
+- **recent but no open work** (no doc items, clean tree, nothing cut off) → recency
+  alone is cheap to earn and should not outrank six documented open items.
+  `--include-thin` overrides.
+
+### The human gate
+
+**Nothing spawns without a person picking.** `--plan` writes every candidate
+`approved: false`; spawn-session's `-batch` launches only `approved: true` and
+exits 3 otherwise. So the gate cannot be forgotten — only answered.
+
+```powershell
+node scripts/continuations.mjs --plan plan.json     # writes the plan + prints the summaries
+node scripts/continuations.mjs --review plan.json   # a HUMAN at a terminal: y/n/a/q per entry
+node scripts/continuations.mjs --approve plan.json --pick 1,3   # an AGENT: record the answer
+node scripts/continuations.mjs --approve plan.json --pick none   # reset
+& "C:\projects\andrena\spawn-session\spawn.cmd" -batch plan.json
+```
+
+**If you are the agent: you cannot answer `--review`** (its stdin is not a TTY and
+it refuses). The correct sequence is: run `--plan`, show the human the per-candidate
+`summary` blocks (they are written to be read as-is — repo + git state, why it
+surfaced, its top open items quoted from its own docs, the last human instruction,
+the evidence session, whether a cut-off there was already picked up, and any
+conflict), ask which to spawn, then record it with `--approve --pick`. Never
+approve on the human's behalf, and never claim a spawn happened that `-batch` did
+not report.
+
+Each approved entry carries a `message` built from that repo's own open items,
+ending non-committally ("tell me the state, verified vs claimed, before editing") —
+edit it in the plan file if you want something else spawned.
 
 ## Start here — structured single-session analyzers
 
@@ -516,7 +577,8 @@ node scripts/tool-failures.mjs    # failed tool calls ranked (--by tool|project|
 node scripts/user-prompts.mjs     # real human-typed prompts (--date, --today, --days N, --tree, --json)
 node scripts/prompt-style.mjs     # PROMPTING-STYLE profile (--project, --provider, --days N, --samples N, --json)
 node scripts/incidents.mjs        # FRICTION ranking — which sessions to investigate (--project, --lens, --grep, --top, --json)
-node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd; instant deaths grouped as relaunch-not-resume (--project, --cwd, --days, --latest, --resume, --interrupted, --include-instant, --json)
+node scripts/continuations.mjs     # WHICH WORK to pick up next (sessions x repo CONTINUE.md x live x quota) -> human-gated spawn plan (--plan, --review, --approve/--pick, --project, --profiles, --days, --json)
+node scripts/resumable.mjs        # CUT-OFF sessions to RESUME (rate/usage-limited) + exact resume cmd; subagents and already-continued sessions excluded by default; instant deaths grouped as relaunch-not-resume (--project, --cwd, --days, --latest, --resume, --interrupted, --include-subagents, --include-continued, --include-instant, --json)
 node scripts/waste.mjs            # CONTEXT-TOKEN waste — where tokens go + what's avoidable (--project, --days, --top, --json)
 node scripts/skill-usage.mjs      # SKILL audit — which .claude/.codex skills never fire (--project <substr>|--cwd, --repo-only, --cost, --days N, --provider, --include-plugins, --unused-only, --json)
 node scripts/context-growth.mjs   # CONTEXT growth + auto-compacts + long-context (>200k) tax (--project, --session, --days, --threshold, --json)
@@ -602,6 +664,29 @@ resume, so `--resume`-ing it reopens an empty session. These collapse into one
 summary line per launch directory with relaunch-not-resume advice (individually
 listable with `--include-instant`; in `--json` they're the `instantDeaths` groups
 next to `resumable`).
+
+**Subagents are excluded by default.** A subagent is not independently resumable
+(`claude --resume` takes the PARENT's id), and a shared-account limit kills parent
+and children together — so one cut-off orchestrator used to contribute its whole
+fan-out of look-alike rows. Measured: 9 of the top 10 rows were one parent's 20
+research subagents, burying the 3 real cut-offs — and every one of those rows
+printed an **unusable** resume command, because the profile home was derived by
+counting `dirname` hops and a nested transcript sits two levels deeper, so
+`CLAUDE_CONFIG_DIR` pointed at the *project dir*. Both are fixed: the home is now
+anchored on the `projects` path segment, and `--include-subagents` shows them
+labelled, pointing at the parent + `subagent-results.mjs` rather than at a resume
+command that cannot work.
+
+**Already-continued sessions are separated out** (`lib/successor.mjs`). A cut-off
+session whose work another session already finished is noise that outranks
+everything real, since severity and recency both favour it. Evidence is graded, and
+only the strong kinds may HIDE a row: `ledger` (spawn-session's own record of the
+handover, `~/.spawn-session/ledger.jsonl`) and `brief` (a handoff brief naming its
+source session, whose filename a later transcript quotes). A same-repo **id
+mention** is a hint only, annotated in place — treating it as fact suppressed two
+genuinely open cut-offs, because a session that merely *analyzed* the fleet mentions
+every id. So a would-be successor naming 3+ distinct candidates is reclassified as
+analysis and dropped. `--include-continued` ranks them anyway.
 
 `skill-usage.mjs` answers **"which of my agent skills never get triggered?"** —
 it discovers every skill on disk (`~/.claude/skills`, `~/.codex/skills`,
