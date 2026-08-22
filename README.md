@@ -63,7 +63,7 @@ You do not need the commands. Say what you want and the skill's own docs route i
 | "what could we pick up, and spawn sessions for the good ones" | plan → shows you the summaries → gate → `-batch` |
 | "spread them across my profiles" | `--profiles`, one account per candidate |
 | "only this repo" | `--project <name>` |
-| "I got rate-limited — continue that session" | `resumable.mjs`, then `--resume` |
+| "I got rate-limited — continue that session" | `resumable.mjs` — which recommends a **handoff**, not a resume (see below) |
 | "which sessions hit a wall?" | `incidents.mjs` (friction), not this |
 
 Because an agent's stdin is not a terminal, an agent cannot answer `--review`
@@ -76,6 +76,24 @@ repo and its git state, why it surfaced, its top open items *quoted from its own
 docs*, the last human instruction, the session that is the evidence, whether a
 cut-off session there was already picked up by someone else, and any conflict
 (a live session in that checkout).
+
+### Continuing a cut-off session: hand off, don't resume
+
+`claude --resume` looks like the obvious way to continue a session a usage limit
+killed. It is usually the expensive way, for two reasons that both bite hardest in
+that exact case:
+
+- **It cannot cross profiles.** The session is pinned to the account it ran on —
+  which is the account that just ran out of quota.
+- **The cache is dead.** Claude Code's prompt cache has a 1-hour TTL. Resuming
+  after that re-writes the whole context at 2x base input instead of reading it at
+  0.1x: a **20x** multiplier on the first turn, before any new work.
+
+Measured across this machine's five real cut-offs (103k–295k context): resuming
+them cold costs **$11.24** versus **$0.56** warm. A brief is cents.
+
+So the tools recommend a handoff and show you the number. Resume is still
+recommended where it wins — same account, still-warm cache, or a small context.
 
 ## Layout
 

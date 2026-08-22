@@ -121,7 +121,11 @@ export function parseClaude(lines) {
 
     if (obj.type === "assistant") {
       stats.assistantTurns++;
-      if (msg.model) stats.model = msg.model;
+      // `<synthetic>` is the harness's own model tag on injected messages — the
+      // usage-limit banner is one. Last-wins would therefore report `<synthetic>`
+      // as the model of every session a limit cut off, which is exactly the
+      // population most likely to be priced or resumed.
+      if (msg.model && msg.model !== "<synthetic>") stats.model = msg.model;
       if (msg.stop_reason) stats.stopReason = msg.stop_reason;
       const u = msg.usage;
       if (u) {

@@ -10,12 +10,21 @@
  *   • Give me the exact command / open a dedicated terminal per session.
  *   • For rate-limited ones, a concise handoff so a fresh run continues cleanly.
  *
- * Decision rule (mirrors the user's workflow):
- *   rate-limited                      -> CONTINUE  (resume; handoff brief written)
- *   last message < --fresh-age (60m)  -> RESUME    (context still warm)
+ * Decision rule:
+ *   rate-limited                      -> FRESH     (HAND OFF — see below)
+ *   cache still warm (< 60m idle)     -> RESUME    (context re-reads at 0.1x)
  *   short session (few turns/short)   -> RESUME    (cheap to reload even if old)
- *   old AND long                      -> FRESH     (reloading a huge stale ctx is wasteful; brief instead)
+ *   old AND long                      -> FRESH     (a brief beats a cold reload)
  *   cleanly completed                 -> DONE      (skip unless --include-completed)
+ *
+ * RESUME IS NOT THE DEFAULT FOR A RATE-LIMITED SESSION, which is the opposite of
+ * what this tool used to do — and it was wrong in the worst case. Such a session
+ * has by definition the LARGEST context (it ran until the account gave out), you
+ * come back to it hours later so the 1-hour prompt cache is long dead, and
+ * `--resume` is pinned to the one account that is out of quota. Measured on this
+ * box's five real cut-offs: resuming them cold costs $11.24 against $0.56 warm,
+ * a 20x multiplier paid before any new work. A brief is cents and runs anywhere.
+ * The rule lives in lib/resume-economics.mjs; `--fresh-age` still tunes it.
  *
  * Reads transcripts from a chosen Claude profile dir (default ~/.claude), so it
  * works with non-default auth profiles like ~/.claude-andrena_team_5x.
@@ -71,6 +80,7 @@ import { join, resolve, dirname } from "path";
 import { homedir, tmpdir } from "os";
 import { spawnSync } from "child_process";
 import { parseClaude } from "./lib/parse.mjs";
+import { recommendMode } from "./lib/resume-economics.mjs";
 
 // ── args ──────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -235,17 +245,44 @@ function classify(entry) {
 
   const short = turns <= SHORT_TURNS && durMin <= SHORT_MIN;
 
+  // Resume or hand off? Priced rather than assumed — lib/resume-economics.mjs.
+  const rec = recommendMode({
+    idleMin: ageMin,
+    contextTokens: s.maxContextTokens || 0,
+    model: s.model,
+    sessionProfile: entry.profileDir || "",
+    targetProfile: LAUNCH_CFG_OVERRIDE || "",
+  });
+
   let decision, why;
   if (state === "completed") { decision = "DONE"; why = "ended cleanly ('done/pushed') — nothing to resume"; }
-  else if (state === "rate-limited") { decision = "CONTINUE"; why = "cut off by usage limit — resume with handoff"; }
-  else if (ageMin < FRESH_AGE) { decision = "RESUME"; why = `context still warm (${ageMin}m < ${FRESH_AGE}m)`; }
-  else if (short) { decision = "RESUME"; why = `short session (${turns} turns / ${durMin}m) — cheap to reload`; }
-  else { decision = "FRESH"; why = `old (${ageMin}m) & long (${turns} turns) — brief + new session beats reloading stale ctx`; }
+  // A rate-limited session used to be classified CONTINUE, i.e. "resume it". That
+  // was backwards, and it was backwards in the single worst case: such a session
+  // is by definition the LARGEST context (it ran until the account gave out), you
+  // come back to it hours later so the 1h cache is long dead, and `--resume` is
+  // pinned to the very account that is out of quota. Handing it off is both
+  // cheaper (measured 20x on this box's five real cut-offs) and the only option
+  // that can run somewhere with headroom.
+  else if (state === "rate-limited") {
+    decision = "FRESH";
+    why = `cut off by a usage limit — hand off, don't resume: ${rec.why[0]}`;
+  }
+  // When the refill CAN be priced, the price decides. `short` (few turns, short
+  // duration) was only ever a proxy for "small context, cheap to reload", and it
+  // is the worse measure now that the actual context size is in hand — a 2-turn
+  // session that read a lot carries 75k, and reloading it cold is not cheap.
+  else if (rec.priced) {
+    decision = rec.mode === "resume" ? "RESUME" : "FRESH";
+    why = rec.why[0];
+  }
+  else if (short) { decision = "RESUME"; why = `short session (${turns} turns / ${durMin}m) — cheap to reload; ${rec.why[0]}`; }
+  else { decision = "FRESH"; why = `old (${ageMin}m) & long (${turns} turns) — a brief beats reloading stale ctx`; }
 
   return {
     ...entry, sessionId: s.sessionId || entry.id, cwd: s.cwd || "",
     model: s.model, stopReason: s.stopReason, endTs, ageMin, durMin, turns,
     outTokens: s.outputTokens, state, short, decision, why, rateLimit,
+    contextTokens: s.maxContextTokens || 0, recommend: rec.mode, coldRefillUsd: Number(rec.cost.cold.toFixed(2)),
     permMode, permFlag, parked, firstUser, lastUser, lastAsst,
     pending: extractPending(lines),
     lastError: (s.errors[s.errors.length - 1] || "").replace(/\s+/g, " ").slice(0, 160),
@@ -463,6 +500,7 @@ if (has("--json")) {
       permMode: s.permMode, permFlag: s.permFlag,
       profileDir: s.profileDir, launchCfg: s.launchCfg, profileMismatch: s.profileMismatch,
       decision: s.decision, why: s.why, rateLimit: s.rateLimit, pending: s.pending,
+      contextTokens: s.contextTokens, recommend: s.recommend, coldRefillUsd: s.coldRefillUsd,
       firstUser: clip(s.firstUser, 300), lastAsst: clip(s.lastAsst, 300),
       briefPath: briefPaths.get(s.sessionId) || null,
       command: s.decision === "DONE" ? null : fmtCmd(s, briefPaths.get(s.sessionId)),

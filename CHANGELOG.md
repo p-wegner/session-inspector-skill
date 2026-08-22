@@ -2,6 +2,48 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-22 (later) — resume is no longer the default advice
+
+`claude --resume` was treated as the way to continue a cut-off session. That was
+backwards, and backwards in the worst case. Two structural reasons:
+
+- **Resume cannot cross profiles.** The session is pinned to the account it ran
+  on — and a session is normally cut off *because that account hit its limit*.
+- **The cache is dead by then.** The prompt cache has a 1-hour TTL, so the first
+  turn re-writes the entire context at 2x base input instead of reading it at
+  0.1x — a **20x** multiplier paid before any new work.
+
+Measured on the five real cut-off sessions on this machine (103k–295k peak
+context): resuming them cold costs **$11.24** against **$0.56** warm, the largest
+single one $2.95. A handoff brief is 2–5k tokens.
+
+So both tools now recommend a **handoff** by default and print the priced reason:
+
+- `resumable.mjs` leads with a ready `spawn.cmd … -handoff -from <id>` line, and
+  shows the resume command underneath, annotated with what it would cost and the
+  fact that it only works on that one account.
+- `session-resume.mjs`'s rate-limited case became `FRESH` (was `CONTINUE`, i.e.
+  resume). Where the refill can be priced, the price now decides — the old
+  "short session" rule was only ever a proxy for "small context", and it is the
+  worse measure once the actual size is known (a 2-turn session can carry 75k).
+- The shared rule is `lib/resume-economics.mjs`. It returns `priced: false` when
+  a transcript has no per-turn usage, and callers then fall back to their own
+  heuristic rather than trusting a $0.00 estimate.
+
+**`spawn.cmd -from <session-id>`** is new and load-bearing for this: `-handoff`
+previously always described the *calling* session, so "hand off the session that
+was cut off yesterday" produced a brief about the wrong session — or about nothing
+at all when run from a plain shell. The brief's "from profile" line is now
+verified rather than asserted, since a handed-over session usually lives under a
+different account than the caller.
+
+**Fixed: `<synthetic>` was reported as the model** of every limit-cut-off session.
+The usage-limit banner is an injected message tagged `<synthetic>`, and
+last-wins model detection picked it up — so the population most likely to be
+priced or resumed had no usable model. This mattered immediately: one of the five
+cut-offs is Fable at $10/Mtok, whose 146k context costs nearly as much to reload
+as another's 295k, and the bug had priced it at the $5 default.
+
 ## 2026-08-22 — "what should I pick up next?", and two resumable defects
 
 ### New: `continuations.mjs` — which work to pick up, then a gated spawn plan

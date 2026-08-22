@@ -370,6 +370,44 @@ lines that look like a `@@@` header are dot-stuffed on extract and unescaped on 
 live agent holds the transcript open and rewrites it on every turn, so your edits
 are overwritten. Edit a *finished* session, then `claude --resume` it.
 
+## RESUME is usually the WRONG tool — hand off instead
+
+**Read this before recommending `claude --resume` to anyone, including yourself.**
+Two structural reasons, both of which bite hardest in exactly the case that makes
+you want to resume:
+
+1. **`--resume` cannot cross profiles.** A session lives under one
+   `~/.claude[-suffix]` home and `--resume` resolves against `CLAUDE_CONFIG_DIR`,
+   so the work is pinned to that account. But a session is normally cut off
+   *because that account hit its limit* — so the one profile resume can use is
+   the one you cannot.
+2. **The cache is dead by the time you come back.** Claude Code's prompt cache
+   has a **1-hour TTL**. Warm, each turn re-reads the context at 0.1x base input;
+   past the TTL the next turn re-**writes** the whole prefix at 2x. That is a
+   **20x** multiplier on the first turn, paid before any new work happens.
+
+Measured on this box's five real cut-off sessions (103k–295k peak context):
+resuming them cold costs **$11.24** against **$0.56** warm. A handoff brief is
+2–5k tokens — cents — and runs on any account with headroom.
+
+So `resumable.mjs` and `session-resume.mjs` now **recommend a handoff by default**
+and print the priced reason. Resume is recommended only where it genuinely wins:
+same profile, cache still warm (< 60m idle), or a small context (< 50k). The rule
+and the pricing live in `lib/resume-economics.mjs` (`recommendMode()`), so both
+tools agree; `recommendMode` also returns `priced: false` when the transcript has
+no per-turn usage, and callers then fall back to their own heuristic instead of
+trusting a $0.00 estimate.
+
+**The handoff command**, which is what to hand a human:
+
+```powershell
+& "C:\projects\andrena\spawn-session\spawn.cmd" "<cwd>" -p auto -handoff -from <session-id> -m "why you are stopping"
+```
+
+`-from` is load-bearing: without it the brief describes the **calling** session
+rather than the cut-off one. `-p auto` picks the account with the most headroom,
+which is the whole point — a handoff can go anywhere, a resume cannot.
+
 ## Resume sessions after a crash / reboot / rate-limit
 
 When a batch of sessions dies at once (hard reboot, power loss) or a session is
@@ -404,7 +442,7 @@ flags now also work on `analyze-claude-session.mjs --list`/`--latest`, so those
 see non-default profiles instead of only `~/.claude`.
 
 **Decision rule** (tunable via `--fresh-age`/`--short-turns`/`--short-min`):
-rate-limited → **CONTINUE** (resume + handoff); last activity < 60m → **RESUME**
+rate-limited → **FRESH** (hand off; resume is pinned to the exhausted account and reloads cold); last activity < 60m → **RESUME**
 (context warm); short session → **RESUME** (cheap to reload even if old); old &
 long → **FRESH** (a brief + new session beats reloading a huge stale context);
 cleanly-finished → **DONE** (skipped unless `--include-completed`).

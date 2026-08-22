@@ -31,9 +31,24 @@
  * don't resume" advice, instead of drowning the ranked list (observed: 53 such
  * 1-turn corpses burying the two real resumable sessions).
  *
- * Then continue it:
- *   cd <cwd> && CLAUDE_CONFIG_DIR=<home> claude --resume <sessionId>
- *   (or inspect first:  node scripts/analyze-claude-session.mjs <path> --events -v)
+ * RESUME IS USUALLY THE WRONG TOOL, and this prints advice per session rather than
+ * a bare resume line. Two reasons, both structural:
+ *
+ *   - `--resume` cannot cross profiles. The session lives under one
+ *     `~/.claude[-suffix]` home; but the reason it was cut off is normally that
+ *     THAT account hit its limit, so the one profile resume can use is the one
+ *     you cannot.
+ *   - By the time you come back, the 1-hour prompt cache is dead, so the first
+ *     turn re-writes the entire context at 2x base input instead of reading it at
+ *     0.1x. Measured on this box's five real cut-offs (103k-295k peak context):
+ *     resuming them all cold = $29.33 before a single new token of work.
+ *
+ * So the default recommendation is a HANDOFF: a fresh session on any account with
+ * headroom, seeded with a written brief (2-5k tokens). Resume is recommended only
+ * where it genuinely wins - same profile, cache still warm, or a small context.
+ * See lib/resume-economics.mjs for the rule and the pricing.
+ *
+ *   (inspect first:  node scripts/analyze-claude-session.mjs <path> --events -v)
  */
 
 import { readFileSync, statSync } from "fs";
@@ -41,6 +56,7 @@ import { basename, dirname } from "path";
 import { discover, projectIdentity } from "./lib/sessions.mjs";
 import { parseClaude } from "./lib/parse.mjs";
 import { findSuccessors, successorLabel, strongLinks } from "./lib/successor.mjs";
+import { recommendMode, modeLabel, CACHE_TTL_MIN } from "./lib/resume-economics.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -110,6 +126,17 @@ function resumeCommand(s, path) {
     ? `Set-Location "${cwd}"; claude --resume ${id}`
     : `$env:CLAUDE_CONFIG_DIR="${home}"; Set-Location "${cwd}"; claude --resume ${id}`;
   return { bash, pwsh, home, tag, cwd, id };
+}
+
+// The HANDOFF alternative: a fresh session seeded with a written brief. Unlike a
+// resume it can run on ANY account — which matters because the account that hit
+// the limit is the only one a resume can use.
+const SPAWN_CMD = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
+function handoffCommand(s, path) {
+  const cwd = s.cwd || "<cwd unknown>";
+  // -from is load-bearing: without it the brief describes the CALLING session,
+  // not the cut-off one, so the handoff would carry the wrong state.
+  return `& "${SPAWN_CMD}" "${cwd}" -p auto -handoff -from ${s.sessionId} -m "continuing ${(s.sessionId || "").slice(0, 8)}, which a ${"limit"} cut off"`;
 }
 
 // ── local-time formatting (no external deps) ─────────────────────────────────
@@ -185,6 +212,15 @@ const succ = findSuccessors(
   sessions,
 );
 for (const h of hits) {
+  // Resume or hand off? Priced, not assumed — see lib/resume-economics.mjs.
+  const idleMin = (Date.now() - new Date(h.cutoff || 0).getTime()) / 60000;
+  h.rec = recommendMode({
+    idleMin,
+    contextTokens: h.stat.maxContextTokens || 0,
+    model: h.stat.model,
+    sessionProfile: h.resume.home,
+  });
+  h.handoff = handoffCommand(h.stat, h.path);
   h.successors = succ.get(h.stat.sessionId) || [];
   h.strong = strongLinks(h.successors);
   h.successorLabel = successorLabel(h.successors);
@@ -222,6 +258,12 @@ const instGroups = instantGroups(instant);
 if (resumeOnly) {
   const h = hits[0];
   if (!h) { console.error("No resumable session found in window."); process.exit(1); }
+  // --resume stays literal (it is piped/eval'd), but a cold cross-profile resume
+  // is usually the wrong tool and staying silent about it would be dishonest.
+  if (h.rec.mode === "handoff") {
+    process.stderr.write(`[resumable] NOTE: ${h.rec.why[0]}\n`);
+    process.stderr.write(`[resumable] a handoff is usually better here: ${h.handoff}\n`);
+  }
   console.log(process.platform === "win32" ? h.resume.pwsh : h.resume.bash);
   process.exit(0);
 }
@@ -249,6 +291,12 @@ if (asJson) {
     successors: h.successors,
     resumeBash: h.resume.bash,
     resumePwsh: h.resume.pwsh,
+    contextTokens: h.stat.maxContextTokens || 0,
+    recommend: h.rec.mode,
+    recommendWhy: h.rec.why,
+    coldRefillUsd: Number(h.rec.cost.cold.toFixed(2)),
+    warmReadUsd: Number(h.rec.cost.warm.toFixed(2)),
+    handoffCommand: h.handoff,
   }));
   console.log(JSON.stringify(latest ? out[0] || null : {
     resumable: out,
@@ -283,8 +331,11 @@ if (!hits.length) {
 
 const shown = latest ? hits.slice(0, 1) : hits.slice(0, top);
 console.log("═".repeat(72));
-console.log(`RESUMABLE SESSIONS  —  ${hits.length} open cut-off session(s), last ${days || "∞"} day(s)`);
+console.log(`CUT-OFF SESSIONS  —  ${hits.length} open, last ${days || "∞"} day(s)`);
 console.log("═".repeat(72));
+console.log(`Each carries advice, because RESUME is usually NOT the cheap option: it cannot`);
+console.log(`cross profiles (and the account that hit the limit is the one it needs), and past`);
+console.log(`the ${CACHE_TTL_MIN}m cache TTL it re-writes the whole context at 2x before doing any work.`);
 
 for (const h of shown) {
   const s = h.stat;
@@ -296,7 +347,18 @@ for (const h of shown) {
   console.log(`  ran:      ${s.assistantTurns} turns · ${Math.round((s.durationSec || 0) / 60)}m · cwd ${s.cwd || "?"}`);
   if (h.successorLabel) console.log(`  ALREADY:  ${h.successorLabel} — check before redoing any of it`);
   if (h.kind === "main") {
-    console.log(`  resume →  ${process.platform === "win32" ? h.resume.pwsh : h.resume.bash}`);
+    const ctxK = Math.round((h.stat.maxContextTokens || 0) / 1000);
+    console.log(`  advice:   ${modeLabel(h.rec)}`);
+    console.log(`            ${h.rec.why[0]}`);
+    if (h.rec.why[1]) console.log(`            ${h.rec.why[1]}`);
+    if (h.rec.mode === "handoff") {
+      console.log(`  hand off → ${h.handoff}`);
+      console.log(`  (resume) → ${process.platform === "win32" ? h.resume.pwsh : h.resume.bash}`);
+      console.log(`            ↑ same account ONLY (${h.resume.tag}), and reloads ${ctxK}k cold: ~$${h.rec.cost.cold.toFixed(2)}`);
+    } else {
+      console.log(`  resume →  ${process.platform === "win32" ? h.resume.pwsh : h.resume.bash}`);
+      console.log(`  or hand off → ${h.handoff}`);
+    }
   } else {
     // Nested transcripts have no resume of their own; the parent carries the
     // conversation and subagent-results.mjs recovers what the child produced.
