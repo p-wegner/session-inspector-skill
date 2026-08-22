@@ -26,7 +26,7 @@
  * than a short one that is honest about its sources.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -71,7 +71,21 @@ parts.push(`# Handoff brief`);
 parts.push(``);
 parts.push(`- **written**: ${new Date().toISOString()}`);
 parts.push(`- **from session**: \`${sessionId || "unknown"}\``);
-parts.push(`- **from profile**: \`${configDir || "unknown"}\``);
+// The caller's profile is only the SOURCE session's profile when the source is
+// the caller. With `-from <id>` (handing over someone else's cut-off session) it
+// usually is not — that session lives wherever it ran, which is often a different
+// account, since the reason it was cut off is that its own account ran out. So
+// verify rather than assert: a wrong profile line in a brief is the kind of detail
+// a reader trusts and then cannot resume with.
+const sessionLivesHere = Boolean(sessionId) && Boolean(configDir)
+  && existsSync(join(configDir, "projects"))
+  && readdirSync(join(configDir, "projects")).some((d) => {
+    try { return readdirSync(join(configDir, "projects", d)).some((f) => f.startsWith(sessionId)); }
+    catch { return false; }
+  });
+parts.push(`- **from profile**: ${sessionLivesHere ? `\`${configDir}\`` : (configDir
+  ? `not \`${configDir}\` — this session lives under another profile (resolved by id)`
+  : "unknown")}`);
 parts.push(`- **target repo**: \`${resolve(target)}\``);
 parts.push(``);
 parts.push(`> You are picking up work another session was doing. Read this, then confirm`);

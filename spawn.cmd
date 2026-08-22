@@ -50,6 +50,8 @@ set "NEEDRESUME="
 set "FORCE="
 set "BATCH="
 set "NEEDBATCH="
+set "SRCSID="
+set "NEEDFROM="
 
 :parse
 if "%~1"=="" goto resolve
@@ -87,6 +89,12 @@ if defined NEEDBATCH (
   shift
   goto parse
 )
+if defined NEEDFROM (
+  set "SRCSID=%~1"
+  set "NEEDFROM="
+  shift
+  goto parse
+)
 if /i "%~1"=="-m" (
   set "NEEDMSG=1"
 ) else if /i "%~1"=="-mf" (
@@ -98,6 +106,12 @@ if /i "%~1"=="-m" (
   set "NEEDBATCH=1"
 ) else if /i "%~1"=="-resume" (
   set "NEEDRESUME=1"
+) else if /i "%~1"=="-from" (
+  rem Whose work is being handed over. Without this, -handoff always described the
+  rem CALLING session -- so a command like "hand off the session a limit cut off
+  rem yesterday" produced a brief about the wrong session, or about nothing at all
+  rem when run from a plain shell where CLAUDE_CODE_SESSION_ID is unset.
+  set "NEEDFROM=1"
 ) else if /i "%~1"=="-force" (
   set "FORCE=1"
 ) else if /i "%~1"=="-p" (
@@ -150,6 +164,7 @@ echo   -mf      seed from a FILE - use this from a script or another agent.
 echo   -batch   launch every APPROVED entry of a spawn-plan JSON file.
 echo   -resume  reopen an existing session id instead of starting a fresh one.
 echo   -force   skip the preflight (duplicate-session and RAM-headroom refusals).
+echo   -from    session id whose work is being handed over (for -handoff briefs).
 echo   -p       Claude profile (name, .claude-NAME, full path, or "auto" for the
 echo            account with the most quota headroom). Default: inherit.
 echo   -W       new WINDOW instead of a new tab.
@@ -219,8 +234,16 @@ rem would name an empty path. A label keeps the code straight-line and the expan
 rem correct. (Delayed expansion would also fix it, and would then eat '!' in the note.)
 if not defined HANDOFF goto :nohandoff
 
+set "SRC=%CLAUDE_CODE_SESSION_ID%"
+if defined SRCSID set "SRC=%SRCSID%"
+if not defined SRC (
+  echo [spawn] -handoff needs a source session. Run it from inside a Claude session,
+  echo         or name one explicitly with -from ^<session-id^>.
+  exit /b 1
+)
+
 set "HOFILE="
-for /f "usebackq delims=" %%H in (`node "%ROOT%make-handoff.mjs" --session "%CLAUDE_CODE_SESSION_ID%" --config-dir "%CLAUDE_CONFIG_DIR%" --target "%DEST%" --note "%USERNOTE%"`) do set "HOFILE=%%H"
+for /f "usebackq delims=" %%H in (`node "%ROOT%make-handoff.mjs" --session "%SRC%" --config-dir "%CLAUDE_CONFIG_DIR%" --target "%DEST%" --note "%USERNOTE%"`) do set "HOFILE=%%H"
 if not defined HOFILE (
   echo [spawn] could not write the handoff brief - aborting rather than spawning a
   echo         session that believes it received one.
@@ -229,6 +252,10 @@ if not defined HOFILE (
 set "MSG=You are TAKING OVER work from another Claude session. Read the handoff brief at %HOFILE% first, then CONTINUE.md / BACKLOG.md / CLAUDE.md in this repo. Report the state you actually find - separating what you verified from what the brief merely claims - and what you propose to do next. Do not edit until I confirm. The outgoing session may still be reachable over ACP; the brief says how."
 
 :nohandoff
+
+rem Whose work this is, for the ledger. -from wins; otherwise this session.
+if not defined SRC set "SRC=%CLAUDE_CODE_SESSION_ID%"
+if defined SRCSID set "SRC=%SRCSID%"
 
 rem Which profile the new session runs on. An explicit -p wins; otherwise inherit
 rem THIS shell's CLAUDE_CONFIG_DIR so the new session lands on the same account and
@@ -307,6 +334,7 @@ if defined DRY (
   echo   via-file: staged at spawn time to keep wt away from any semicolon
   echo   resume  : %RESUMEID%
   echo   force   : %FORCE%
+  echo   from    : %SRCSID%
   echo   ps-args : %PFARG% %RESARG% %PROFARG% %SIDARG% %LCDARG% %BARE% %SAFE% %NOTRUST% %FWD%
   exit /b 0
 )
@@ -342,7 +370,7 @@ echo [spawn] opened: %DEST%
 rem Record the handover even when we cannot name the new session yet: the source
 rem side alone already tells a later "has this been picked up?" query more than
 rem text-matching a session id ever could.
-if not defined WAIT node "%ROOT%ledger.mjs" --source "%CLAUDE_CODE_SESSION_ID%" --repo "%DEST%" --profile "%INHERIT%" --brief "%HOFILE%" --kind spawn
+if not defined WAIT node "%ROOT%ledger.mjs" --source "%SRC%" --repo "%DEST%" --profile "%INHERIT%" --brief "%HOFILE%" --kind spawn
 if not defined WAIT exit /b 0
 
 echo [spawn] waiting for the new session to register on the ACP bus...
@@ -357,7 +385,7 @@ if not defined NEWAGENT (
   exit /b 2
 )
 
-node "%ROOT%ledger.mjs" --source "%CLAUDE_CODE_SESSION_ID%" --repo "%DEST%" --profile "%INHERIT%" --agent "%NEWAGENT%" --brief "%HOFILE%" --kind handoff
+node "%ROOT%ledger.mjs" --source "%SRC%" --repo "%DEST%" --profile "%INHERIT%" --agent "%NEWAGENT%" --brief "%HOFILE%" --kind handoff
 
 echo.
 echo [spawn] HANDOFF RECEIPT
