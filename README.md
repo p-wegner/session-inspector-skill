@@ -17,17 +17,24 @@ its own description:
 
 | Skill | Where | What it does |
 |---|---|---|
-| `session-inspector` | repo root | reads transcripts: debug one session, aggregate a fleet, decide what to pick up next |
+| `session-inspector` | [`session-inspector/`](session-inspector/) | reads transcripts: debug one session, aggregate a fleet, decide what to pick up next |
 | `spawn-session` | [`spawn-session/`](spawn-session/) | the only session **launcher** here: opens/resumes/batch-launches sessions in Windows Terminal tabs |
+
+They are **siblings**: neither is nested inside the other, the repo root is a
+container rather than a skill, and each subfolder is junctioned into every profile
+under its own name. Read/decide lives on one side, launch on the other, and the
+contract between them is a plain versioned JSON file
+([`spawn-plan/1`](session-inspector/scripts/lib/spawn-plan.mjs)) that a human
+edits in between.
 
 They were separate repos until 2026-08-22, and the split was costing something
 real: the launcher path was hardcoded in four places, the spawn-plan schema
 existed as two copies that had to agree, and the analysis half could not call the
-action half without a `C:\` path. Now `scripts/lib/spawn-plan.mjs` holds the
+action half without a `C:\` path. Now `session-inspector/scripts/lib/spawn-plan.mjs` holds the
 contract both sides use, and the launcher is resolved relative to the repo.
 
-`spawn-session/` keeps its own `README`, `SKILL.md` and `CONTINUE.md` — it is a
-skill in its own right, not a subfolder of this one.
+Each keeps its own `SKILL.md`; `spawn-session/` also keeps its own `README` and
+`CONTINUE.md`.
 
 Everything depends only on **Node builtins** (`fs`/`path`/`os`/`http`) — no package
 install, no server, no monorepo checkout, no board required. Requires **Node 18+**
@@ -65,10 +72,10 @@ launches **only** approved entries. That is the human gate: it can be answered,
 never skipped.
 
 ```bash
-node scripts/continuations.mjs                       # ranked shortlist, with reasons
-node scripts/continuations.mjs --plan plan.json      # write the plan (all unapproved)
-node scripts/continuations.mjs --review plan.json    # walk it interactively (y/n/a/q)
-node scripts/continuations.mjs --approve plan.json --pick 1,3
+node session-inspector/scripts/continuations.mjs                       # ranked shortlist, with reasons
+node session-inspector/scripts/continuations.mjs --plan plan.json      # write the plan (all unapproved)
+node session-inspector/scripts/continuations.mjs --review plan.json    # walk it interactively (y/n/a/q)
+node session-inspector/scripts/continuations.mjs --approve plan.json --pick 1,3
 & "<repo>\spawn-session\spawn.cmd" -batch plan.json
 ```
 
@@ -117,69 +124,71 @@ recommended where it wins — same account, still-warm cache, or a small context
 ## Layout
 
 ```
-SKILL.md                          # skill entrypoint (frontmatter name: session-inspector)
-references/
-  claude-recipes.md               # manual PowerShell recipes for Claude transcripts
-  codex-recipes.md                # Codex {timestamp,type,payload} event format + recipes
-  copilot-recipes.md              # Copilot events.jsonl format + recipes
-  aggregate-tools.md              # usage for the fleet-wide fan-out scripts
-  session-sync.md                 # full setup/config/API for cross-machine sync
-  statusline.md                   # show the current session locator in the Claude Code statusline
-scripts/
-  analyze-claude-session.mjs      # single Claude session  → structured summary
-  analyze-codex-session.mjs       # single Codex session   → structured summary
-  analyze-copilot-session.mjs     # single Copilot session → structured summary
-  continuations.mjs               # WHICH WORK to pick up next → ranked candidates → human-gated spawn plan
-  session-edit.mjs                # extract → edit → apply: rewrite a Claude session's messages (WRITES)
-  token-sinks.mjs                 # rank token/cost sinks across MANY sessions
-  tool-failures.mjs               # rank failed tool calls across MANY sessions
-  user-prompts.mjs                # extract real human-typed prompts across MANY sessions
-  sync-server.mjs                 # REST + web-UI hub: collect transcripts from all machines
-  sync-push.mjs                   # client: incremental push of this machine's transcripts
-  sync-query.mjs                  # CLI browse/search/fetch over the synced set
-  lib/
-    sessions.mjs                  # shared discovery, metadata, git-remote project identity
-    parse.mjs                     # shared full-transcript parsers (tools/files/tokens/last-msg) — used by analyzers AND the hub UI
-    config.mjs                    # host-agnostic URL/port/device/data-dir resolution
-    provenance.mjs                # WHO started a session: human / board-launched / handoff-seeded / stop-hook
-    successor.mjs                 # has a cut-off session already been picked up? (ledger > brief > mention)
-    repo.mjs                      # a repo's own open items: CONTINUE.md / BACKLOG.md parsing + git state
-    resume-economics.mjs          # resume or hand off? the 1h cache TTL + cross-profile rule, priced
-    spawn-plan.mjs                # the spawn-plan contract + where spawn.cmd is (shared with spawn-session/)
-spawn-session/                    # the LAUNCHER skill (own SKILL.md, README, CONTINUE.md)
-  spawn.cmd                       # entry point: open / -resume / -batch a session in a wt tab
-  spawn-session.ps1               # runs inside the new tab (env scrub, trust, profile, mode)
-  batch.mjs                       # launch every APPROVED entry of a spawn plan, and nothing else
-  preflight.mjs                   # refuse a duplicate session in a checkout / no RAM headroom; -p auto
-  make-handoff.mjs                # write the handoff brief the new session reads first
-  ledger.mjs                      # record who handed which work to whom (read by lib/successor.mjs)
+README.md  CHANGELOG.md  LICENSE    # repo level: this container, not either skill
+session-inspector/                  # SKILL 1 — junctioned as `session-inspector`
+  SKILL.md                          # skill entrypoint (frontmatter name: session-inspector)
+  references/
+    claude-recipes.md               # manual PowerShell recipes for Claude transcripts
+    codex-recipes.md                # Codex {timestamp,type,payload} event format + recipes
+    copilot-recipes.md              # Copilot events.jsonl format + recipes
+    aggregate-tools.md              # usage for the fleet-wide fan-out scripts
+    session-sync.md                 # full setup/config/API for cross-machine sync
+    statusline.md                   # show the current session locator in the Claude Code statusline
+  scripts/
+    analyze-claude-session.mjs      # single Claude session  → structured summary
+    analyze-codex-session.mjs       # single Codex session   → structured summary
+    analyze-copilot-session.mjs     # single Copilot session → structured summary
+    continuations.mjs               # WHICH WORK to pick up next → ranked candidates → human-gated spawn plan
+    session-edit.mjs                # extract → edit → apply: rewrite a Claude session's messages (WRITES)
+    token-sinks.mjs                 # rank token/cost sinks across MANY sessions
+    tool-failures.mjs               # rank failed tool calls across MANY sessions
+    user-prompts.mjs                # extract real human-typed prompts across MANY sessions
+    sync-server.mjs                 # REST + web-UI hub: collect transcripts from all machines
+    sync-push.mjs                   # client: incremental push of this machine's transcripts
+    sync-query.mjs                  # CLI browse/search/fetch over the synced set
+    lib/
+      sessions.mjs                  # shared discovery, metadata, git-remote project identity
+      parse.mjs                     # shared full-transcript parsers (tools/files/tokens/last-msg) — used by analyzers AND the hub UI
+      config.mjs                    # host-agnostic URL/port/device/data-dir resolution
+      provenance.mjs                # WHO started a session: human / board-launched / handoff-seeded / stop-hook
+      successor.mjs                 # has a cut-off session already been picked up? (ledger > brief > mention)
+      repo.mjs                      # a repo's own open items: CONTINUE.md / BACKLOG.md parsing + git state
+      resume-economics.mjs          # resume or hand off? the 1h cache TTL + cross-profile rule, priced
+      spawn-plan.mjs                # the spawn-plan contract + where spawn.cmd is (shared with spawn-session/)
+spawn-session/                      # SKILL 2 — junctioned as `spawn-session` (own SKILL.md, README, CONTINUE.md)
+  spawn.cmd                         # entry point: open / -resume / -batch a session in a wt tab
+  spawn-session.ps1                 # runs inside the new tab (env scrub, trust, profile, mode)
+  batch.mjs                         # launch every APPROVED entry of a spawn plan, and nothing else
+  preflight.mjs                     # refuse a duplicate session in a checkout / no RAM headroom; -p auto
+  make-handoff.mjs                  # write the handoff brief the new session reads first
+  ledger.mjs                        # record who handed which work to whom (read by lib/successor.mjs)
 ```
 
 ## Quick start
 
 ```bash
 # Inspect one session (newest, or pass a path)
-node scripts/analyze-claude-session.mjs  --latest
-node scripts/analyze-codex-session.mjs   --latest
-node scripts/analyze-copilot-session.mjs --latest
+node session-inspector/scripts/analyze-claude-session.mjs  --latest
+node session-inspector/scripts/analyze-codex-session.mjs   --latest
+node session-inspector/scripts/analyze-copilot-session.mjs --latest
 
 # What should I pick up next? (ranked, then a human-gated spawn plan)
-node scripts/continuations.mjs
-node scripts/continuations.mjs --plan plan.json
+node session-inspector/scripts/continuations.mjs
+node session-inspector/scripts/continuations.mjs --plan plan.json
 
 # Aggregate across many local sessions
-node scripts/token-sinks.mjs    --days 7        # biggest token/cost sinks
-node scripts/tool-failures.mjs  --by error      # most common tool failures
-node scripts/user-prompts.mjs   --today         # what you actually asked
+node session-inspector/scripts/token-sinks.mjs    --days 7        # biggest token/cost sinks
+node session-inspector/scripts/tool-failures.mjs  --by error      # most common tool failures
+node session-inspector/scripts/user-prompts.mjs   --today         # what you actually asked
 
 # Share across machines (see the dedicated section below)
-node scripts/sync-server.mjs                     # run the hub, open http://localhost:8765/
-node scripts/sync-push.mjs                       # push this machine's sessions to it
-node scripts/sync-query.mjs search "<text>" --deep
+node session-inspector/scripts/sync-server.mjs                     # run the hub, open http://localhost:8765/
+node session-inspector/scripts/sync-push.mjs                       # push this machine's sessions to it
+node session-inspector/scripts/sync-query.mjs search "<text>" --deep
 
 # Edit a finished Claude session's messages (two-phase, in your own editor)
-node scripts/session-edit.mjs extract --latest -o edits.md
-node scripts/session-edit.mjs apply edits.md --dry-run
+node session-inspector/scripts/session-edit.mjs extract --latest -o edits.md
+node session-inspector/scripts/session-edit.mjs apply edits.md --dry-run
 ```
 
 Every tool except `session-edit.mjs` is read-only: it reads from the standard agent
@@ -204,10 +213,10 @@ Designed for a **single developer across multiple devices on a private tailnet**
 
 ```bash
 # on the hub box (any machine you want as the collector):
-node scripts/sync-server.mjs                 # binds 0.0.0.0:8765; open http://localhost:8765/
+node session-inspector/scripts/sync-server.mjs                 # binds 0.0.0.0:8765; open http://localhost:8765/
 
 # on every machine (including the hub itself):
-node scripts/sync-push.mjs                   # incremental: only new/changed sessions
+node session-inspector/scripts/sync-push.mjs                   # incremental: only new/changed sessions
 ```
 
 Point a client at a remote hub with `--server <url>` or `SESSION_SYNC_URL` — nothing
@@ -222,12 +231,12 @@ registers an OS autostart entry (Windows Scheduled Task / macOS launchd / Linux
 systemd `--user`):
 
 ```powershell
-node scripts/hub-service.mjs status      # running? indexed count? autostart installed?
-node scripts/hub-service.mjs start       # spawn detached + hidden
-node scripts/hub-service.mjs restart     # stop then start
-node scripts/hub-service.mjs install     # autostart at logon (Windows/macOS: elevated shell)
-node scripts/hub-service.mjs uninstall   # remove autostart
-node scripts/hub-service.mjs logs -n 40  # tail the hub log
+node session-inspector/scripts/hub-service.mjs status      # running? indexed count? autostart installed?
+node session-inspector/scripts/hub-service.mjs start       # spawn detached + hidden
+node session-inspector/scripts/hub-service.mjs restart     # stop then start
+node session-inspector/scripts/hub-service.mjs install     # autostart at logon (Windows/macOS: elevated shell)
+node session-inspector/scripts/hub-service.mjs uninstall   # remove autostart
+node session-inspector/scripts/hub-service.mjs logs -n 40  # tail the hub log
 ```
 
 For tailnet reach, open one inbound firewall rule for the port (on Windows the
@@ -242,10 +251,10 @@ per-OS detail and the firewall one-liner: [`references/hub-service.md`](referenc
 - **CLI** for the terminal and the agent:
 
   ```bash
-  node scripts/sync-query.mjs meta                       # devices / providers / projects / count
-  node scripts/sync-query.mjs list --provider claude --limit 20
-  node scripts/sync-query.mjs search "leaderboard" --deep
-  node scripts/sync-query.mjs get <key> --analyze        # fetch a remote session + run its analyzer
+  node session-inspector/scripts/sync-query.mjs meta                       # devices / providers / projects / count
+  node session-inspector/scripts/sync-query.mjs list --provider claude --limit 20
+  node session-inspector/scripts/sync-query.mjs search "leaderboard" --deep
+  node session-inspector/scripts/sync-query.mjs get <key> --analyze        # fetch a remote session + run its analyzer
   ```
 
   `get --analyze` is the cross-machine deep-dive / model-handover path: pull a session
@@ -275,20 +284,39 @@ Full setup, REST API, and privacy scope: [`references/session-sync.md`](referenc
 
 ## Install as an agent skill
 
-**Claude Code** — clone, then junction/symlink the repo into your skills dir under the
-skill's frontmatter name (`session-inspector`):
+The repo root is **not** a skill — the two skills are the subfolders, so junction
+(or symlink) **each one** into your skills dir under its own frontmatter name.
+Pointing a link at the repo root gives that skill no `SKILL.md`.
 
 ```powershell
-# Windows (junction)
-New-Item -ItemType Junction -Path "$HOME\.claude\skills\session-inspector" -Target "C:\path\to\session-inspector-skill"
+# Windows (junction), for every Claude profile you use
+$repo = "C:\path\to\session-inspector-skill"
+foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
+  foreach ($skill in @("session-inspector", "spawn-session")) {
+    $link = Join-Path $p.FullName "skills\$skill"
+    if (-not (Test-Path $link)) {
+      New-Item -ItemType Junction -Path $link -Target (Join-Path $repo $skill) | Out-Null
+    }
+  }
+}
 ```
 ```bash
 # macOS / Linux (symlink)
-ln -s /path/to/session-inspector-skill ~/.claude/skills/session-inspector
+ln -s /path/to/session-inspector-skill/session-inspector ~/.claude/skills/session-inspector
+ln -s /path/to/session-inspector-skill/spawn-session     ~/.claude/skills/spawn-session
 ```
 
-**Codex** — junction/symlink the same target into `~/.codex/skills/session-inspector`
-so both harnesses share one implementation.
+Profiles do not share skills and there is no auto-propagation, which is why the
+loop covers every `~/.claude*` home. To remove one link later use
+`cmd /c rmdir "<link>"` (Windows) — that deletes the junction only. Never
+`Remove-Item -Recurse` a profile's `skills\` folder: it can follow the junctions
+and delete the real repos behind them.
+
+`spawn-session` is Windows-only (it drives Windows Terminal); `session-inspector`
+is cross-platform.
+
+**Codex** — junction/symlink the same targets into `~/.codex/skills/<name>` so both
+harnesses share one implementation.
 
 ## Notes
 

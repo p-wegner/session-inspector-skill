@@ -63,7 +63,7 @@ UAC click) for install:
 
 ```powershell
 Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile','-Command',
-  'node F:\path\to\session-inspector-skill\scripts\hub-service.mjs install'
+  'node F:\path\to\session-inspector-skill\session-inspector\scripts\hub-service.mjs install'
 ```
 
 ## Tailnet firewall (Windows)
