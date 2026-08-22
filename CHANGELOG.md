@@ -2,6 +2,19 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-22 (last) — renamed: claude-session-tools
+
+The folder was `session-inspector-skill`, which stopped being accurate once the
+root became a container for two sibling skills — it read as
+`session-inspector-skill/session-inspector/`. The local checkout is now
+`claude-session-tools`.
+
+Nothing in the code depended on it (every path is resolved relative to the repo),
+so this is a checkout and junction concern only: repoint
+`skills/session-inspector` and `skills/spawn-session` at the renamed folder.
+The **GitHub repo is still named `session-inspector-skill`** and the remote URL
+is unchanged — git does not care that the folder and the remote differ.
+
 ## 2026-08-22 (later still) — spawn-session ships in this repo, as a sibling
 
 The launcher was a separate local repo. It is now `spawn-session/` here, with its

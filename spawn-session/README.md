@@ -23,7 +23,7 @@ do not share skills, and there is no auto-propagation. Note the target is the
 root is junctioned separately, as the `session-inspector` skill):
 
 ```powershell
-$target = "C:\projects\andrena\session-inspector-skill\spawn-session"
+$target = "C:\projects\andrena\claude-session-tools\spawn-session"
 foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
   $link = Join-Path $p.FullName "skills\$(Split-Path $target -Leaf)"
   if (-not (Test-Path $link)) {

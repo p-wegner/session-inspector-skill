@@ -15,7 +15,7 @@ elsewhere; use this when you want *that repo* worked on.
 ## Use it
 
 ```powershell
-& "C:\projects\andrena\session-inspector-skill\spawn-session\spawn.cmd" [target] [flags]
+& "C:\projects\andrena\claude-session-tools\spawn-session\spawn.cmd" [target] [flags]
 ```
 
 The human spelling from inside a session is `! spawn` once the folder is on PATH.
