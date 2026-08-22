@@ -258,3 +258,5 @@ so both harnesses share one implementation.
 ## License
 
 [MIT](LICENSE)
+
+_Docs last synced with the code at `dc7518e` (2026-08-22)._
