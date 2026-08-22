@@ -1,7 +1,8 @@
 # CONTINUE — spawn-session
 
-Current state, present tense. Since 2026-08-22 this skill lives **inside the
-session-inspector repo** (`session-inspector-skill/spawn-session/`), which does
+Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
+skills** in the session-inspector repo (`spawn-session/` beside
+`session-inspector/`, neither nested in the other), which does
 have a GitHub remote — so keep anything genuinely machine-specific out of here,
 or in a gitignored `*.local.md` beside it.
 
@@ -97,7 +98,7 @@ caller feeding ids from `session-resume --between` should expect it.
 
 ## What the merge changed in the code
 
-- `spawnCmdPath()` in `../scripts/lib/spawn-plan.mjs` resolves this launcher
+- `spawnCmdPath()` in `../session-inspector/scripts/lib/spawn-plan.mjs` resolves this launcher
   relative to the repo, replacing a hardcoded `C:\projects\andrena\...` path in
   four call sites. A clone anywhere works, and so does a junctioned copy.
 - `batch.mjs` imports the plan schema, its validation and the approval gate from

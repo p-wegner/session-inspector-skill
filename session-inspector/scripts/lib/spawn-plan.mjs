@@ -19,8 +19,11 @@ import { fileURLToPath } from "url";
 
 export const SCHEMA = "spawn-plan/1";
 
-const HERE = dirname(fileURLToPath(import.meta.url));           // scripts/lib
-const REPO_ROOT = resolve(HERE, "..", "..");                    // repo root
+const HERE = dirname(fileURLToPath(import.meta.url));      // session-inspector/scripts/lib
+// Up three: lib -> scripts -> session-inspector -> repo root. The two skills are
+// SIBLINGS under that root, so the launcher is a peer directory, not a child of
+// this one — which is why this counts three levels and not two.
+const REPO_ROOT = resolve(HERE, "..", "..", "..");
 
 /**
  * Absolute path to spawn.cmd. Resolved relative to this file, so a clone anywhere
@@ -31,10 +34,16 @@ const REPO_ROOT = resolve(HERE, "..", "..");                    // repo root
 export function spawnCmdPath() {
   const inRepo = join(REPO_ROOT, "spawn-session", "spawn.cmd");
   if (existsSync(inRepo)) return inRepo;
-  const sibling = join(REPO_ROOT, "..", "spawn-session", "spawn.cmd");
-  if (existsSync(sibling)) return resolve(sibling);
-  const legacy = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
-  return existsSync(legacy) ? legacy : inRepo;   // report the expected path when absent
+  // Older layouts: the launcher nested inside the inspector skill (2026-08-22),
+  // and before that a separate repo beside it.
+  for (const legacy of [
+    join(REPO_ROOT, "session-inspector", "spawn-session", "spawn.cmd"),
+    join(REPO_ROOT, "..", "spawn-session", "spawn.cmd"),
+  ]) {
+    if (existsSync(legacy)) return resolve(legacy);
+  }
+  const old = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
+  return existsSync(old) ? old : inRepo;         // report the expected path when absent
 }
 
 /** Is the launcher actually installed? Callers must degrade, not pretend. */

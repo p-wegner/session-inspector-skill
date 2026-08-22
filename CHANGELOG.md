@@ -2,11 +2,24 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
-## 2026-08-22 (later still) — spawn-session ships in this repo
+## 2026-08-22 (later still) — spawn-session ships in this repo, as a sibling
 
 The launcher was a separate local repo. It is now `spawn-session/` here, with its
 full history (`git subtree`), and its per-profile junctions were repointed — so
 the skill works exactly as before, with nothing to reinstall.
+
+**Both skills are siblings under the repo root**: `session-inspector/` and
+`spawn-session/`, neither nested in the other, each junctioned into every profile
+under its own name. The root holds only `README` / `CHANGELOG` / `LICENSE` and is
+no longer itself a skill. If you had a `session-inspector` junction pointing at
+the repo root, repoint it at `session-inspector/` — a checkout of this commit
+otherwise gives that skill no `SKILL.md`.
+
+Paths moved accordingly: `scripts/` and `references/` are now under
+`session-inspector/`, so a bare `node scripts/foo.mjs` becomes
+`node session-inspector/scripts/foo.mjs`. Nothing in the code hardcodes the
+layout — `spawnCmdPath()` resolves the launcher from the repo root and keeps
+fallbacks for both older layouts.
 
 The split had been costing something concrete: the launcher path was hardcoded as
 `C:\projects\andrena\spawn-session\spawn.cmd` in four places, and the

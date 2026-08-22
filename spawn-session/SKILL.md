@@ -20,11 +20,11 @@ elsewhere; use this when you want *that repo* worked on.
 
 The human spelling from inside a session is `! spawn` once the folder is on PATH.
 
-This skill lives **inside the session-inspector repo** (`session-inspector-skill/spawn-session/`)
-and is junctioned separately, so `skills\spawn-session\spawn.cmd` resolves too.
-Scripts on the session-inspector side never hardcode this path — they call
-`spawnCmdPath()` from `../scripts/lib/spawn-plan.mjs`, which resolves it relative
-to the repo. Do the same rather than pasting an absolute path.
+This skill is the **sibling** of `session-inspector/` in one repo, junctioned
+separately, so `skills\spawn-session\spawn.cmd` resolves too. Scripts on the
+session-inspector side never hardcode this path — they call `spawnCmdPath()` from
+`../session-inspector/scripts/lib/spawn-plan.mjs`, which resolves it relative to
+the repo root. Do the same rather than pasting an absolute path.
 
 | | |
 |---|---|
