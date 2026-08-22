@@ -1,7 +1,16 @@
 # CONTINUE — spawn-session
 
-Current state, present tense. This repo is **local only** (no remote), so
-machine-specific notes live here directly rather than in a `.local.md` layer.
+Current state, present tense. Since 2026-08-22 this skill lives **inside the
+session-inspector repo** (`session-inspector-skill/spawn-session/`), which does
+have a GitHub remote — so keep anything genuinely machine-specific out of here,
+or in a gitignored `*.local.md` beside it.
+
+The move brought the full history over (`git subtree add`) and the per-profile
+`skills\spawn-session` junctions were repointed to the new path; verified by
+resolving `spawn.cmd` through every profile's junction. The old
+`C:\projects\andrena\spawn-session` is empty and carries a `MOVED.md`; it could
+not be deleted because the PowerShell hosts of sessions launched from the old path
+still hold a handle. Delete it once those tabs are closed.
 
 ## What is true today
 
@@ -85,6 +94,15 @@ Also unverified: `-resume` against a session with **no messages** starts a fresh
 session — observed with a 9-line transcript whose first entry was
 `queue-operation`. That looked like a launcher bug for a while; it is not, but a
 caller feeding ids from `session-resume --between` should expect it.
+
+## What the merge changed in the code
+
+- `spawnCmdPath()` in `../scripts/lib/spawn-plan.mjs` resolves this launcher
+  relative to the repo, replacing a hardcoded `C:\projects\andrena\...` path in
+  four call sites. A clone anywhere works, and so does a junctioned copy.
+- `batch.mjs` imports the plan schema, its validation and the approval gate from
+  that same lib instead of re-implementing them — they were two copies in two
+  repos, kept in agreement by hand.
 
 ## Next steps
 

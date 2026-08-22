@@ -1,5 +1,11 @@
 # spawn-session
 
+> **This skill lives inside the [session-inspector](../README.md) repo**, at
+> `session-inspector-skill/spawn-session/`. It was its own repo until 2026-08-22;
+> the move brought its history along and the per-profile junctions were
+> repointed, so nothing about using it changed. It shares
+> `../scripts/lib/spawn-plan.mjs` with the tool that writes the plans it launches.
+
 Open a **new interactive Claude Code session in another repo**, in its own Windows
 Terminal tab, without disturbing the session you are in.
 
@@ -10,12 +16,13 @@ follow-up somewhere it can actually be done.
 
 ## Setup
 
-Clone (or keep) this repo anywhere, then junction it into every Claude profile's
-`skills\` directory — profiles do not share skills, and there is no
-auto-propagation:
+Junction this FOLDER into every Claude profile's `skills\` directory — profiles
+do not share skills, and there is no auto-propagation. Note the target is the
+`spawn-session` subfolder of the session-inspector repo, not the repo root (that
+root is junctioned separately, as the `session-inspector` skill):
 
 ```powershell
-$target = "C:\projects\andrena\spawn-session"
+$target = "C:\projects\andrena\session-inspector-skill\spawn-session"
 foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
   $link = Join-Path $p.FullName "skills\$(Split-Path $target -Leaf)"
   if (-not (Test-Path $link)) {
@@ -103,7 +110,7 @@ unavailable check must never read as a passed one.
 ### Launch a whole approved plan (`-batch`)
 
 Spawning four continuations by hand is four near-identical invocations. Instead,
-[session-inspector](https://github.com/p-wegner/session-inspector-skill)'s
+[session-inspector](../README.md)'s
 `continuations.mjs` writes a plan of candidates — each with a target, a profile, a
 seed message and a summary — with every entry `approved: false`. A human picks, then:
 

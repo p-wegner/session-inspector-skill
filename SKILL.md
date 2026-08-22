@@ -14,6 +14,11 @@ Inspect session transcripts across all three supported agents. Each stores data 
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/` | Full JSONL transcripts per session |
 | Copilot CLI | `~/.copilot/session-state/<uuid>/events.jsonl` | Full JSONL transcripts per session |
 
+**The launcher ships with this skill**, at `spawn-session/spawn.cmd` (its own
+skill, junctioned separately as `spawn-session`). Anything here that spawns,
+resumes or hands off a session goes through it; the scripts resolve its path
+themselves via `lib/spawn-plan.mjs`, so never hardcode one.
+
 This skill is **self-contained**: the analyzer scripts under `scripts/` and the manual recipes under `references/` are bundled here and depend only on Node builtins (`fs`/`path`/`os`) — no external repo, server, or package install required. All commands below are run from **this skill's directory** (paths are relative to it). If your CWD is elsewhere, prefix with the skill path, e.g. `node <skill-dir>/scripts/analyze-claude-session.mjs --latest`.
 
 ## WHICH WORK TO PICK UP NEXT → a human-gated spawn plan (`continuations.mjs`)
@@ -61,7 +66,7 @@ node scripts/continuations.mjs --plan plan.json     # writes the plan + prints t
 node scripts/continuations.mjs --review plan.json   # a HUMAN at a terminal: y/n/a/q per entry
 node scripts/continuations.mjs --approve plan.json --pick 1,3   # an AGENT: record the answer
 node scripts/continuations.mjs --approve plan.json --pick none   # reset
-& "C:\projects\andrena\spawn-session\spawn.cmd" -batch plan.json
+& "<skill-dir>\spawn-session\spawn.cmd" -batch plan.json
 ```
 
 **If you are the agent: you cannot answer `--review`** (its stdin is not a TTY and
@@ -401,7 +406,7 @@ trusting a $0.00 estimate.
 **The handoff command**, which is what to hand a human:
 
 ```powershell
-& "C:\projects\andrena\spawn-session\spawn.cmd" "<cwd>" -p auto -handoff -from <session-id> -m "why you are stopping"
+& "<skill-dir>\spawn-session\spawn.cmd" "<cwd>" -p auto -handoff -from <session-id> -m "why you are stopping"
 ```
 
 `-from` is load-bearing: without it the brief describes the **calling** session

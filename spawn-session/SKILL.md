@@ -15,10 +15,16 @@ elsewhere; use this when you want *that repo* worked on.
 ## Use it
 
 ```powershell
-& "C:\projects\andrena\spawn-session\spawn.cmd" [target] [flags]
+& "C:\projects\andrena\session-inspector-skill\spawn-session\spawn.cmd" [target] [flags]
 ```
 
-The human spelling from inside a session is `! spawn` once the repo is on PATH.
+The human spelling from inside a session is `! spawn` once the folder is on PATH.
+
+This skill lives **inside the session-inspector repo** (`session-inspector-skill/spawn-session/`)
+and is junctioned separately, so `skills\spawn-session\spawn.cmd` resolves too.
+Scripts on the session-inspector side never hardcode this path — they call
+`spawnCmdPath()` from `../scripts/lib/spawn-plan.mjs`, which resolves it relative
+to the repo. Do the same rather than pasting an absolute path.
 
 | | |
 |---|---|

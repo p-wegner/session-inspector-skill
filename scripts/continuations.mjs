@@ -37,7 +37,7 @@
  * unapproved and the batch launcher refuses anything else.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { basename, dirname } from "path";
 import { execFileSync } from "child_process";
 import { discover } from "./lib/sessions.mjs";
@@ -46,6 +46,7 @@ import { classifyProvenance } from "./lib/provenance.mjs";
 import { findSuccessors, successorLabel } from "./lib/successor.mjs";
 import { readRepoDocs, gitState } from "./lib/repo.mjs";
 import { readLiveSessions, claudeProfileHomes } from "./lib/live.mjs";
+import { SCHEMA, readPlan as readPlanFile, writePlan, spawnCmdPath, gateHelp } from "./lib/spawn-plan.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -67,26 +68,17 @@ const approvePath = opt("--approve", "");
 const pickArg = opt("--pick", "");
 const profileFilter = (opt("--profiles", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-const SCHEMA = "spawn-plan/1";
 const nowMs = Date.now();
 const windowStartMs = days > 0 ? nowMs - days * 86400000 : 0;
 
-// ── plan file: read / write / approve ────────────────────────────────────────
-// Kept intentionally small and versioned: spawn-session lives in ANOTHER repo and
-// must read this without importing anything from here.
+// ── plan file ────────────────────────────────────────────────────────────────
+// Schema, validation, the launcher path and the gate itself live in
+// lib/spawn-plan.mjs — shared with spawn-session/batch.mjs, which reads these
+// plans. They used to be two copies in two repos.
 function readPlan(path) {
-  if (!existsSync(path)) { console.error(`No such plan file: ${path}`); process.exit(1); }
-  let plan;
-  try { plan = JSON.parse(readFileSync(path, "utf-8")); } catch (e) {
-    console.error(`Plan file is not valid JSON: ${e.message}`); process.exit(1);
-  }
-  if (plan.schema !== SCHEMA) {
-    console.error(`Unexpected plan schema "${plan.schema}" (expected "${SCHEMA}")`); process.exit(1);
-  }
-  return plan;
-}
-function writePlan(path, plan) {
-  writeFileSync(path, `${JSON.stringify(plan, null, 2)}\n`, "utf-8");
+  const r = readPlanFile(path);
+  if (!r.ok) { console.error(r.error); process.exit(r.error.startsWith("no such") ? 1 : 1); }
+  return r.plan;
 }
 
 // ── gate: --approve --pick ───────────────────────────────────────────────────
@@ -111,7 +103,7 @@ if (approvePath) {
   for (const c of on) console.log(`  ✓ ${c.key}  → profile ${c.profile}  (${c.target})`);
   for (const c of plan.candidates.filter((x) => !x.approved)) console.log(`  · ${c.key}  (not approved)`);
   console.log(on.length
-    ? `\nLaunch them:  & "C:\\projects\\andrena\\spawn-session\\spawn.cmd" -batch "${approvePath}"`
+    ? `\nLaunch them:  & "${spawnCmdPath()}" -batch "${approvePath}"`
     : `\nNothing approved — the batch launcher will refuse this plan.`);
   process.exit(0);
 }
@@ -145,7 +137,7 @@ if (reviewPath) {
   plan.approvedBy = "--review";
   writePlan(reviewPath, plan);
   const on = plan.candidates.filter((c) => c.approved);
-  console.log(`\n${on.length} approved of ${plan.candidates.length}. ${on.length ? `Launch:\n  spawn.cmd -batch "${reviewPath}"` : "Nothing to launch."}`);
+  console.log(`\n${on.length} approved of ${plan.candidates.length}. ${on.length ? `Launch:\n  & "${spawnCmdPath()}" -batch "${reviewPath}"` : "Nothing to launch."}`);
   process.exit(0);
 }
 
@@ -489,7 +481,7 @@ if (planPath) {
   console.log("HUMAN GATE — nothing spawns until someone picks. Choose one:");
   console.log(`  interactive : node scripts/continuations.mjs --review "${planPath}"`);
   console.log(`  explicit    : node scripts/continuations.mjs --approve "${planPath}" --pick 1,3`);
-  console.log(`  then        : & "C:\\projects\\andrena\\spawn-session\\spawn.cmd" -batch "${planPath}"`);
+  console.log(`  then        : & "${spawnCmdPath()}" -batch "${planPath}"`);
   if (capacity && capacity.headroomProcesses != null) {
     console.log(`\ncapacity: room for ~${capacity.headroomProcesses} more session(s). ${capacity.note}`);
   }

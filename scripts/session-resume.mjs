@@ -81,6 +81,7 @@ import { homedir, tmpdir } from "os";
 import { spawnSync } from "child_process";
 import { parseClaude } from "./lib/parse.mjs";
 import { recommendMode } from "./lib/resume-economics.mjs";
+import { spawnCmdPath, haveSpawnCmd } from "./lib/spawn-plan.mjs";
 
 // ── args ──────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -434,8 +435,8 @@ function launchCfgFor(s) {
 // and supplies TERM, so there is now ONE launcher on this machine instead of two,
 // and the better one wins.
 const SPLIT_LINES = /\r?\n/;
-const SPAWN_CMD = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
-const haveSpawn = existsSync(SPAWN_CMD);
+const SPAWN_CMD = spawnCmdPath();
+const haveSpawn = haveSpawnCmd();
 
 // A FRESH session is seeded with a pointer to its brief. The seed goes in a FILE
 // (`-mf`): prompt text on a command line is torn apart by wt's ';' handling and by

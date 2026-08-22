@@ -57,6 +57,7 @@ import { discover, projectIdentity } from "./lib/sessions.mjs";
 import { parseClaude } from "./lib/parse.mjs";
 import { findSuccessors, successorLabel, strongLinks } from "./lib/successor.mjs";
 import { recommendMode, modeLabel, CACHE_TTL_MIN } from "./lib/resume-economics.mjs";
+import { spawnCmdPath } from "./lib/spawn-plan.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -131,7 +132,7 @@ function resumeCommand(s, path) {
 // The HANDOFF alternative: a fresh session seeded with a written brief. Unlike a
 // resume it can run on ANY account — which matters because the account that hit
 // the limit is the only one a resume can use.
-const SPAWN_CMD = "C:\\projects\\andrena\\spawn-session\\spawn.cmd";
+const SPAWN_CMD = spawnCmdPath();
 function handoffCommand(s, path) {
   const cwd = s.cwd || "<cwd unknown>";
   // -from is load-bearing: without it the brief describes the CALLING session,

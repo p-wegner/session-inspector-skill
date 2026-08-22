@@ -10,6 +10,25 @@ went, and which tools keep failing. Works across three agents:
 | **Codex CLI** | `~/.codex/sessions/YYYY/MM/DD/` | JSONL (`{timestamp,type,payload}`) |
 | **GitHub Copilot CLI** | `~/.copilot/session-state/<uuid>/events.jsonl` | JSONL events |
 
+## Two skills in one repo
+
+This repo ships **two** agent skills, junctioned separately so each triggers on
+its own description:
+
+| Skill | Where | What it does |
+|---|---|---|
+| `session-inspector` | repo root | reads transcripts: debug one session, aggregate a fleet, decide what to pick up next |
+| `spawn-session` | [`spawn-session/`](spawn-session/) | the only session **launcher** here: opens/resumes/batch-launches sessions in Windows Terminal tabs |
+
+They were separate repos until 2026-08-22, and the split was costing something
+real: the launcher path was hardcoded in four places, the spawn-plan schema
+existed as two copies that had to agree, and the analysis half could not call the
+action half without a `C:\` path. Now `scripts/lib/spawn-plan.mjs` holds the
+contract both sides use, and the launcher is resolved relative to the repo.
+
+`spawn-session/` keeps its own `README`, `SKILL.md` and `CONTINUE.md` — it is a
+skill in its own right, not a subfolder of this one.
+
 Everything depends only on **Node builtins** (`fs`/`path`/`os`/`http`) — no package
 install, no server, no monorepo checkout, no board required. Requires **Node 18+**
 (uses global `fetch`).
@@ -50,7 +69,7 @@ node scripts/continuations.mjs                       # ranked shortlist, with re
 node scripts/continuations.mjs --plan plan.json      # write the plan (all unapproved)
 node scripts/continuations.mjs --review plan.json    # walk it interactively (y/n/a/q)
 node scripts/continuations.mjs --approve plan.json --pick 1,3
-& "C:\projects\andrena\spawn-session\spawn.cmd" -batch plan.json
+& "<repo>\spawn-session\spawn.cmd" -batch plan.json
 ```
 
 ### How to ask an agent for it
@@ -125,6 +144,15 @@ scripts/
     provenance.mjs                # WHO started a session: human / board-launched / handoff-seeded / stop-hook
     successor.mjs                 # has a cut-off session already been picked up? (ledger > brief > mention)
     repo.mjs                      # a repo's own open items: CONTINUE.md / BACKLOG.md parsing + git state
+    resume-economics.mjs          # resume or hand off? the 1h cache TTL + cross-profile rule, priced
+    spawn-plan.mjs                # the spawn-plan contract + where spawn.cmd is (shared with spawn-session/)
+spawn-session/                    # the LAUNCHER skill (own SKILL.md, README, CONTINUE.md)
+  spawn.cmd                       # entry point: open / -resume / -batch a session in a wt tab
+  spawn-session.ps1               # runs inside the new tab (env scrub, trust, profile, mode)
+  batch.mjs                       # launch every APPROVED entry of a spawn plan, and nothing else
+  preflight.mjs                   # refuse a duplicate session in a checkout / no RAM headroom; -p auto
+  make-handoff.mjs                # write the handoff brief the new session reads first
+  ledger.mjs                      # record who handed which work to whom (read by lib/successor.mjs)
 ```
 
 ## Quick start

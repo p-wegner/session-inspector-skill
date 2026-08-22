@@ -2,6 +2,19 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-22 (later still) — spawn-session ships in this repo
+
+The launcher was a separate local repo. It is now `spawn-session/` here, with its
+full history (`git subtree`), and its per-profile junctions were repointed — so
+the skill works exactly as before, with nothing to reinstall.
+
+The split had been costing something concrete: the launcher path was hardcoded as
+`C:\projects\andrena\spawn-session\spawn.cmd` in four places, and the
+spawn-plan schema existed as two copies in two repos that had to stay in
+agreement. Both are gone. `scripts/lib/spawn-plan.mjs` now owns the schema, its
+validation, the gate (`approvedEntries`), and `spawnCmdPath()`, which resolves the
+launcher relative to the repo — so a clone anywhere, or a junctioned copy, works.
+
 ## 2026-08-22 (later) — resume is no longer the default advice
 
 `claude --resume` was treated as the way to continue a cut-off session. That was
