@@ -4,7 +4,7 @@
 > `spawn-session/` beside `session-inspector/`, neither nested in the other. It was
 > its own repo until 2026-08-22; the move brought its history along and the
 > per-profile junctions were repointed, so nothing about using it changed. It
-> shares `../session-inspector/scripts/lib/spawn-plan.mjs` with the tool that
+> shares `session-inspector/scripts/lib/spawn-plan.mjs` with the tool that
 > writes the plans it launches.
 
 Open a **new interactive Claude Code session in another repo**, in its own Windows

@@ -2,7 +2,17 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
-## 2026-08-22 (last) — renamed: claude-session-tools
+## 2026-08-23 — spawn-session uses the standard skill layout
+
+`spawn-session/` now has `SKILL.md`, `README.md` and the entry point `spawn.cmd`
+at the skill root, and every helper (`spawn-session.ps1`, `batch.mjs`,
+`preflight.mjs`, `make-handoff.mjs`, `ledger.mjs`, `trust-folder.mjs`,
+`wait-for-agent.mjs`, `write-text.mjs`) under `scripts/`. **`spawn.cmd`'s path is
+unchanged**, so PATH entries, junctions and spawn plans keep working. If you ran a
+helper directly (`node spawn-session\preflight.mjs …`), it is now
+`spawn-session\scripts\preflight.mjs`. `CONTINUE.md` moved to the repo root.
+
+## 2026-08-22 — renamed: claude-session-tools
 
 The folder was `session-inspector-skill`, which stopped being accurate once the
 root became a container for two sibling skills — it read as
