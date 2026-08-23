@@ -37,8 +37,8 @@ existed as two copies that had to agree, and the analysis half could not call th
 action half without a `C:\` path. Now `session-inspector/scripts/lib/spawn-plan.mjs` holds the
 contract both sides use, and the launcher is resolved relative to the repo.
 
-Each keeps its own `SKILL.md`; `spawn-session/` also keeps its own `README` and
-`CONTINUE.md`.
+Each keeps its own `SKILL.md`; `spawn-session/` also keeps its own `README`.
+`CONTINUE.md` lives at the repo root.
 
 Everything depends only on **Node builtins** (`fs`/`path`/`os`/`http`) — no package
 install, no server, no monorepo checkout, no board required. Requires **Node 18+**
@@ -159,13 +159,16 @@ session-inspector/                  # SKILL 1 — junctioned as `session-inspect
       repo.mjs                      # a repo's own open items: CONTINUE.md / BACKLOG.md parsing + git state
       resume-economics.mjs          # resume or hand off? the 1h cache TTL + cross-profile rule, priced
       spawn-plan.mjs                # the spawn-plan contract + where spawn.cmd is (shared with spawn-session/)
-spawn-session/                      # SKILL 2 — junctioned as `spawn-session` (own SKILL.md, README, CONTINUE.md)
+spawn-session/                      # SKILL 2 — junctioned as `spawn-session` (own SKILL.md + README)
   spawn.cmd                         # entry point: open / -resume / -batch a session in a wt tab
-  spawn-session.ps1                 # runs inside the new tab (env scrub, trust, profile, mode)
-  batch.mjs                         # launch every APPROVED entry of a spawn plan, and nothing else
-  preflight.mjs                     # refuse a duplicate session in a checkout / no RAM headroom; -p auto
-  make-handoff.mjs                  # write the handoff brief the new session reads first
-  ledger.mjs                        # record who handed which work to whom (read by lib/successor.mjs)
+  scripts/
+    spawn-session.ps1               # runs inside the new tab (env scrub, trust, profile, mode)
+    batch.mjs                       # launch every APPROVED entry of a spawn plan, and nothing else
+    preflight.mjs                   # refuse a duplicate session in a checkout / no RAM headroom; -p auto
+    make-handoff.mjs                # write the handoff brief the new session reads first
+    ledger.mjs                      # record who handed which work to whom (read by lib/successor.mjs)
+    trust-folder.mjs, wait-for-agent.mjs, write-text.mjs
+CONTINUE.md                         # where to pick the work up (repo-wide; currently spawn-session state)
 ```
 
 ## Quick start

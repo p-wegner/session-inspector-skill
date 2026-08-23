@@ -26,6 +26,11 @@ session-inspector side never hardcode this path — they call `spawnCmdPath()` f
 `../session-inspector/scripts/lib/spawn-plan.mjs`, which resolves it relative to
 the repo root. Do the same rather than pasting an absolute path.
 
+Layout: `spawn.cmd` is the only entry point at the skill root; everything it calls
+(`spawn-session.ps1`, `batch.mjs`, `preflight.mjs`, `make-handoff.mjs`, `ledger.mjs`,
+`trust-folder.mjs`, `wait-for-agent.mjs`, `write-text.mjs`) lives in `scripts/`.
+Never run those directly — go through `spawn.cmd`.
+
 | | |
 |---|---|
 | `spawn` | code-metrics-skill, seeded to continue its own `CONTINUE.md` work |

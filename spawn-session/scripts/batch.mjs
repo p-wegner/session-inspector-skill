@@ -31,10 +31,10 @@ import { execFileSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
 // One repo now, so the schema, the validation and the gate are shared with the
 // tool that WRITES these plans instead of being a second copy of both.
-import { readPlan, approvedEntries, gateHelp } from "../session-inspector/scripts/lib/spawn-plan.mjs";
+import { readPlan, approvedEntries, gateHelp } from "../../session-inspector/scripts/lib/spawn-plan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const INSPECTOR = resolve(HERE, "..", "session-inspector", "scripts");
+const INSPECTOR = resolve(HERE, "..", "..", "session-inspector", "scripts");
 
 const argv = process.argv.slice(2);
 const has = (n) => argv.includes(n);
@@ -104,7 +104,7 @@ console.log(`[batch] ${approved.length} approved of ${all.length}${room !== null
 console.log("");
 
 // ── launch ──────────────────────────────────────────────────────────────────
-const spawnCmd = join(HERE, "spawn.cmd");
+const spawnCmd = join(HERE, "..", "spawn.cmd");
 const receipts = [];
 
 for (const c of approved) {
