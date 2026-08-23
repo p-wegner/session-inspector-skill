@@ -138,6 +138,9 @@ session-inspector/                  # SKILL 1 — junctioned as `session-inspect
     aggregate-tools.md              # usage for the fleet-wide fan-out scripts
     session-sync.md                 # full setup/config/API for cross-machine sync
     statusline.md                   # show the current session locator in the Claude Code statusline
+    fleet-inspection.md             # analysing a BATCH of sessions (the aggregate question)
+    hub-service.md                  # run the session-sync hub persistently
+    tooling-improvement.md          # turning session friction into a shipped fix
   scripts/
     analyze-claude-session.mjs      # single Claude session  → structured summary
     analyze-codex-session.mjs       # single Codex session   → structured summary
@@ -150,6 +153,24 @@ session-inspector/                  # SKILL 1 — junctioned as `session-inspect
     sync-server.mjs                 # REST + web-UI hub: collect transcripts from all machines
     sync-push.mjs                   # client: incremental push of this machine's transcripts
     sync-query.mjs                  # CLI browse/search/fetch over the synced set
+    live.mjs                        # which Claude sessions are running NOW, working or idle
+    session-resume.mjs              # plan (and launch, via spawn.cmd) the resumption of cut-off sessions
+    session-bundle.mjs              # export transcripts to a portable bundle / import from other machines
+    subagent-results.mjs            # recover subagent outcomes from a cut-off orchestrator
+    cold-cache.mjs                  # the money burned when a session's prompt cache goes cold
+    context-growth.mjs              # how big the context gets, and whether auto-compact reins it in
+    context-spikes.mjs              # single injections that suddenly bloat the context
+    waste.mjs                       # where context tokens go, and which are avoidable
+    fleet-stats.mjs                 # shape of a whole batch of sessions, group comparisons
+    quota-report.mjs                # everything one profile did since its weekly reset
+    quota-multi.mjs                 # every profile, every weekly window — the complete quota picture
+    quota-month.mjs                 # calendar-range quota dashboard across profiles
+    prompt-style.mjs                # profile your own prompting style across MANY sessions
+    slash-goals.mjs                 # what the agent was asked to do, through which entry points
+    skill-usage.mjs                 # skill usage / dead-skill audit (Claude + Codex + Copilot)
+    skill-genesis.mjs               # interaction patterns that lead to a new skill
+    tool-friction.mjs               # repeated multi-step command sequences = missing tooling
+    hub-service.mjs                 # install/manage the sync hub as a persistent service
     lib/
       sessions.mjs                  # shared discovery, metadata, git-remote project identity
       parse.mjs                     # shared full-transcript parsers (tools/files/tokens/last-msg) — used by analyzers AND the hub UI
@@ -340,4 +361,4 @@ harnesses share one implementation.
 
 [MIT](LICENSE)
 
-_Docs last synced with the code at `8da1b06` (2026-08-22)._
+_Docs last synced with the code at `8bccf3e` (2026-08-23)._
