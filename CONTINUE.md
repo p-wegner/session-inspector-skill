@@ -1,6 +1,6 @@
-# CONTINUE — spawn-session
+# CONTINUE — claude-session-tools
 
-Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
+Repo-wide pick-up notes; so far they concern `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
 skills** in the session-inspector repo (`spawn-session/` beside
 `session-inspector/`, neither nested in the other), which does
 have a GitHub remote — so keep anything genuinely machine-specific out of here,
@@ -14,6 +14,14 @@ not be deleted because the PowerShell hosts of sessions launched from the old pa
 still hold a handle. Delete it once those tabs are closed.
 
 ## What is true today
+
+`spawn-session/` follows the standard skill layout since 2026-08-23: `SKILL.md`,
+`README.md` and the entry point `spawn.cmd` at the skill root, every helper
+(`spawn-session.ps1`, `batch.mjs`, `preflight.mjs`, `make-handoff.mjs`, `ledger.mjs`,
+`trust-folder.mjs`, `wait-for-agent.mjs`, `write-text.mjs`) under `scripts/`.
+`spawn.cmd` resolves them via `%~dp0scripts\`; `batch.mjs` reaches the sibling skill
+via `../../session-inspector/scripts`. Verified by `spawn.cmd -h`, `node --check` on every script,
+`preflight.mjs --pick-profile` and `batch.mjs` resolving `spawn-plan.mjs` after the move.
 
 `spawn.cmd` is now the **only** session launcher on this machine. session-inspector's
 `session-resume.mjs` used to write its own per-session `.cmd` that set

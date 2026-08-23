@@ -27,7 +27,7 @@ rem torn apart - `powershell -File` with discrete args is the only spelling that
 rem survives.
 rem ===========================================================================
 
-set "ROOT=%~dp0"
+set "ROOT=%~dp0scripts\"
 set "TARGET="
 set "MSG="
 set "PROF="
