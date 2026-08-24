@@ -1,6 +1,6 @@
 ---
 name: session-inspector
-description: Inspect and edit agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) — debug why sessions stopped, what they did, and whether they produced output; or rewrite the user/assistant messages of a Claude session in place. ALWAYS use this — never hand-read, grep, or hand-patch transcript .jsonl files directly — whenever asked about a specific session by id/path, "what was session X doing", or to edit/fix/rewrite what was said in a session. ALSO covers LIVE state: which Claude sessions are running right now and whether each is working or idle (`scripts/live.mjs`), and — before spawning parallel subagents — HOW MANY SUBAGENTS ARE FEASIBLE given token quota, RAM and CPU (`fleet capacity` / `fleet gate --count N`); consult it whenever about to fan out, parallelize, or decide a batch size. ALSO answers WHICH WORK TO PICK UP NEXT across every repo and profile, and turns the answer into a HUMAN-GATED spawn plan (`scripts/continuations.mjs`) — use it whenever asked what to continue working on, which sessions/work could or should be continued, what has good follow-up steps, or to open/spawn sessions for open work; it reads each repo's own CONTINUE.md/BACKLOG.md, not just transcripts, and nothing launches until a person approves. Self-contained — bundles its own analyzer scripts.
+description: Inspect and edit agent session transcripts from Claude (~/.claude/projects/), Codex (~/.codex/sessions/), or Copilot (~/.copilot/) — debug why sessions stopped, what they did, and whether they produced output; or rewrite the user/assistant messages of a Claude session in place. ALWAYS use this — never hand-read, grep, or hand-patch transcript .jsonl files directly — whenever asked about a specific session by id/path, "what was session X doing", or to edit/fix/rewrite what was said in a session. ALSO covers LIVE state: which Claude sessions are running right now and whether each is working or idle (`scripts/live.mjs`), and — before spawning parallel subagents — HOW MANY SUBAGENTS ARE FEASIBLE given token quota, RAM and CPU (`fleet capacity` / `fleet gate --count N`); consult it whenever about to fan out, parallelize, or decide a batch size. ALSO answers WHICH WORK TO PICK UP NEXT across every repo and profile, and turns the answer into a HUMAN-GATED spawn plan (`scripts/continuations.mjs`) — use it whenever asked what to continue working on, which sessions/work could or should be continued, what has good follow-up steps, or to open/spawn sessions for open work; it reads each repo's own CONTINUE.md/BACKLOG.md, not just transcripts, and nothing launches until a person approves. ALSO measures the HOOK WALL-CLOCK TAX (`scripts/hook-cost.mjs`) — which configured hooks burn throughput/latency, the per-turn Stop-chain cost, timeouts and blocked continuations; use it whenever asked whether hooks are slowing things down, what hooks cost, or why turns feel slow despite small diffs (hooks add latency but zero tokens, so every token-based tool is blind to them). Self-contained — bundles its own analyzer scripts.
 argument-hint: [issue-number, keyword, --codex <path>, --copilot, edit]
 ---
 
@@ -632,6 +632,7 @@ node scripts/slash-goals.mjs      # SLASH-command usage + skill invocations + pe
 node scripts/quota-report.mjs     # SUBSCRIPTION quota report for ONE profile since its weekly reset → terminal / --json / --html dashboard (--profile <name>, --config-dir, --since <ISO>, --no-auto-reset, --tz N)
 node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINED total → one switchable --html dashboard (--profiles a,b, --tz N, --max-windows N, --json)
 node scripts/quota-month.mjs      # ALL team profiles over a FIXED CALENDAR RANGE ("the whole July") + week-by-week rollup → --html dashboard (--month YYYY-MM | --from/--to YYYY-MM-DD, --profiles a,b, --tz N, --json)
+node scripts/hook-cost.mjs        # HOOK wall-clock tax — which configured hooks burn throughput/latency (--project, --cwd, --days, --by command|event|session|day|project, --slowest, --min-ms, --json)
 node scripts/tool-friction.mjs    # TOOLING-IMPROVEMENT candidates — recurring cross-session command CHAINS to fuse/fix (--project, --grep, --n 2,3, --min-sessions, --json)
 node scripts/skill-genesis.mjs    # SKILL-GENESIS patterns — which interaction SHAPE led to a skill being created/improved: same-prompt, interactive-then-ask, lab-driven, compounding (--project, --skill <name>, --days N, --examples N, --json)
 ```
@@ -652,6 +653,33 @@ cost report — it surfaces the SHAPE and the group deltas, not the (tautologica
 cache-read total. Claude only (per-turn `usage`). Pairs with
 `context-spikes.mjs` (explain a sudden-growth outlier) and the taxonomy in
 `references/fleet-inspection.md`.
+
+`hook-cost.mjs` answers **"are my hooks the bottleneck?"** — the one axis every
+other fleet tool is blind to. `token-sinks`, `waste` and `context-growth` all
+measure TOKENS; a hook adds **zero** tokens and pure **latency**, because it runs
+synchronously in the critical path (a `PostToolUse` hook delays the next tool
+call; a `Stop` hook delays the end of *every* turn). It reads two channels and
+reports total hook wall-clock as a **share of the sessions' own span**, the
+**Stop-chain per-turn tax** (median/p90/max — what each turn pays before the
+agent is allowed to stop), a per-hook table (n, total, share, median, p90, max,
+timeouts, blocks), and the slowest individual invocations with session + time.
+
+Two facts about the data that this tool exists to encapsulate:
+- **The channels overlap — never sum them naively.** A `stop_hook_summary`
+  entry (`hookInfos[].durationMs`, emitted once per turn-end for the whole Stop
+  chain) and a `hook_success`/`hook_blocking_error` **attachment** can describe
+  the *same* run, ~28ms apart. Verified on real data; summing both inflated a
+  single 11m41s invocation to 23m. `dedupe()` merges on
+  session+event+command+durationMs within a 5s window, preferring the summary.
+- **Silent hooks are invisible.** A hook that runs, succeeds and prints nothing
+  emits no record; `PreToolUse` appears *only* when it blocks, times out, or
+  outputs. So every total is a **LOWER BOUND**, and the report says so rather
+  than quietly under-reporting. Pair with the repo's own `settings.json` to see
+  which configured hooks never show up at all.
+
+`preventedContinuation` is called out separately because a blocked Stop hook is
+worse than latency — it forces an **extra model turn**, so it costs tokens too.
+Claude only (Codex/Copilot don't record hook timings).
 
 `tool-friction.mjs` answers **"what should we change in the tools
 themselves, not in how we prompt?"** — it's the fleet tool for a use case
