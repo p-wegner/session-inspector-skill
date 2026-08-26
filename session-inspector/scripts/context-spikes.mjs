@@ -114,9 +114,12 @@ function fileKey(toolName, where) {
   if (toolName !== "Bash" && toolName !== "PowerShell") return where;
   const cmd = where.replace(/\s+/g, " ");
   const path = cmd.match(/(?:^|[\s"'=(])((?:[A-Za-z]:)?(?:\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-][\w.@-]*\.[A-Za-z]{1,8})(?=[\s"')|;]|$)/);
-  if (path) return path[1];
-  const verb = cmd.replace(/^(?:cd\s+\S+\s*(?:&&|;)\s*)+/, "").match(/^(?:\$?\w+=\S+\s+)*(\S+)/);
-  return "bash:" + ((verb && verb[1]) || "?").replace(/^.*[\\/]/, "").slice(0, 24);
+  // a bare `name.ext` (no directory) only counts with a source/doc extension — otherwise
+  // `sys.stdin` or `obj.method` inside an inline script would masquerade as a file
+  if (path && (/[\\/]/.test(path[1]) || /\.(m?[jt]sx?|cjs|py|rb|go|rs|java|kt|cs|php|md|json|ya?ml|toml|txt|csv|sql|sh|ps1|cmd|html?|css|scss|xml|ini|env|log)$/i.test(path[1])))
+    return path[1];
+  const tokens = cmd.replace(/^(?:cd\s+\S+\s*(?:&&|;)\s*)+/, "").split(" ").filter((t) => t && !/^\$?\w+=/.test(t) && !/^[&|;()]+$/.test(t));
+  return "bash:" + (tokens[0] || "?").replace(/^.*[\\/]/, "").slice(0, 24);
 }
 
 const spikes = [];
