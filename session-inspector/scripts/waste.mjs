@@ -2,6 +2,7 @@
 /**
  * Where do CONTEXT tokens go — and which are avoidable? Attributes each session's
  * content to buckets (tool_result by tool, Write/Edit args, user prompts/pastes,
+ * harness content — skill_inject / compaction / handoff_brief / harness_inject —,
  * assistant text, harness injects) and weights every chunk by PERSISTENCE
  * (tokens × turns-it-survives). That matters because agent cost is cache-read
  * dominated: a chunk added EARLY is re-billed on every later turn, so an early
@@ -28,6 +29,7 @@
 import { readFileSync } from "fs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
+import { classifyHumanText, shortPath } from "./lib/chunk-kind.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
@@ -79,6 +81,14 @@ for (const s of all) {
       }
     } else if (o.type === "user") {
       const c = msg?.content;
+      // human-side text: a typed prompt, a paste — or harness content (skill body,
+      // compaction summary, handoff brief) pushed through the same channel
+      const humanText = (text, remain) => {
+        const t = TOK(text);
+        const { kind, where } = classifyHumanText(text);
+        add(kind, t, t * remain); totalTok += t; totalWtok += t * remain;
+        if (t > 3000) bigItems.push({ kind, tok: t, wtok: t * remain, where, snip: text.replace(/\s+/g, " ").slice(0, 80) });
+      };
       const handle = (raw, isErr, tuid) => {
         const text = Array.isArray(raw) ? raw.map((x) => x.text || "").join(" ") : String(raw || "");
         const t = TOK(text);
@@ -93,19 +103,9 @@ for (const s of all) {
       if (Array.isArray(c)) {
         for (const b of c) {
           if (b.type === "tool_result") handle(b.content, b.is_error, b.tool_use_id);
-          else if (b.type === "text" && b.text) {
-            const t = TOK(b.text);
-            const kind = b.text.startsWith("<") ? "harness_inject" : (t > 1200 ? "user_paste" : "user_prompt");
-            add(kind, t, t * remain); totalTok += t; totalWtok += t * remain;
-            if (t > 3000) bigItems.push({ kind: "user_paste", tok: t, wtok: t * remain, where: "", snip: b.text.replace(/\s+/g, " ").slice(0, 80) });
-          }
+          else if (b.type === "text" && b.text) humanText(b.text, remain);
         }
-      } else if (typeof c === "string") {
-        const t = TOK(c);
-        const kind = c.startsWith("<") ? "harness_inject" : (t > 1200 ? "user_paste" : "user_prompt");
-        add(kind, t, t * remain); totalTok += t; totalWtok += t * remain;
-        if (t > 3000) bigItems.push({ kind: "user_paste", tok: t, wtok: t * remain, where: "", snip: c.replace(/\s+/g, " ").slice(0, 80) });
-      }
+      } else if (typeof c === "string") humanText(c, remain);
     }
   }
 }
@@ -129,17 +129,17 @@ if (asJson) {
 
 if (!sessions) { console.log("\nNo matching Claude sessions.\n"); process.exit(0); }
 console.log(`\nContext-token waste — project:${projectQ || "(all)"}  window:${days || "all"}  (Claude)`);
-console.log(`${sessions} sessions · unique content ≈ ${fmt(totalTok)} tok · persistence-weighted ≈ ${fmt(totalWtok)} (≈ cache-read pressure)\n`);
+console.log(`${sessions} sessions (Claude only, ≥3 assistant turns, transcript mtime in window) · unique content ≈ ${fmt(totalTok)} tok · persistence-weighted ≈ ${fmt(totalWtok)} (≈ cache-read pressure)\n`);
 const P = (s, w) => String(s).padStart(w);
 console.log("BY KIND (sorted by persistence-weighted = the real driver)");
 console.log("  " + "kind".padEnd(24) + P("raw", 7) + P("raw%", 7) + P("weighted", 10) + P("wt%", 7) + P("n", 6) + P("max", 7));
 for (const [k, b] of rows.slice(0, 16)) console.log("  " + k.padEnd(24) + P(fmt(b.tok), 7) + P(pct(b.tok, totalTok), 7) + P(fmt(b.wtok), 10) + P(pct(b.wtok, totalWtok), 7) + P(b.n, 6) + P(fmt(b.max), 7));
 
 console.log(`\nTOP ${top} SINGLE MOST EXPENSIVE CHUNKS (persistence-weighted)`);
-for (const it of bigItems.slice(0, top)) console.log(`  ${P(fmt(it.tok), 6)} tok  w=${P(fmt(it.wtok || it.tok), 6)}  ${it.kind.padEnd(20)} ${(it.where || "").slice(-38).padEnd(38)} ${it.snip}`);
+for (const it of bigItems.slice(0, top)) console.log(`  ${P(fmt(it.tok), 6)} tok  w=${P(fmt(it.wtok || it.tok), 6)}  ${it.kind.padEnd(20)} ${shortPath(it.where || "", 38).padEnd(38)} ${it.snip}`);
 
 console.log(`\nAVOIDABLE — re-reading files already in context (top 12)`);
-for (const d of dupReads.slice(0, 12)) console.log(`  ${(d.n + "×").padStart(4)}  waste≈${P(fmt(d.waste), 6)}  ${d.f.slice(-66)}`);
+for (const d of dupReads.slice(0, 12)) console.log(`  ${(d.n + "×").padStart(4)}  waste≈${P(fmt(d.waste), 6)}  ${shortPath(d.f, 66)}`);
 console.log(`  → dup-read waste (sum): ${fmt(dupReads.reduce((a, d) => a + d.waste, 0))} tok`);
 
 if (dupBash.length) {

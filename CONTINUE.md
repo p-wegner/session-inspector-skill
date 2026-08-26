@@ -3,6 +3,30 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-08-26 — fleet cost tools: shared chunk-kind lib + 1h-cache pricing
+
+Continuation of the usage-limit-cut session 9e5bbf50 ("fix the session tool findings").
+Landed and verified:
+
+- New `scripts/lib/chunk-kind.mjs` — shared classification for the fleet cost tools:
+  `classifyHumanText` (skill_inject / compaction / handoff_brief / harness_inject /
+  user_paste / user_prompt), `fileKey`/`bashVerb` (key Bash spikes by first file path,
+  else `bash:<verb>` — now strips `for…do`/`while…do`/`if…then` scaffolding and
+  keyword-matches basenames so `/usr/bin/env` is skipped), `shortPath` (root+tail path
+  truncation that keeps worktree ids), `padTail`. `waste.mjs` and `context-spikes.mjs`
+  both consume it; their private copies are deleted.
+- Cost model: cache-write priced 2x for 1h-cache turns (read from
+  `usage.cache_creation.ephemeral_1h_input_tokens`), 1.25x otherwise — in both
+  `token-sinks.mjs` and `lib/quota.mjs`. Headers now state the session-selection
+  criteria (provider, min turns, mtime window).
+- Verified by: all five `scripts/test/*.test.mjs` green (69 pass / 0 fail, incl. the new
+  `chunk-kind.test.mjs`), `node --check` on every changed file, and a 1-day smoke-run of
+  waste/token-sinks/context-spikes/quota-report (outputs sane, new kinds appear:
+  skill_inject 2.1%, compaction 4.2% of weighted).
+- The suspected double-count in waste's top chunks (bnin2pzaq.txt twice) is **refuted**:
+  the two entries are distinct tool_use ids (a cat and a later `sed -n '200,400p'` of the
+  same persisted output) — genuine re-reading by that agent, not a counting bug.
+
 ## token-budget (merged 2026-08-26)
 
 Brought in with `git subtree add --prefix=token-budget` from the GitHub remote (the

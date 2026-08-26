@@ -47,6 +47,7 @@
 import { readFileSync } from "fs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
+import { classifyHumanText, fileKey, shortPath } from "./lib/chunk-kind.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes(n);
@@ -88,38 +89,6 @@ function classify(text, toolName, where, seenBefore) {
   if (avgLine > 400 && nl < 30)
     return { cls: "long-lines", fix: "minified/one-line blob — point at the file, don't inline it" };
   return { cls: "big-tool-result", fix: "paginate / narrow the query so less lands in context" };
-}
-
-/** Human-side (type:"user" text) chunks are not all pastes: the harness injects skill
- *  bodies, compaction summaries and handoff briefs through the same channel. */
-function classifyHumanSide(text) {
-  const head = text.slice(0, 400);
-  const m = head.match(/Base directory for this skill:[ \t]*([^\r\n]+)/);
-  if (m) {
-    const skill = m[1].trim().split(/[\\/]+/).filter(Boolean).pop();
-    return { cls: "skill-inject", fix: "shrink the SKILL.md: short index + on-demand references (tokt skill)", where: "skill:" + skill };
-  }
-  if (/^\s*This session is being continued from a previous conversation/.test(head) || /^\s*<summary>/.test(head))
-    return { cls: "compaction", fix: "shorter sessions / hand off before auto-compact; keep the summary lean", where: "compaction-summary" };
-  if (/taking over work from a session|handoff brief|continuation brief/i.test(head))
-    return { cls: "handoff-brief", fix: "keep the brief to load-bearing state, point at files instead of inlining", where: "handoff-brief" };
-  return { cls: "user-paste", fix: "attach as a file / trim to the relevant part", where: "" };
-}
-
-/** Key a spike by the FILE it concerns. Read/Edit/Glob/Grep already carry a path or
- *  pattern; Bash carries the whole command, so pull the first file-like path out of it,
- *  else fall back to `bash:<verb>` so commands group by shape instead of by text tail. */
-function fileKey(toolName, where) {
-  if (!where) return where;
-  if (toolName !== "Bash" && toolName !== "PowerShell") return where;
-  const cmd = where.replace(/\s+/g, " ");
-  const path = cmd.match(/(?:^|[\s"'=(])((?:[A-Za-z]:)?(?:\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-][\w.@-]*\.[A-Za-z]{1,8})(?=[\s"')|;]|$)/);
-  // a bare `name.ext` (no directory) only counts with a source/doc extension — otherwise
-  // `sys.stdin` or `obj.method` inside an inline script would masquerade as a file
-  if (path && (/[\\/]/.test(path[1]) || /\.(m?[jt]sx?|cjs|py|rb|go|rs|java|kt|cs|php|md|json|ya?ml|toml|txt|csv|sql|sh|ps1|cmd|html?|css|scss|xml|ini|env|log)$/i.test(path[1])))
-    return path[1];
-  const tokens = cmd.replace(/^(?:cd\s+\S+\s*(?:&&|;)\s*)+/, "").split(" ").filter((t) => t && !/^\$?\w+=/.test(t) && !/^[&|;()]+$/.test(t));
-  return "bash:" + (tokens[0] || "?").replace(/^.*[\\/]/, "").slice(0, 24);
 }
 
 const spikes = [];
@@ -166,8 +135,8 @@ for (const s of all) {
         const seenBefore = seen.has(sig); seen.add(sig);
         let cls, fix;
         if (isPaste) {
-          const h = classifyHumanSide(text);
-          cls = h.cls; fix = h.fix; if (h.where) where = h.where;
+          const h = classifyHumanText(text, { pasteMinTok: 0 });
+          cls = h.kind.replace(/_/g, "-"); fix = h.fix; if (h.where) where = h.where;
         } else ({ cls, fix } = classify(text, toolName, where, seenBefore));
         const wtok = tok * remain;
         spikes.push({ sid, project: id.project || folder, turn, tool: toolName, cls, fix,
@@ -207,7 +176,7 @@ if (asJson) {
 
 console.log(`\nContext spikes — project:${projectQ || (cwdOnly ? "(cwd)" : "(all)")}  window:${days || "all"}d  min:${fmt(minTok)}tok  (Claude)`);
 if (!sessionsScanned) { console.log("No matching Claude sessions in window.\n"); process.exit(0); }
-console.log(`${sessionsScanned} sessions · ${spikes.length} spikes · raw ≈ ${fmt(totalSpikeTok)} tok · persistence-weighted ≈ ${fmt(totalSpikeWtok)} (cache-read pressure)\n`);
+console.log(`${sessionsScanned} sessions (Claude only, ≥2 assistant turns, mtime in window) · ${spikes.length} spikes · raw ≈ ${fmt(totalSpikeTok)} tok · persistence-weighted ≈ ${fmt(totalSpikeWtok)} (cache-read pressure)\n`);
 
 const P = (s, w) => String(s).padStart(w);
 if (by === "class" || by === "tool" || by === "file") {
@@ -216,7 +185,7 @@ if (by === "class" || by === "tool" || by === "file") {
   console.log(`BY ${by.toUpperCase()} (sorted by persistence-weighted)`);
   console.log("  " + label.padEnd(by === "file" ? 60 : 16) + P("n", 5) + P("raw", 8) + P("weighted", 10));
   for (const r of rows(m).slice(0, top))
-    console.log("  " + String(by === "file" ? r.key.slice(-60) : r.key).padEnd(by === "file" ? 60 : 16) + P(r.n, 5) + P(fmt(r.tok), 8) + P(fmt(r.wtok), 10));
+    console.log("  " + (by === "file" ? shortPath(r.key, 60) : String(r.key)).padEnd(by === "file" ? 60 : 16) + P(r.n, 5) + P(fmt(r.tok), 8) + P(fmt(r.wtok), 10));
   console.log("");
   process.exit(0);
 }

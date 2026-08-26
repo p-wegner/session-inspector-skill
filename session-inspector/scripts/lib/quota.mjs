@@ -12,7 +12,7 @@ import { join } from "path";
 import { classify } from "./prompts.mjs";
 import { toolDisplayName } from "./parse.mjs";
 
-// ── pricing ($/1M; cache-read 0.1x in, cache-write 1.25x in) ──────────────────
+// ── pricing ($/1M; cache-read 0.1x in; cache-write 2x in for 1h-cache turns, 1.25x otherwise) ──
 export const PRICING = [
   { match: /fable|mythos/, in: 10, out: 50 },
   { match: /opus/, in: 5, out: 25 },
@@ -22,7 +22,7 @@ export const PRICING = [
 export const priceFor = (m) => PRICING.find((p) => p.match.test(m || "")) || { in: 5, out: 25 };
 export const costUsd = (m, t) =>
   (t.i * priceFor(m).in + t.o * priceFor(m).out +
-    t.cw * priceFor(m).in * 1.25 + t.cr * priceFor(m).in * 0.1) / 1e6;
+    (t.cw1h || 0) * priceFor(m).in * 2 + (t.cw - (t.cw1h || 0)) * priceFor(m).in * 1.25 + t.cr * priceFor(m).in * 0.1) / 1e6;
 export const zt = () => ({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
 export const addT = (a, b) => { a.input += b.input; a.output += b.output; a.cacheCreation += b.cacheCreation; a.cacheRead += b.cacheRead; };
 export const rawT = (t) => t.input + t.output + t.cacheCreation + t.cacheRead;
@@ -60,7 +60,7 @@ export function parseFileEvents(path) {
       const m = o.message, u = m.usage;
       if (u) events.push({ t: "a", ms, model: m.model || "", tok: {
         i: u.input_tokens || 0, o: u.output_tokens || 0,
-        cw: u.cache_creation_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } });
+        cw: u.cache_creation_input_tokens || 0, cw1h: u.cache_creation?.ephemeral_1h_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } });
       if (Array.isArray(m.content)) for (const c of m.content)
         if (c.type === "tool_use") events.push({ t: "tc", ms, name: toolDisplayName(c.name, c.input) });
     }
