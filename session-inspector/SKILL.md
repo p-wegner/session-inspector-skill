@@ -29,6 +29,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | **Fleet shape** — turns/context/fail distributions, outliers, `--by stack\|project\|model` | `fleet-stats.mjs` | [fleet-friction](references/fleet-friction.md), [fleet-inspection](references/fleet-inspection.md) |
 | What cost the most (billing total) | `token-sinks.mjs [--by project\|day\|model\|session]` | [fleet-cost](references/fleet-cost.md) |
 | Where context tokens go + what is avoidable (re-reads, dup output, node_modules) | `waste.mjs` | fleet-cost |
+| Are file re-reads avoidable or justified (post-edit, post-compaction, pagination)? | `reread-causes.mjs` | fleet-cost |
 | The single injections that bloated context + WHY + fix (skill-inject, compaction, huge-file, …) | `context-spikes.mjs [--by class\|tool\|file]` | fleet-cost |
 | Context growth curve, auto-compacts, >200k tax | `context-growth.mjs [--session id]` | fleet-cost |
 | Cost of idle/resume (cache expired) | `cold-cache.mjs` | fleet-cost |
