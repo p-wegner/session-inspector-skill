@@ -3,6 +3,21 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-08-27 — reread-causes.mjs: re-reads are mostly justified
+
+New `session-inspector/scripts/reread-causes.mjs` classifies file re-reads by cause
+instead of charging them all as waste (which waste.mjs still does, now labeled an
+upper bound). Measured on the 3-day fleet (255 sessions, 7,213 reads): 50% of reads
+are re-reads, but 83% of re-read tokens are pagination (different range/view of a
+known file), 6% post-own-edit, 6% post-compaction — only ~1% is same-view pure
+duplication. Edit→re-read rate is 6% (117 of 1,871 edits): Claude Code does NOT
+re-read after every edit; the harness's "file state is current" note works. Verified
+against sessions 9e5bbf50 and a9dd633c. Gray zone: a different view can still
+re-fetch overlapping content (Read then cat) — counted legitimate-ish, not split
+further. Gotcha fixed on the way: a NUL byte in a string literal made git treat the
+new script as binary. Also: context-growth.mjs applies --session before reading
+files (was a whole-corpus read, 5min+; now ~2s).
+
 ## 2026-08-27 — spawn-session: nothing crosses wt as an argument (-ArgsFile)
 
 Root-caused the stray `spawn-session/Userspwegner…ps1` files (now deleted): on
