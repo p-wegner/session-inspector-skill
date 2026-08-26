@@ -377,4 +377,4 @@ harnesses share one implementation.
 
 [MIT](LICENSE)
 
-_Docs last synced with the code at `8bccf3e` (2026-08-23)._
+_Docs last synced with the code at `64aca90` (2026-08-26)._
