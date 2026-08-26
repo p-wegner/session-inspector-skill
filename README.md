@@ -14,15 +14,24 @@ went, and which tools keep failing. Works across three agents:
 > `session-inspector-skill` (renamed locally 2026-08-22, when the root stopped
 > being a skill and became a container for two). The remote URL is unchanged.
 
-## Two skills in one repo
+## Three skills in one repo
 
-This repo ships **two** agent skills, junctioned separately so each triggers on
+This repo ships **three** agent skills, junctioned separately so each triggers on
 its own description:
 
 | Skill | Where | What it does |
 |---|---|---|
 | `session-inspector` | [`session-inspector/`](session-inspector/) | reads transcripts: debug one session, aggregate a fleet, decide what to pick up next |
+| `token-budget` | [`token-budget/`](token-budget/) | counts tokens in files/repos/skills, audits CLAUDE.md & skills for bloat, prices `claude -p` runs and sessions (`tokt`) |
 | `spawn-session` | [`spawn-session/`](spawn-session/) | the only session **launcher** here: opens/resumes/batch-launches sessions in Windows Terminal tabs |
+
+`session-inspector` answers *where did the tokens go* (transcripts, after the fact);
+`token-budget` answers *what does this context cost before I load it* (files, skills,
+CLAUDE.md) and prices runs exactly. `session-inspector`'s `skill-usage.mjs --cost`
+calls the sibling `tokt.js` directly. **One clone gives you both** — that was the
+reason for merging `token-budget` in on 2026-08-26 (it was
+[its own repo](https://github.com/p-wegner/token-budget); history came along via
+`git subtree`).
 
 They are **siblings**: neither is nested inside the other, the repo root is a
 container rather than a skill, and each subfolder is junctioned into every profile
@@ -37,11 +46,13 @@ existed as two copies that had to agree, and the analysis half could not call th
 action half without a `C:\` path. Now `session-inspector/scripts/lib/spawn-plan.mjs` holds the
 contract both sides use, and the launcher is resolved relative to the repo.
 
-Each keeps its own `SKILL.md`; `spawn-session/` also keeps its own `README`.
+Each keeps its own `SKILL.md`; `spawn-session/` and `token-budget/` also keep their own `README`.
 `CONTINUE.md` lives at the repo root.
 
-Everything depends only on **Node builtins** (`fs`/`path`/`os`/`http`) — no package
-install, no server, no monorepo checkout, no board required. Requires **Node 18+**
+`session-inspector` and `spawn-session` depend only on **Node builtins**
+(`fs`/`path`/`os`/`http`) — no package install, no server, no monorepo checkout, no
+board required. `token-budget` needs one `npm install` inside its folder (pulls the
+pure-JS `gpt-tokenizer`; falls back to a heuristic without it). Requires **Node 18+**
 (uses global `fetch`).
 
 ## Three altitudes
@@ -312,7 +323,7 @@ Full setup, REST API, and privacy scope: [`references/session-sync.md`](referenc
 
 ## Install as an agent skill
 
-The repo root is **not** a skill — the two skills are the subfolders, so junction
+The repo root is **not** a skill — the three skills are the subfolders, so junction
 (or symlink) **each one** into your skills dir under its own frontmatter name.
 Pointing a link at the repo root gives that skill no `SKILL.md`.
 
@@ -320,7 +331,7 @@ Pointing a link at the repo root gives that skill no `SKILL.md`.
 # Windows (junction), for every Claude profile you use
 $repo = "C:\path\to\claude-session-tools"
 foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
-  foreach ($skill in @("session-inspector", "spawn-session")) {
+  foreach ($skill in @("session-inspector", "token-budget", "spawn-session")) {
     $link = Join-Path $p.FullName "skills\$skill"
     if (-not (Test-Path $link)) {
       New-Item -ItemType Junction -Path $link -Target (Join-Path $repo $skill) | Out-Null
@@ -331,7 +342,12 @@ foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
 ```bash
 # macOS / Linux (symlink)
 ln -s /path/to/claude-session-tools/session-inspector ~/.claude/skills/session-inspector
+ln -s /path/to/claude-session-tools/token-budget      ~/.claude/skills/token-budget
 ln -s /path/to/claude-session-tools/spawn-session     ~/.claude/skills/spawn-session
+```
+```bash
+# once, for token-budget's tokenizer
+(cd /path/to/claude-session-tools/token-budget && npm install)
 ```
 
 Profiles do not share skills and there is no auto-propagation, which is why the
@@ -341,7 +357,7 @@ loop covers every `~/.claude*` home. To remove one link later use
 and delete the real repos behind them.
 
 `spawn-session` is Windows-only (it drives Windows Terminal); `session-inspector`
-is cross-platform.
+and `token-budget` are cross-platform.
 
 **Codex** — junction/symlink the same targets into `~/.codex/skills/<name>` so both
 harnesses share one implementation.
