@@ -634,6 +634,7 @@ node scripts/quota-multi.mjs      # ALL profiles × ALL weekly windows + COMBINE
 node scripts/quota-month.mjs      # ALL team profiles over a FIXED CALENDAR RANGE ("the whole July") + week-by-week rollup → --html dashboard (--month YYYY-MM | --from/--to YYYY-MM-DD, --profiles a,b, --tz N, --json)
 node scripts/hook-cost.mjs        # HOOK wall-clock tax — which configured hooks burn throughput/latency (--project, --cwd, --days, --by command|event|session|day|project, --slowest, --min-ms, --json)
 node scripts/tool-friction.mjs    # TOOLING-IMPROVEMENT candidates — recurring cross-session command CHAINS to fuse/fix (--project, --grep, --n 2,3, --min-sessions, --json)
+node scripts/read-patterns.mjs    # READ STYLE + DISCLOSURE GAP — Read full/partial vs Grep/Glob vs shell readers per model, and whether nested CLAUDE.md / path-scoped rules ever reached sessions that touched a guided subtree only via grep/cat (--project, --worktrees, --days, --min-turns, --session <id>, --json)
 node scripts/skill-genesis.mjs    # SKILL-GENESIS patterns — which interaction SHAPE led to a skill being created/improved: same-prompt, interactive-then-ask, lab-driven, compounding (--project, --skill <name>, --days N, --examples N, --json)
 ```
 
@@ -780,6 +781,25 @@ session's time gives `avail` = sessions that ran *after* it existed, so a skill
 written last week isn't wrongly called dead. Board-independent (no DB). The
 git-history pass only runs for never-strong-invoked skills; narrow with `--days`
 for a fast windowed audit (`--no-git` skips creation-time entirely).
+`read-patterns.mjs` answers **"how do agents actually read files, and does progressive
+disclosure keep up?"** — Claude Code auto-loads a nested `CLAUDE.md` and a path-scoped
+`.claude/rules/*.md` only when a file in that subtree is touched through **Read/Edit/Write**.
+Newer models read search-first: the built-in Grep/Glob tools and shell readers (`cat`,
+`sed -n`, `grep`, `rg`, `head`, `Get-Content`) touch the same files and trigger **nothing**.
+The script measures both halves per model: read style (Read full vs partial `offset`/`limit`,
+Grep/Glob counts, shell calls carrying a read verb, a search-first ratio) and the disclosure gap
+per (session × guidance dir): which tool touched the dir first, whether Claude Code's own
+`nested_memory` attachment ever arrived, and — when the first touch was indirect but a Read
+came later — how many tool calls the agent worked in that subtree *before* its guidance landed.
+Guidance dirs are discovered from the session cwd on disk plus every `nested_memory` path seen in
+the corpus, so it is not tied to any one repo layout. Measured on 237 kanban builder sessions
+(Sonnet 5, 90 days): 33% of Reads partial, search-first ratio 0.65, **15 of 148 guided-subtree
+touches (10%) never received their CLAUDE.md — every one of them was a Grep/shell-only touch (0
+of 15 injected)**; where a Read followed, the median lag was 1 call but p90 9 and max 16. The
+closing mechanism is a PostToolUse hook on `Bash|Grep|Glob` that resolves the touched paths to
+nested CLAUDE.md + matching rules and injects them as `additionalContext` — reference
+implementation and a `claude -p` A/B eval in `C:projectsandrenacontext-disclosure-hook`.
+Claude only.
 `skill-genesis.mjs` answers **"how do skills actually get born and improved on
 this machine?"** — a different question from `skill-usage.mjs` (does a skill
 ever fire) and `tool-friction.mjs` (which command chains repeat): of the
