@@ -141,6 +141,8 @@ for (const it of bigItems.slice(0, top)) console.log(`  ${P(fmt(it.tok), 6)} tok
 console.log(`\nAVOIDABLE — re-reading files already in context (top 12)`);
 for (const d of dupReads.slice(0, 12)) console.log(`  ${(d.n + "×").padStart(4)}  waste≈${P(fmt(d.waste), 6)}  ${shortPath(d.f, 66)}`);
 console.log(`  → dup-read waste (sum): ${fmt(dupReads.reduce((a, d) => a + d.waste, 0))} tok`);
+console.log(`  → an UPPER BOUND: pagination, post-edit and post-compaction re-reads are legitimate —`);
+console.log(`    run reread-causes.mjs to split this into avoidable vs justified`);
 
 if (dupBash.length) {
   console.log(`\nAVOIDABLE — repeated identical Bash output (≥3×, top 8)`);

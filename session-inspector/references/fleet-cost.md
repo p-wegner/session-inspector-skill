@@ -19,6 +19,20 @@ identical Bash output, and **node_modules leaking into Glob/Read**. Companion to
 `token-sinks.mjs` (which gives the billing total); this explains what ran it up.
 Claude transcripts only; chars/4 token estimate (≈1.5% of exact tiktoken).
 
+`reread-causes.mjs` answers **"are the re-reads waste.mjs flags actually avoidable?"**
+— waste's dup-read number is an UPPER BOUND: it charges every 2nd+ touch of a file.
+This tool classifies each re-read by what happened between the two reads:
+**after-own-edit** (an Edit/Write landed in between — refreshing own changes),
+**post-compaction** (the earlier copy was summarized away), **pre-edit-refresh**
+(the read enables an edit within `--edit-window` turns), **different-view** (another
+Read range or another shell command over the same file — pagination is the
+recommended pattern, not a duplicate; only the exact same view repeating counts),
+**distant** (same view, > `--distant` turns old — attention refresh, gray), and
+**pure-dup** (same view, recent copy still in context — the only clearly avoidable
+class). Also measures the edit→re-read rate ("does Claude Code re-read after every
+edit?" — measured ~6% fleet-wide, so no) and counts harness-forced re-reads (Edit
+rejected as stale/unread). Claude only.
+
 `context-growth.mjs` answers **"why did this cost so much?"** — agent cost is
 cache-read dominated (every turn re-bills the ENTIRE current context), so a
 session's spend is roughly the **area under its context-growth curve**. It reads
