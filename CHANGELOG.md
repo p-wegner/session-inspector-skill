@@ -12,7 +12,9 @@ workshop participants do not have to install two repos. Junction/symlink it as a
 third skill (`skills/token-budget`) and run `npm install` inside it once.
 `session-inspector/scripts/skill-usage.mjs --cost` now finds the sibling `tokt.js`
 relative to the repo, no junction needed. The old repo stays on GitHub as an
-archive; new work happens here.
+archive; new work happens here. Also: `tokt session <id>` now finds the transcript in
+`$CLAUDE_CONFIG_DIR`, `~/.claude` **and sibling `~/.claude-*` profiles** — before, an id
+from a non-default profile failed with "no transcript found".
 
 ## 2026-08-23 — spawn-session uses the standard skill layout
 
