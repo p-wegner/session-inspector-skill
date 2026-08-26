@@ -37,7 +37,13 @@ shows something you can paste. The resolver here handles it:
   the candidates if a stub ever matches more than one session.
 - **The folder is a tiebreak, never a filter.** A shortened (`andrena-comet`) or
   stale folder narrows the matches when it hits and is ignored when it doesn't, so
-  it can't turn a good id into "not found".
+  it can't turn a good id into "not found". It is matched as a *substring*, so a
+  slug that was truncated for width still narrows correctly.
+- **A doubled-dash name resolves too.** `C--projects-andrena-comet--8e3f1bec` — the
+  shape an agent bus registers (`<project-slug>--<sid8>`) — splits at its **last**
+  doubled dash into id + folder hint. Tried only as a fallback, after the ordinary
+  parse finds nothing, so a bare project-folder name (doubled dashes and all) is
+  still read as a folder. See `splitAcpAgentName` in `../scripts/lib/sessions.mjs`.
 
 ## Minimal setup
 
@@ -97,6 +103,43 @@ If you just want the full path and have `jq`, skip the script:
 The locator form above is friendlier to read and select; the raw `transcript_path`
 is the most direct thing to feed the analyzer.
 
+### If something else already names this session
+
+The snippet above derives the locator from `transcript_path`. If another system has
+already given the session a name — an agent bus registration, a session-manager
+entry, a worktree label — **take both halves out of that one name instead of
+deriving them a second time.** Two independent derivations of "the same" identity
+drift: they disagreed in practice on ordering (`<folder>/<id>` vs `<id>/<folder>`)
+and on source (the *transcript* folder vs the session's `cwd`, which differ when a
+session is resumed from elsewhere), and neither of the two strings on screen was
+then a reliable address.
+
+For the ACP bus, whose hook writes `~/.acp/sessions/<session_id>.json` with a
+`"name"` of `<cwd-slug>--<sid8>`, that is a few lines layered on top of the parsing
+in step 1 — put them after the `transcript_path` block and before the trimming, so an
+unregistered session keeps the derived locator:
+
+```js
+// Needs `import fs from "node:fs"; import os from "node:os";` at the top of the .mjs.
+// Registered on the bus: split the registered name at its LAST doubled dash.
+// (Last, not first: a cwd ending in a separator leaves a trailing dash on the slug.)
+try {
+  const acp = JSON.parse(fs.readFileSync(
+    `${os.homedir()}/.acp/sessions/${d.session_id}.json`, "utf8"));
+  if (acp.name && !acp.killed) {
+    const i = acp.name.lastIndexOf("--");
+    sid = acp.name.slice(i + 2);       // 8 hex digits
+    folder = acp.name.slice(0, i);     // cwd slug, same mangling Claude uses
+  }
+} catch { /* not registered — keep the transcript_path derivation above */ }
+```
+
+Reassembled as `<folder>--<sid>` this **is** the bus name, so it stays an address
+(`acp send --to` accepts the compact form too), and it cannot disagree with what
+`acp list` prints. The half that changes is the folder: it now comes from `cwd`
+rather than the transcript folder. Harmless here — the folder is a tiebreak matched
+as a substring, and both use the same `[^A-Za-z0-9] -> -` mangling.
+
 ## Using it with the skill
 
 Copy the locator from the status line, then either resolve it to a path or hand it
@@ -106,6 +149,7 @@ to another agent:
 # the locator works verbatim — no need to expand it to a path first:
 node scripts/analyze-claude-session.mjs 8e3f1bec/andrena-comet
 node scripts/analyze-claude-session.mjs 8e3f1bec          # id prefix alone is fine
+node scripts/analyze-claude-session.mjs C--projects-andrena-comet--8e3f1bec  # a bus name pastes too
 node scripts/analyze-claude-session.mjs ~/.claude/projects/<project-folder>/<session-id>.jsonl
 ```
 
