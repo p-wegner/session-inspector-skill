@@ -2,6 +2,26 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-26 — session-inspector SKILL.md shrunk 12×; context-spikes classifies harness injections
+
+`session-inspector/SKILL.md` went from **19,871 to ~1,600 tokens** (its always-on
+frontmatter from ~350 to ~180). It is now a question → tool → reference table plus the
+handful of rules that are easy to get wrong; every long section moved **verbatim** into
+`references/` (`single-session.md`, `session-edit.md`, `resume-and-handoff.md`,
+`continuations.md`, `live-and-capacity.md`, `fleet-tools.md`, `sync-and-bundles.md`,
+`profiles-and-layout.md`). Nothing was deleted — it is one hop further away. Measured
+reason: on the agentic-kanban fleet the SKILL.md injection was the single largest
+context spike (16–19k tokens at turn 1, re-billed every turn).
+
+`context-spikes.mjs`: human-side chunks are no longer all `user-paste` — skill bodies
+(`skill-inject`, keyed by skill name), auto-compact summaries (`compaction`) and handoff
+briefs (`handoff-brief`) get their own class and fix. `--by file` keys Bash/PowerShell
+spikes by the first file path in the command (`cat x.ts`, `sed -n … y.ts`) or
+`bash:<verb>`, instead of the last 60 characters of the command text.
+
+The agentic-kanban board no longer carries its own copy of this skill; it junctions
+this checkout (see README → Notes).
+
 ## 2026-08-26 — token-budget ships in this repo, as a third sibling
 
 The `token-budget` skill (`tokt`: token counting, CLAUDE.md/skill bloat audit,

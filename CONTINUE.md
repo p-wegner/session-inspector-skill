@@ -15,6 +15,18 @@ them. `skill-usage.mjs` gained the in-repo sibling path as its second candidate
 unchanged — decide whether to archive it with a pointer README; the old local
 folder carries a `MOVED.md` and can be deleted once nothing holds it open.
 
+## session-inspector (2026-08-26)
+
+- `SKILL.md` is an index (~1.6k tok, `tokt skill session-inspector`); the former body is
+  split verbatim into eight new `references/*.md`. Verified: `tokt skill` tiers, the
+  four `scripts/test/*.test.mjs`, and a live `context-spikes --project agentic-kanban`
+  run with the new classes. **Not yet done:** the moved reference prose still says
+  "below"/"above" in places where it now refers to a different file — harmless, but
+  worth a pass; and `fleet-tools.md` (8k) could itself be split per tool.
+- agentic-kanban's committed `.claude/skills/session-inspector` is gone (kanban commit
+  `4ef871ebd7`); a gitignored junction points here. Board-only `scripts/session-rank.mjs`
+  / `output-style.mjs` stay in kanban — candidates to port here if wanted.
+
 ## spawn-session
 
 The rest of this file concerns `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling

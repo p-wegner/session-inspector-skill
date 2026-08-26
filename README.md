@@ -370,8 +370,12 @@ harnesses share one implementation.
   standalone with nothing but Node.
 - session-sync is built for a single trusted operator on a private network; extending it
   to a multi-developer team would add redaction, auth, and per-user privacy (out of scope).
-- Source of truth for the non-portable version lives in
-  `agentic-kanban/.claude/skills/session-inspector` + `agentic-kanban/scripts`.
+- **This repo is the single source of truth for `session-inspector`.** The agentic-kanban
+  board used to carry its own committed copy under `.claude/skills/session-inspector`; since
+  2026-08-26 that is a gitignored junction to this checkout. A few board-only scripts
+  (`session-rank.mjs`, `output-style.mjs`) remain in the board's `scripts/`.
+- `session-inspector/SKILL.md` is a ~1.6k-token index; the depth lives in
+  `session-inspector/references/*.md`, one file per topic, loaded on demand.
 
 ## License
 

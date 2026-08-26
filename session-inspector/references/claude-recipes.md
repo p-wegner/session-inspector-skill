@@ -2,7 +2,7 @@
 
 Fallbacks for when `analyze-claude-session.mjs` isn't enough and you need custom
 parsing. Claude transcripts: `~/.claude/projects/<dir>/<sessionId>.jsonl`.
-See the directory-naming convention and the `stop_reason` table in `SKILL.md`.
+See the directory-naming convention and the `stop_reason` table in `profiles-and-layout.md`.
 
 ## Quick overview of all issues
 

@@ -19,6 +19,12 @@
  *   repeated         same read/output already in context → reuse; don't re-fetch
  *   big-tool-result  large result, no clearer class      → paginate / narrow the query
  *   user-paste       large pasted block from the human   → attach a file / trim
+ *   skill-inject     a skill's SKILL.md injected on invoke → shrink it: index + references (tokt skill)
+ *   compaction       auto-compact / continuation summary   → shorter sessions, hand off before compaction
+ *   handoff-brief    a "taking over from session X" brief  → keep briefs to the load-bearing state
+ *
+ * `--by file` keys Bash spikes by the FIRST FILE PATH in the command (cat/sed/head/
+ * Get-Content …), falling back to `bash:<verb>`; skill injections key by skill dir.
  *
  * Companion to waste.mjs (which buckets ALL content by kind) and
  * context-growth.mjs (the growth curve). This one is spike-first: it names the
@@ -84,6 +90,35 @@ function classify(text, toolName, where, seenBefore) {
   return { cls: "big-tool-result", fix: "paginate / narrow the query so less lands in context" };
 }
 
+/** Human-side (type:"user" text) chunks are not all pastes: the harness injects skill
+ *  bodies, compaction summaries and handoff briefs through the same channel. */
+function classifyHumanSide(text) {
+  const head = text.slice(0, 400);
+  const m = head.match(/Base directory for this skill:[ \t]*([^\r\n]+)/);
+  if (m) {
+    const skill = m[1].trim().split(/[\\/]+/).filter(Boolean).pop();
+    return { cls: "skill-inject", fix: "shrink the SKILL.md: short index + on-demand references (tokt skill)", where: "skill:" + skill };
+  }
+  if (/^\s*This session is being continued from a previous conversation/.test(head) || /^\s*<summary>/.test(head))
+    return { cls: "compaction", fix: "shorter sessions / hand off before auto-compact; keep the summary lean", where: "compaction-summary" };
+  if (/taking over work from a session|handoff brief|continuation brief/i.test(head))
+    return { cls: "handoff-brief", fix: "keep the brief to load-bearing state, point at files instead of inlining", where: "handoff-brief" };
+  return { cls: "user-paste", fix: "attach as a file / trim to the relevant part", where: "" };
+}
+
+/** Key a spike by the FILE it concerns. Read/Edit/Glob/Grep already carry a path or
+ *  pattern; Bash carries the whole command, so pull the first file-like path out of it,
+ *  else fall back to `bash:<verb>` so commands group by shape instead of by text tail. */
+function fileKey(toolName, where) {
+  if (!where) return where;
+  if (toolName !== "Bash" && toolName !== "PowerShell") return where;
+  const cmd = where.replace(/\s+/g, " ");
+  const path = cmd.match(/(?:^|[\s"'=(])((?:[A-Za-z]:)?(?:\.{0,2}[\\/])?(?:[\w.@-]+[\\/])*[\w@-][\w.@-]*\.[A-Za-z]{1,8})(?=[\s"')|;]|$)/);
+  if (path) return path[1];
+  const verb = cmd.replace(/^(?:cd\s+\S+\s*(?:&&|;)\s*)+/, "").match(/^(?:\$?\w+=\S+\s+)*(\S+)/);
+  return "bash:" + ((verb && verb[1]) || "?").replace(/^.*[\\/]/, "").slice(0, 24);
+}
+
 const spikes = [];
 const byClass = new Map(), byTool = new Map(), byFile = new Map(), bySession = new Map();
 let sessionsScanned = 0, totalSpikeTok = 0, totalSpikeWtok = 0;
@@ -121,11 +156,16 @@ for (const s of all) {
           toolById.set(b.id, { name: b.name, where: b.input?.file_path || b.input?.path || b.input?.pattern || b.input?.command || "" });
     } else if (o.type === "user") {
       const c = msg?.content;
-      const consider = (text, toolName, where, isPaste) => {
+      const consider = (text, toolName, where0, isPaste) => {
         const tok = TOK(text); if (tok < minTok) return;
+        let where = isPaste ? where0 : fileKey(toolName, where0);
         const sig = (where || text.slice(0, 120));
         const seenBefore = seen.has(sig); seen.add(sig);
-        const { cls, fix } = isPaste ? { cls: "user-paste", fix: "attach as a file / trim to the relevant part" } : classify(text, toolName, where, seenBefore);
+        let cls, fix;
+        if (isPaste) {
+          const h = classifyHumanSide(text);
+          cls = h.cls; fix = h.fix; if (h.where) where = h.where;
+        } else ({ cls, fix } = classify(text, toolName, where, seenBefore));
         const wtok = tok * remain;
         spikes.push({ sid, project: id.project || folder, turn, tool: toolName, cls, fix,
           tok, wtok, remain, where: (where || "").slice(-64), snip: text.replace(/\s+/g, " ").slice(0, 70) });
@@ -169,7 +209,7 @@ console.log(`${sessionsScanned} sessions · ${spikes.length} spikes · raw ≈ $
 const P = (s, w) => String(s).padStart(w);
 if (by === "class" || by === "tool" || by === "file") {
   const m = by === "class" ? byClass : by === "tool" ? byTool : byFile;
-  const label = by === "file" ? "file/where" : by;
+  const label = by === "file" ? "file / skill / bash:<verb>" : by;
   console.log(`BY ${by.toUpperCase()} (sorted by persistence-weighted)`);
   console.log("  " + label.padEnd(by === "file" ? 60 : 16) + P("n", 5) + P("raw", 8) + P("weighted", 10));
   for (const r of rows(m).slice(0, top))
