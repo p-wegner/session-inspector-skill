@@ -50,7 +50,7 @@ session and decides — per a simple rule — whether to **resume in place** or
 command (or opens a dedicated Windows Terminal tab per session).
 
 > **If the cut-off session dispatched subagents, run `subagent-results.mjs`
-> first** (section above). Resuming re-dispatches the whole fan-out; that tool
+> first** (`single-session.md`). Resuming re-dispatches the whole fan-out; that tool
 > tells you which subagent outputs already survive on disk (act on / re-inject
 > them) versus which were themselves cut off and must actually be re-run — so the
 > continuation doesn't pay for work that's already done.
@@ -107,3 +107,52 @@ it — don't wait for a notification that will never come). FRESH tabs launch
 `claude` seeded with a prompt pointing at the brief; RESUME tabs run
 `claude --resume <id>` with the profile's `CLAUDE_CONFIG_DIR` set. `--json` for
 the machine-readable plan.
+
+## `resumable.mjs` in depth
+
+`resumable.mjs` answers **"I got rate-limited — which session was that, and how
+do I continue it?"** — the common case where a usage/rate limit (or an interrupt)
+kills a session mid-task and you come back later to pick it up. It scans every
+Claude profile home, keeps only sessions whose ending is a genuine cut-off
+(`endedOnLimit` — the limit banner as the **final** message, so a session that
+merely *mentioned* a limit is excluded), ranks them by severity then recency, and
+for each prints the **goal**, the **last human ask**, and a ready-to-run,
+profile-aware resume command (`cd <cwd> && CLAUDE_CONFIG_DIR=<home> claude --resume
+<id>` — the `CLAUDE_CONFIG_DIR` matters because the session lives under a specific
+`.claude[-suffix]` home and resuming under the wrong profile won't find it). Scope
+with `--project <substr>` or `--cwd` (only this directory's sessions), widen the
+window with `--days N` (default 7). `--latest` prints just the top hit; `--resume`
+prints *only* the command (pipe/eval it); `--interrupted` also includes
+user-interrupted sessions; `--all-endings` lists normal-ending sessions too. The
+discovery half of the resume loop — `analyze-claude-session.mjs <path> --events -v`
+is the explain half when you want to see exactly where it stopped first. Claude only.
+**Instant deaths are grouped, not listed**: a session that died within seconds with
+zero tool calls (a fleet launched into an exhausted profile window — e.g. a kanban
+board relaunching 38 ticket agents straight into the limit banner) has NOTHING to
+resume, so `--resume`-ing it reopens an empty session. These collapse into one
+summary line per launch directory with relaunch-not-resume advice (individually
+listable with `--include-instant`; in `--json` they're the `instantDeaths` groups
+next to `resumable`).
+
+**Subagents are excluded by default.** A subagent is not independently resumable
+(`claude --resume` takes the PARENT's id), and a shared-account limit kills parent
+and children together — so one cut-off orchestrator used to contribute its whole
+fan-out of look-alike rows. Measured: 9 of the top 10 rows were one parent's 20
+research subagents, burying the 3 real cut-offs — and every one of those rows
+printed an **unusable** resume command, because the profile home was derived by
+counting `dirname` hops and a nested transcript sits two levels deeper, so
+`CLAUDE_CONFIG_DIR` pointed at the *project dir*. Both are fixed: the home is now
+anchored on the `projects` path segment, and `--include-subagents` shows them
+labelled, pointing at the parent + `subagent-results.mjs` rather than at a resume
+command that cannot work.
+
+**Already-continued sessions are separated out** (`lib/successor.mjs`). A cut-off
+session whose work another session already finished is noise that outranks
+everything real, since severity and recency both favour it. Evidence is graded, and
+only the strong kinds may HIDE a row: `ledger` (spawn-session's own record of the
+handover, `~/.spawn-session/ledger.jsonl`) and `brief` (a handoff brief naming its
+source session, whose filename a later transcript quotes). A same-repo **id
+mention** is a hint only, annotated in place — treating it as fact suppressed two
+genuinely open cut-offs, because a session that merely *analyzed* the fleet mentions
+every id. So a would-be successor naming 3+ distinct candidates is reclassified as
+analysis and dropped. `--include-continued` ranks them anyway.

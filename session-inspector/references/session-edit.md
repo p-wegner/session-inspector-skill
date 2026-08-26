@@ -4,7 +4,7 @@ _session-inspector reference. Moved verbatim out of `SKILL.md` on 2026-08-26 so 
 
 ## Edit a session's user/assistant messages (`session-edit.mjs`)
 
-The analyzers above are read-only. To **change what a session says** — fix a
+The analyzers (`single-session.md`) are read-only. To **change what a session says** — fix a
 misleading prompt before handing the transcript to a stronger model, redact a
 secret you pasted, correct an assistant message that poisoned the rest of the
 run — use `scripts/session-edit.mjs`. Raw `.jsonl` is far too noisy to hand-edit

@@ -4,7 +4,7 @@ _session-inspector reference. Moved verbatim out of `SKILL.md` on 2026-08-26 so 
 
 ## Share sessions across your machines (session-sync)
 
-The analyzers and fleet tools above read **local** transcripts. To inspect sessions
+The analyzers and fleet tools (`single-session.md`, `fleet-tools.md`) read **local** transcripts. To inspect sessions
 from **other machines** too (laptop + desktop + …), run the bundled session-sync
 service: each device pushes its raw transcripts to one small server, and you
 browse/search the combined set from a web UI or the CLI. Built for a **solo dev

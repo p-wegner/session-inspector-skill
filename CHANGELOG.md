@@ -9,7 +9,9 @@ frontmatter from ~350 to ~180). It is now a question → tool → reference tabl
 handful of rules that are easy to get wrong; every long section moved **verbatim** into
 `references/` (`single-session.md`, `session-edit.md`, `resume-and-handoff.md`,
 `continuations.md`, `live-and-capacity.md`, `fleet-tools.md`, `sync-and-bundles.md`,
-`profiles-and-layout.md`). Nothing was deleted — it is one hop further away. Measured
+`profiles-and-layout.md`, and the fleet prose split into `fleet-cost.md`, `fleet-friction.md`,
+`fleet-skills-and-prompts.md`, `fleet-quota.md` with `fleet-tools.md` as the full command
+list). Nothing was deleted — it is one hop further away. Measured
 reason: on the agentic-kanban fleet the SKILL.md injection was the single largest
 context spike (16–19k tokens at turn 1, re-billed every turn).
 
