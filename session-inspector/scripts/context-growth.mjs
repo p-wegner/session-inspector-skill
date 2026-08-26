@@ -67,12 +67,14 @@ let totalCompacts = 0, totalTurns = 0, totalCacheRead = 0, cacheReadAbove = 0, t
 const sessions = discover("claude");
 for (const s of sessions) {
   if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+  const folder = basename(dirname(s.path));
+  // session id and folder are known WITHOUT reading the file — with --session this
+  // turns a whole-corpus read into a single-file read
+  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
   let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
-  const folder = basename(dirname(s.path));
   if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
-  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
 
   let compacts = 0, turns = 0, maxCtx = 0, model = "?", version = "?";
   let crTot = 0, crAbove = 0, nAbove = 0, crossIdx = -1;
