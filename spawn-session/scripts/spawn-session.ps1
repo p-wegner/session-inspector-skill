@@ -13,6 +13,13 @@
     tab. Running this in the current shell would replace the session you are in.
 #>
 param(
+    # The normal spelling since 2026-08-27: spawn.cmd stages EVERY parameter into one
+    # JSON file (stage-launch.mjs) and passes only this path, because individual
+    # arguments crossing cmd -> wt.exe -> PowerShell get re-split on ';' and lose
+    # their quotes when empty (both bit real launches; on 2026-08-25 seeded handoff
+    # sessions never took their first turn). The named parameters below stay for
+    # direct callers and win over the file when both are given.
+    [string]$ArgsFile,
     [string]$Path,
     [string]$Prompt,
     [string]$PromptFile,
@@ -40,6 +47,39 @@ param(
 # NativeCommandError, and the tab dropped to a prompt with claude never started.
 # Errors here are handled by exit code, explicitly, where they occur.
 $ErrorActionPreference = 'Continue'
+
+# --- Args file ----------------------------------------------------------------
+# Read FIRST, so everything below sees the same values regardless of how they
+# arrived. An unreadable file is a hard stop: launching with silently-empty
+# parameters is exactly the failure this file exists to close.
+if ($ArgsFile) {
+    if (-not (Test-Path -LiteralPath $ArgsFile)) {
+        Write-Host "  [spawn-session] args file not found: $ArgsFile" -ForegroundColor Red
+        Write-Host "  Press any key to close." -ForegroundColor DarkGray
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 1
+    }
+    try {
+        $cfg = Get-Content -LiteralPath $ArgsFile -Raw | ConvertFrom-Json
+    } catch {
+        Write-Host "  [spawn-session] cannot parse args file: $ArgsFile" -ForegroundColor Red
+        Write-Host "  $($_.Exception.Message)" -ForegroundColor DarkGray
+        Write-Host "  Press any key to close." -ForegroundColor DarkGray
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+        exit 1
+    }
+    if (-not $Path -and $cfg.path) { $Path = $cfg.path }
+    if (-not $PromptFile -and $cfg.promptFile) { $PromptFile = $cfg.promptFile }
+    if (-not $ProfileDir -and $cfg.profileDir) { $ProfileDir = $cfg.profileDir }
+    if (-not $SessionId -and $cfg.sessionId) { $SessionId = $cfg.sessionId }
+    if (-not $LaunchConfigDir -and $cfg.launchConfigDir) { $LaunchConfigDir = $cfg.launchConfigDir }
+    if (-not $ResumeId -and $cfg.resumeId) { $ResumeId = $cfg.resumeId }
+    if ($cfg.noPrompt) { $NoPrompt = $true }
+    if ($cfg.safeMode) { $SafeMode = $true }
+    if ($cfg.detectOnly) { $DetectOnly = $true }
+    if ($cfg.noTrust) { $NoTrust = $true }
+    if (-not $Forward -and $cfg.forward) { $Forward = @($cfg.forward) }
+}
 
 # The prompt arrives as a FILE, not as an argument, whenever the caller can manage it.
 # Windows Terminal splits its command line on ';' *after* cmd/PowerShell quoting is
