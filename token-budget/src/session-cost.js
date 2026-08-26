@@ -22,9 +22,24 @@ const os = require('os');
 const path = require('path');
 const { costForUsage } = require('./pricing');
 
-function projectsRoot() {
-  return path.join(os.homedir(), '.claude', 'projects');
+// Every Claude home that can hold transcripts: $CLAUDE_CONFIG_DIR first, then
+// ~/.claude, then sibling profiles (~/.claude-<team>) — each with a projects/ dir.
+function projectsRoots() {
+  const home = os.homedir();
+  const homes = [];
+  if (process.env.CLAUDE_CONFIG_DIR) homes.push(process.env.CLAUDE_CONFIG_DIR);
+  homes.push(path.join(home, '.claude'));
+  try {
+    for (const d of fs.readdirSync(home)) {
+      if (/^\.claude-/.test(d)) homes.push(path.join(home, d));
+    }
+  } catch (_) { /* unreadable home */ }
+  const seen = new Set();
+  return homes
+    .map((h) => path.join(h, 'projects'))
+    .filter((r) => !seen.has(r) && seen.add(r) && fs.existsSync(r));
 }
+function projectsRoot() { return projectsRoots()[0] || path.join(os.homedir(), '.claude', 'projects'); }
 
 // Resolve a session id / transcript path / session dir to { transcript, dir }.
 function locate(target) {
@@ -40,17 +55,19 @@ function locate(target) {
       return { transcript: fs.existsSync(t) ? t : null, dir: target };
     }
   }
-  // treat as a session id: search every project dir
-  const root = projectsRoot();
-  if (!fs.existsSync(root)) throw new Error(`no transcript found for "${target}" (and ${root} missing)`);
-  for (const proj of fs.readdirSync(root)) {
-    const t = path.join(root, proj, `${target}.jsonl`);
-    if (fs.existsSync(t)) {
-      const dir = path.join(root, proj, target);
-      return { transcript: t, dir: fs.existsSync(dir) ? dir : null };
+  // treat as a session id: search every project dir of every Claude home
+  const roots = projectsRoots();
+  if (!roots.length) throw new Error(`no transcript found for "${target}" (no ~/.claude*/projects dir exists)`);
+  for (const root of roots) {
+    for (const proj of fs.readdirSync(root)) {
+      const t = path.join(root, proj, `${target}.jsonl`);
+      if (fs.existsSync(t)) {
+        const dir = path.join(root, proj, target);
+        return { transcript: t, dir: fs.existsSync(dir) ? dir : null };
+      }
     }
   }
-  throw new Error(`no transcript found for session id "${target}" under ${root}`);
+  throw new Error(`no transcript found for session id "${target}" under ${roots.join(', ')}`);
 }
 
 function* readJsonl(file) {
