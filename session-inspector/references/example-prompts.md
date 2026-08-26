@@ -1,16 +1,16 @@
-# Example prompts — common analysis questions, ready to ask
+# Example prompts — context & session questions this skill answers
 
-Worked prompts for the questions teams actually bring (distilled from a team-workshop
-question board). Each block: the **prompt as you'd type it** in Claude
-Code (German or English both trigger) → what the agent should run → what to read off.
-`SI=session-inspector/scripts`, `TOKT="node token-budget/bin/tokt.js"` (sibling skill
-in this repo). Every script takes `--days N`, `--project <substring>`, `--json`.
+Recurring team questions (distilled from a team-workshop question board), kept to the
+ones these tools actually answer from your transcripts and context files. Each block:
+the **prompt as you'd type it** in Claude Code → what to run → what to read off.
+`SI=session-inspector/scripts`, `TOKT="node token-budget/bin/tokt.js"` (sibling skill).
+Every script takes `--days N`, `--project <substring>`, `--json`.
 
 The pattern behind all of them: **measure on your own transcripts → change one thing
 at the source → re-measure next week.** Findings and the re-measure command go into
 the repo's CONTINUE.md, not into chat.
 
-## 1 · Token efficiency / "re-reading wastes tokens"
+## Token efficiency
 
 > "Where did our tokens actually go last week?"
 
@@ -25,13 +25,13 @@ is the number to shrink — an early 10k dump is re-billed every later turn.
 > "Is Claude Code re-reading files after every edit?"
 
 ```bash
-node $SI/reread-causes.mjs --days 7      # splits re-reads: post-edit / post-compaction / pagination / pure-dup
+node $SI/reread-causes.mjs --days 7      # re-reads split: post-edit / post-compaction / pagination / pure-dup
 node $SI/read-patterns.mjs --days 14     # Read full vs offset/limit vs Grep vs shell cat/sed
 ```
-Read off: only the `pure-dup` class is avoidable (measured fleet-wide: ~1% of re-read
-tokens; the edit→re-read rate is ~6%, so no, not after every edit). `waste.mjs`'s
-dup-read figure is an upper bound. Change: a file re-read every session belongs in a
-nested CLAUDE.md / `@import`, not in a Read.
+Read off: only `pure-dup` is avoidable (measured fleet-wide: ~1% of re-read tokens;
+edit→re-read rate ~6%, so no, not after every edit). `waste.mjs`'s dup-read figure is
+an upper bound. Change: a file re-read every session belongs in a nested CLAUDE.md /
+`@import`, not in a Read.
 
 > "Which single injections blew the context up, and why?"
 > "Why did this session cost so much?"
@@ -59,7 +59,7 @@ node $SI/hook-cost.mjs --days 14
 node $SI/cold-cache.mjs --days 14        # resumes after the 1h cache TTL = full context rewrite
 ```
 
-## 2 · Rules adherence / outdated memory
+## Rules adherence / outdated memory
 
 > "Which of our rules get violated — and is that visible as rework?"
 
@@ -86,7 +86,7 @@ node $SI/prompt-style.mjs --days 30 --project <repo>
 node $SI/slash-goals.mjs --days 30
 ```
 
-## 3 · Monorepo: one CLAUDE.md or one per package?
+## Monorepo: one CLAUDE.md or one per package?
 
 > "Do agents even touch files in a way that triggers nested CLAUDE.md?"
 
@@ -106,20 +106,15 @@ $TOKT scan packages --glob "**/CLAUDE.md"
 Target: root = navigation + invariants (small); package files = local conventions,
 loaded on touch. Measure the split's effect with `waste.mjs` a week later.
 
-## 4 · Guidelines: copy into rules (double maintenance) vs. reference (tokens)?
-
-> "What would our coding guidelines cost as a rule vs. as a skill?"
+> "What would guideline text cost as a rule vs. as a skill?"
 
 ```bash
 $TOKT count --file docs/coding-guidelines.md
-$TOKT audit docs/coding-guidelines.md
 $TOKT skill .claude/skills/coding-guidelines    # Tier 0 = paid EVERY turn; body only on invoke
 ```
-Keep Tier 0 under ~100 tokens — that is the "middle way". Verify adherence with an A/B:
-plant a violation, run `claude -p` twice (rule vs skill), judge via `$TOKT result` /
-`$TOKT cost`.
+Keep Tier 0 under ~100 tokens — the body is paid only when triggered.
 
-## 5 · Shared skills across repos / marketplace
+## Skills across repos
 
 > "Which of our skills ever fire? Which are dead weight?"
 
@@ -135,7 +130,7 @@ node $SI/skill-genesis.mjs --days 14
 node $SI/tool-friction.mjs --days 30         # repeated command chains = skills nobody wrote yet
 ```
 
-## 6 · Subagents — when, how many, did they deliver?
+## Subagents
 
 > "What did our subagent fan-outs cost, and did they deliver?"
 
@@ -153,49 +148,30 @@ read-heavy — the subagent's 200k of reads dies with it. Not for sequential edi
 fleet capacity --field recommended           # claude-pick/fleet; live.mjs shows who runs now
 ```
 
-## 7 · TDD with the agent
+## Friction: where do sessions lose time?
 
-> "Does test output flood the context? What does test generation cost?"
+> "Does test/build output flood the context?"
 
 ```bash
 node $SI/context-spikes.mjs --days 30 --project <repo>   # test-runner walls as a class
-node $SI/waste.mjs --days 30 --project <repo>            # Write/Edit bucket
 ```
-Change: failures-only test script; rule "run the single file, not the suite".
+Change: failures-only test script; rule "run the single file, not the suite" —
+re-measure the following week.
 
-> "Do the AI-written tests actually check anything?"
-
-Fresh session, cheap mutation proxy:
-```bash
-claude -p "Mutate the implementation in <file> in 3 plausible ways; report which existing tests fail for each. If none fail, name the test tautological." --output-format json > mut.json
-$TOKT result mut.json; $TOKT cost mut.json
-```
-
-> "Which tests should the gold-standard skill point at?" — `read-patterns.mjs`: the test
-files agents keep reading as examples are the de-facto reference; make them explicit.
-
-## 8 · PR automation / where does the time go?
-
-> "What does an AI review run cost, and does it catch what we need?"
-
-Plant one bug, run two models/prompts, compare hit-rate × cost via
-`claude -p … --output-format json` + `$TOKT result` / `$TOKT cost`.
-
-> "Where in ticket → PR does the team's time go?"
+> "Which tools/commands fail most? What friction repeats around commit/PR?"
 
 ```bash
-node $SI/incidents.mjs --days 30 --project <repo>
 node $SI/tool-failures.mjs --days 30         # build? lint? test? git?
-node $SI/tool-friction.mjs --days 30
+node $SI/tool-friction.mjs --days 30         # repeated command chains
+node $SI/incidents.mjs --days 30             # retry loops, rework, corrections per session
 ```
 Failing calls around build/test/lint are pure friction — fix the tooling once
 (`make check`, lint autofix hook) instead of every session rediscovering it.
 
-## 9 · Where is AI used / not used / losing time?
+## Where is AI used / not used?
 
 ```bash
 node $SI/quota-report.mjs                    # this week: when, how much, which projects
 node $SI/slash-goals.mjs --days 30           # what it was asked to do
-node $SI/incidents.mjs --days 30             # highest-friction sessions → deep-dive 2–3
 ```
 Repos you commit to that show no sessions = the "not used, but could be" list.
