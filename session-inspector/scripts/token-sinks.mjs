@@ -34,9 +34,11 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { claudeProjectDirs } from "./lib/config.mjs";
+import { padTail } from "./lib/chunk-kind.mjs";
 
 // ── pricing ────────────────────────────────────────────────────────────────
-// $/1M tokens. cacheRead = 0.1x input, cacheWrite (5m) = 1.25x input.
+// $/1M tokens. cacheRead = 0.1x input. cacheWrite: 1.25x for a 5-minute cache, 2x for the
+// 1-hour cache Claude Code uses — the transcript says which (usage.cache_creation.ephemeral_*).
 const PRICING = [
   { match: /opus/, in: 5, out: 25 },
   { match: /sonnet/, in: 3, out: 15 },
@@ -51,16 +53,18 @@ function costUsd(model, t) {
   return (
     (t.input * p.in +
       t.output * p.out +
-      t.cacheCreation * p.in * 1.25 +
+      t.cacheCreation1h * p.in * 2 +
+      (t.cacheCreation - t.cacheCreation1h) * p.in * 1.25 +
       t.cacheRead * p.in * 0.1) /
     1_000_000
   );
 }
-const zeroTokens = () => ({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
+const zeroTokens = () => ({ input: 0, output: 0, cacheCreation: 0, cacheCreation1h: 0, cacheRead: 0 });
 function addTokens(a, b) {
   a.input += b.input;
   a.output += b.output;
   a.cacheCreation += b.cacheCreation;
+  a.cacheCreation1h += b.cacheCreation1h || 0;
   a.cacheRead += b.cacheRead;
 }
 const rawTotal = (t) => t.input + t.output + t.cacheCreation + t.cacheRead;
@@ -92,6 +96,7 @@ function parseClaude(path) {
       tokens.input += u.input_tokens || 0;
       tokens.output += u.output_tokens || 0;
       tokens.cacheCreation += u.cache_creation_input_tokens || 0;
+      tokens.cacheCreation1h += u.cache_creation?.ephemeral_1h_input_tokens || 0;
       tokens.cacheRead += u.cache_read_input_tokens || 0;
     }
   }
@@ -266,7 +271,7 @@ console.log("═".repeat(78));
 console.log(`TOKEN SINKS — last ${days}d · grouped by ${by} · sorted by ${sort} · provider=${provider}`);
 console.log("═".repeat(78));
 console.log(
-  `Sessions in window: ${totals.sessions}   ` +
+  `Sessions in window: ${totals.sessions} (${provider === "all" ? "Claude + Codex" : provider}, any length, transcript mtime within ${days}d)   ` +
   `Raw tokens: ${fmtTok(rawTotal(totals.tokens))}   ` +
   `Est. cost (claude): ${fmtUsd(totals.cost)}`,
 );
@@ -275,7 +280,7 @@ console.log(
   `cache-write ${fmtTok(totals.tokens.cacheCreation)} · cache-read ${fmtTok(totals.tokens.cacheRead)}`,
 );
 console.log("─".repeat(78));
-const keyW = by === "project" ? 40 : 22;
+const keyW = by === "project" ? 48 : 22;
 console.log(
   `${pad(by, keyW)} ${padL("cost", 9)} ${padL("out", 8)} ${padL("in", 8)} ` +
   `${padL("cWrite", 8)} ${padL("cRead", 9)} ${padL("sess", 5)}`,
@@ -285,13 +290,13 @@ for (const r of rows.slice(0, top)) {
   let label = r.key;
   if (by === "session") label = `${r.provider === "codex" ? "cx" : "cc"}:${r.key.split(":")[1]} ${(r.project.match(/ak-(\d+)/) || [, ""])[1] ? "#" + r.project.match(/ak-(\d+)/)[1] : ""}`.trim();
   console.log(
-    `${pad(label, keyW)} ${padL(fmtUsd(r.cost), 9)} ${padL(fmtTok(r.tokens.output), 8)} ` +
+    `${by === "project" ? padTail(label, keyW) : pad(label, keyW)} ${padL(fmtUsd(r.cost), 9)} ${padL(fmtTok(r.tokens.output), 8)} ` +
     `${padL(fmtTok(r.tokens.input), 8)} ${padL(fmtTok(r.tokens.cacheCreation), 8)} ` +
     `${padL(fmtTok(r.tokens.cacheRead), 9)} ${padL(r.sessions, 5)}`,
   );
 }
 console.log("═".repeat(78));
 console.log(
-  "Note: cost = est. USD from per-model pricing (cache-read ~0.1x, cache-write ~1.25x).\n" +
+  "Note: cost = est. USD from per-model pricing (cache-read 0.1x; cache-write 2x for 1h-cache turns, 1.25x otherwise).\n" +
   "      Codex sessions counted in raw tokens but not costed (different pricing).",
 );
