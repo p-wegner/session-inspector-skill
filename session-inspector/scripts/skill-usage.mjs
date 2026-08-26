@@ -212,8 +212,8 @@ function gitRoot(cwd) {
 function primaryPath(paths) {
   return [...paths].sort((a, b) => (/\bworktrees\b/i.test(a) - /\bworktrees\b/i.test(b)) || a.length - b.length)[0];
 }
-// Locate tokt.js: explicit $TOKT_BIN, then the token-budget skill junctioned as a
-// sibling of this skill, then the known repo / user-profile locations.
+// Locate tokt.js: explicit $TOKT_BIN, then the token-budget skill that ships in this
+// repo (../../token-budget), then a junctioned sibling, then user-profile locations.
 let _toktBin;
 function toktBin() {
   if (_toktBin !== undefined) return _toktBin;
@@ -221,6 +221,7 @@ function toktBin() {
   const skillsDir = dirname(dirname(here));                       // .../skills
   const cands = [
     process.env.TOKT_BIN,
+    join(dirname(here), "..", "token-budget", "bin", "tokt.js"),   // sibling skill in this repo
     join(skillsDir, "token-budget", "bin", "tokt.js"),
     join(HOME, ".claude", "skills", "token-budget", "bin", "tokt.js"),
     "C:/projects/andrena/token-budget/bin/tokt.js",

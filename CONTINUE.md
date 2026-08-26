@@ -1,6 +1,23 @@
 # CONTINUE — claude-session-tools
 
-Repo-wide pick-up notes; so far they concern `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
+Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
+`token-budget/`, `spawn-session/`.
+
+## token-budget (merged 2026-08-26)
+
+Brought in with `git subtree add --prefix=token-budget` from the GitHub remote (the
+local checkout `C:\projectsndrena	oken-budget` was a *shallow* clone and could not
+serve as a subtree source — "did not send all necessary objects"). Verified: `node
+token-budget/test/run.js` → 12 checks passed after `npm install`; all five profiles'
+`skills	oken-budget` junctions repointed here and `tokt.js count` resolves through
+them. `skill-usage.mjs` gained the in-repo sibling path as its second candidate
+(after `$TOKT_BIN`). Open: the GitHub repo `p-wegner/token-budget` still exists
+unchanged — decide whether to archive it with a pointer README; the old local
+folder carries a `MOVED.md` and can be deleted once nothing holds it open.
+
+## spawn-session
+
+The rest of this file concerns `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
 skills** in the session-inspector repo (`spawn-session/` beside
 `session-inspector/`, neither nested in the other), which does
 have a GitHub remote — so keep anything genuinely machine-specific out of here,

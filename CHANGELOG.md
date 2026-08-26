@@ -2,6 +2,18 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-26 — token-budget ships in this repo, as a third sibling
+
+The `token-budget` skill (`tokt`: token counting, CLAUDE.md/skill bloat audit,
+exact `claude -p` run cost, per-subagent session cost) was a separate repo
+(github.com/p-wegner/token-budget). It now lives at `token-budget/` here, history
+preserved via `git subtree`, so **one clone** gives you inspector + budget —
+workshop participants do not have to install two repos. Junction/symlink it as a
+third skill (`skills/token-budget`) and run `npm install` inside it once.
+`session-inspector/scripts/skill-usage.mjs --cost` now finds the sibling `tokt.js`
+relative to the repo, no junction needed. The old repo stays on GitHub as an
+archive; new work happens here.
+
 ## 2026-08-23 — spawn-session uses the standard skill layout
 
 `spawn-session/` now has `SKILL.md`, `README.md` and the entry point `spawn.cmd`
