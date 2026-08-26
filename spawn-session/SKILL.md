@@ -28,7 +28,7 @@ the repo root. Do the same rather than pasting an absolute path.
 
 Layout: `spawn.cmd` is the only entry point at the skill root; everything it calls
 (`spawn-session.ps1`, `batch.mjs`, `preflight.mjs`, `make-handoff.mjs`, `ledger.mjs`,
-`trust-folder.mjs`, `wait-for-agent.mjs`, `write-text.mjs`) lives in `scripts/`.
+`trust-folder.mjs`, `wait-for-agent.mjs`, `write-text.mjs`, `stage-launch.mjs`) lives in `scripts/`.
 Never run those directly — go through `spawn.cmd`.
 
 | | |
@@ -82,9 +82,16 @@ perfectly-quoted *prompt* containing a semicolon is torn in half too. Measured w
 building the handoff mode: the default handoff prompt said "reachable over ACP; the brief
 says how", and wt failed with `0x80070002` trying to start a program called
 `" the brief says how." -ProfileDir 5x_4 ...`. Escaping the one character would leave the
-class open, so **prompt text never travels on the wt command line** — `write-text.mjs`
-stages it to a file passed as `-PromptFile`. A path contains nothing wt reinterprets, and
-semicolons, quotes, ampersands, newlines and non-ASCII all ride inside the file untouched.
+class open, so since 2026-08-27 **nothing but two file paths travels on the wt command
+line at all**: `write-text.mjs` stages the prompt to a file, `stage-launch.mjs` stages
+*every* launch parameter (prompt file, profile, session id, resume id, mode flags,
+forwarded args) into one JSON file, and the tab runs
+`spawn-session.ps1 -ArgsFile <json>`. A path contains nothing wt reinterprets;
+semicolons, quotes, ampersands, newlines and non-ASCII all ride inside the files
+untouched. (Individually-passed arguments had a second measured failure: an empty
+`-Foo ""` loses its quotes crossing the layers, so the .ps1 ate the next switch as its
+value — and on 2026-08-25 seeded handoff sessions came up never having taken their
+first turn, prompt and profile lost in the chain.)
 
 **2. `$ErrorActionPreference = 'Stop'` is wrong for a launcher.** Under `Stop`, PS 5.1 turns
 any line a native command writes to **stderr** into a *terminating* ErrorRecord. That killed

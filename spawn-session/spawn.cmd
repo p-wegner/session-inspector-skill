@@ -298,22 +298,28 @@ if not defined PROMPTFILE (
 )
 :noprompt
 
-rem Build the optional arguments ONLY when they have a value. An empty `-Foo ""` loses
-rem its quotes crossing cmd -> wt -> PowerShell, so the launcher receives a bare `-Foo`
-rem followed by the NEXT switch and dies with "Missing an argument for parameter" - the
-rem tab then sits at a PowerShell prompt with claude never started. Measured: `-b`
-rem (no prompt file) broke all four spawns this way, and `-n` could not catch it because
-rem a dry run exits before this line.
-set "PFARG="
-set "RESARG="
-set "PROFARG="
-set "SIDARG="
-set "LCDARG="
-if defined PROMPTFILE set "PFARG=-PromptFile "%PROMPTFILE%""
-if defined RESUMEID set "RESARG=-ResumeId "%RESUMEID%""
-if defined INHERIT set "PROFARG=-ProfileDir "%INHERIT%""
-if defined CLAUDE_CODE_SESSION_ID set "SIDARG=-SessionId "%CLAUDE_CODE_SESSION_ID%""
-if defined CLAUDE_CONFIG_DIR set "LCDARG=-LaunchConfigDir "%CLAUDE_CONFIG_DIR%""
+rem Stage EVERYTHING the launcher needs into ONE json file and hand wt only its
+rem path. Individual `-Foo "bar"` arguments used to cross cmd -> wt -> PowerShell,
+rem and that chain has two measured failure modes: wt re-splits on ';' after cmd
+rem quoting is satisfied, and an empty `-Foo ""` loses its quotes so the .ps1 eats
+rem the NEXT switch as its value ("Missing an argument for parameter", tab stuck at
+rem a PowerShell prompt). On 2026-08-25 seeded handoff sessions came up without ever
+rem taking their first turn - prompt and profile lost in that chain - and the fix
+rem was hand-rolling a launcher where nothing crosses wt. This IS that launcher,
+rem institutionalized: a file path is inert to every layer. cmd -> node below is a
+rem single plain CreateProcess hop with none of wt's re-parsing.
+set "STAGEFLAGS="
+if defined BARE set "STAGEFLAGS=%STAGEFLAGS% --no-prompt"
+if defined SAFE set "STAGEFLAGS=%STAGEFLAGS% --safe"
+if defined DETECT set "STAGEFLAGS=%STAGEFLAGS% --detect"
+if defined NOTRUST set "STAGEFLAGS=%STAGEFLAGS% --no-trust"
+set "ARGSFILE="
+for /f "usebackq delims=" %%A in (`node "%ROOT%stage-launch.mjs" --path "%DEST%" --prompt-file "%PROMPTFILE%" --profile-dir "%INHERIT%" --session-id "%CLAUDE_CODE_SESSION_ID%" --launch-config-dir "%CLAUDE_CONFIG_DIR%" --resume-id "%RESUMEID%" %STAGEFLAGS% -- %FWD%`) do set "ARGSFILE=%%A"
+if not defined ARGSFILE (
+  echo [spawn] could not stage the launch args - aborting rather than spawning a
+  echo         session with silently missing parameters.
+  exit /b 1
+)
 
 rem The dry run lives HERE, after the arguments are assembled - not before. It used to
 rem print a summary built from variables that were still empty, so it reported a launch
@@ -330,12 +336,14 @@ if defined DRY (
   echo   safe    : %SAFE%
   echo   handoff : %HANDOFF%   wait: %WAIT%   notrust: %NOTRUST%
   echo   forward : %FWD%
-  echo   prompt  : %MSG%
+  rem Quoted: an unquoted & or ; in the prompt is executed by cmd mid-echo.
+  echo   prompt  : "%MSG%"
   echo   via-file: staged at spawn time to keep wt away from any semicolon
   echo   resume  : %RESUMEID%
   echo   force   : %FORCE%
   echo   from    : %SRCSID%
-  echo   ps-args : %PFARG% %RESARG% %PROFARG% %SIDARG% %LCDARG% %BARE% %SAFE% %NOTRUST% %FWD%
+  echo   args    : staged in %ARGSFILE% - the ONLY thing crossing wt:
+  type "%ARGSFILE%"
   exit /b 0
 )
 
@@ -358,8 +366,7 @@ if defined WAIT node "%ROOT%wait-for-agent.mjs" --snapshot "%BASE%" --cwd "%DEST
 
 wt.exe %WINARG% -d "%DEST%" --title "claude %LEAF%" ^
   powershell -NoLogo -NoExit -ExecutionPolicy Bypass -File "%ROOT%spawn-session.ps1" ^
-  -Path "%DEST%" %PFARG% %PROFARG% %SIDARG% %LCDARG% ^
-  %BARE% %SAFE% %DETECT% %NOTRUST% %FWD%
+  -ArgsFile "%ARGSFILE%"
 
 if errorlevel 1 (
   echo [spawn] wt.exe failed. Is Windows Terminal installed and on PATH?

@@ -87,9 +87,12 @@ use `-mf <file>`. This is not a style preference — a long `-m` cannot reliably
 "plus" kann syntaktisch an dieser Stelle nicht verarbeitet werden.
 ```
 
-The launcher already refuses to put prompt text on the `wt.exe` command line (see
-[The environment leak it handles](#the-environment-leak-it-handles) and `write-text.mjs`)
-because Windows Terminal splits on `;` *after* quoting is satisfied. `-mf` closes
+The launcher refuses to put prompt text — or since 2026-08-27 *any* launch parameter —
+on the `wt.exe` command line (see
+[The environment leak it handles](#the-environment-leak-it-handles), `write-text.mjs`
+and `stage-launch.mjs`; the tab receives only `-ArgsFile <json>`)
+because Windows Terminal splits on `;` *after* quoting is satisfied and empty `-Foo ""`
+arguments lose their quotes crossing the layers. `-mf` closes
 the same class one level up, at the caller. `-m -` reads the prompt from stdin and
 fails loudly if stdin is empty, rather than seeding a blank session.
 

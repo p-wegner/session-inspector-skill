@@ -3,6 +3,34 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-08-27 — spawn-session: nothing crosses wt as an argument (-ArgsFile)
+
+Root-caused the stray `spawn-session/Userspwegner…ps1` files (now deleted): on
+2026-08-25 session `4994dc81` hand-rolled self-contained handoff launchers because
+`spawn.cmd -handoff`'s seeded sessions came up without ever taking their first turn —
+prompt/profile lost crossing cmd → wt.exe → PowerShell. Its second attempt (`node -e`
+inside bash double quotes) lost one more backslash-unescaping level than expected, so
+`C:\Users\…\launch-acp.ps1` became the drive-relative `C:Users…` and landed in the repo
+cwd; the third attempt (Write tool) produced the correct files in
+`~/.spawn-session/handoffs/`. Lesson: never generate Windows-path file content via
+`node -e` in bash double quotes.
+
+Fix, institutionalizing the session's workaround design: new `scripts/stage-launch.mjs`
+stages EVERY launch parameter (prompt file, profile, session id, launch config dir,
+resume id, noPrompt/safe/detect/noTrust, forwarded args) into one JSON file;
+`spawn.cmd` passes only `-ArgsFile <json>` to `spawn-session.ps1`, which loads it first
+(named params still win for direct callers). Also fixed on the way: the old wt line
+never passed `-ResumeId` at all (`-resume` silently dropped the id), and the dry-run
+`echo %MSG%` executed `&` inside prompts. stage-launch refuses flag-shaped values
+because PS 5.1 drops empty `""` native args.
+
+Verified: `stage-launch.mjs` with empty/hostile args → correct JSON;
+`spawn-session.ps1 -ArgsFile … -DetectOnly` end-to-end (semicolon+backslash prompt
+intact, short profile `5x_4` resolved, forward args carried); `spawn.cmd -n` dry runs
+for seeded / `-b` / `-resume` all stage the right JSON. NOT yet verified with a real
+tab+claude launch — next real spawn/handoff is the live test; watch that the seeded
+first turn actually runs.
+
 ## 2026-08-26 — fleet cost tools: shared chunk-kind lib + 1h-cache pricing
 
 Continuation of the usage-limit-cut session 9e5bbf50 ("fix the session tool findings").
