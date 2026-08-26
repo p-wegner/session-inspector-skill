@@ -20,9 +20,13 @@ folder carries a `MOVED.md` and can be deleted once nothing holds it open.
 - `SKILL.md` is an index (~1.6k tok, `tokt skill session-inspector`); the former body is
   split verbatim into eight new `references/*.md`. Verified: `tokt skill` tiers, the
   four `scripts/test/*.test.mjs`, and a live `context-spikes --project agentic-kanban`
-  run with the new classes. **Not yet done:** the moved reference prose still says
-  "below"/"above" in places where it now refers to a different file — harmless, but
-  worth a pass; and `fleet-tools.md` (8k) could itself be split per tool.
+  run with the new classes. Cross-file "above/below" references were fixed and
+  `fleet-tools.md` split into `fleet-cost.md`, `fleet-friction.md`,
+  `fleet-skills-and-prompts.md`, `fleet-quota.md` (resumable prose moved to
+  `resume-and-handoff.md`); `fleet-tools.md` is now the full command list + a pointer table.
+  Verified: `tokt skill .` reports no orphan reference and every script/flag named in
+  the pre-split SKILL.md (`git show 46fde1a:session-inspector/SKILL.md`) appears in the
+  new skill + references.
 - agentic-kanban's committed `.claude/skills/session-inspector` is gone (kanban commit
   `4ef871ebd7`); a gitignored junction points here. Board-only `scripts/session-rank.mjs`
   / `output-style.mjs` stay in kanban — candidates to port here if wanted.

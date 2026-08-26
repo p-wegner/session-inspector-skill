@@ -15,7 +15,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 
 | Question | Tool | Depth |
 |---|---|---|
-| **One session** — what happened, was it cut off, first/last ask, signals | `analyze-claude-session.mjs <id\|path\|--latest>` (`-codex-`/`-copilot-` siblings) | [single-session](references/single-session.md) |
+| **One session** — what happened, was it cut off, first/last ask, signals | `analyze-claude-session.mjs <id\|path\|--latest>`, `analyze-codex-session.mjs`, `analyze-copilot-session.mjs` | [single-session](references/single-session.md) |
 | …the timeline / just the failures | `… --events [--type err] [--grep x] [--around <seq>]` | same |
 | …the most painful moments, ranked | `… --friction` | same |
 | …what it left RUNNING on the machine (bg jobs, monitors, scratchpad) | `… --handoff` — **run first when continuing a cut-off session** | same |
@@ -26,27 +26,28 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | **Who is running right now** | `live.mjs [--watch]` | [live-and-capacity](references/live-and-capacity.md) |
 | **How many subagents can I spawn** | `fleet capacity --field recommended` / `fleet gate --count N` (`claude-pick/fleet/fleet.cmd`) | same |
 | **What to pick up next** (repos × CONTINUE.md × live × quota) → spawn plan | `continuations.mjs [--plan plan.json]` → human approves → `spawn-session -batch` | [continuations](references/continuations.md) |
-| **Fleet shape** — turns/context/fail distributions, outliers, `--by stack\|project\|model` | `fleet-stats.mjs` | [fleet-tools](references/fleet-tools.md), [fleet-inspection](references/fleet-inspection.md) |
-| What cost the most (billing total) | `token-sinks.mjs [--by project\|day\|model\|session]` | fleet-tools |
-| Where context tokens go + what is avoidable (re-reads, dup output, node_modules) | `waste.mjs` | fleet-tools |
-| The single injections that bloated context + WHY + fix | `context-spikes.mjs [--by class\|tool\|file]` | fleet-tools |
-| Context growth curve, auto-compacts, >200k tax | `context-growth.mjs [--session id]` | fleet-tools |
-| Cost of idle/resume (cache expired) | `cold-cache.mjs` | fleet-tools |
-| Which tools fail most | `tool-failures.mjs [--by tool\|project\|error]` | fleet-tools |
-| Which sessions are worth learning from (friction rank) | `incidents.mjs [--lens general\|visual\|image]` | fleet-tools |
-| Recurring command chains → tooling to build | `tool-friction.mjs` | fleet-tools, [tooling-improvement](references/tooling-improvement.md) |
-| Which skills never fire (+ their always-on token tax) | `skill-usage.mjs [--project x] [--repo-only] [--cost]` | fleet-tools |
-| How skills got created/improved | `skill-genesis.mjs` | fleet-tools |
-| How agents read files; does nested CLAUDE.md ever load | `read-patterns.mjs` | fleet-tools |
-| What humans typed / how they prompt / slash & skill usage | `user-prompts.mjs`, `prompt-style.mjs`, `slash-goals.mjs` | fleet-tools |
-| Are hooks the bottleneck (latency, zero tokens) | `hook-cost.mjs [--by command\|event]` | fleet-tools |
-| Subscription quota this week / all profiles / a calendar month | `quota-report.mjs --profile p [--html f]`, `quota-multi.mjs`, `quota-month.mjs --month YYYY-MM` | fleet-tools |
+| **Fleet shape** — turns/context/fail distributions, outliers, `--by stack\|project\|model` | `fleet-stats.mjs` | [fleet-friction](references/fleet-friction.md), [fleet-inspection](references/fleet-inspection.md) |
+| What cost the most (billing total) | `token-sinks.mjs [--by project\|day\|model\|session]` | [fleet-cost](references/fleet-cost.md) |
+| Where context tokens go + what is avoidable (re-reads, dup output, node_modules) | `waste.mjs` | fleet-cost |
+| The single injections that bloated context + WHY + fix (skill-inject, compaction, huge-file, …) | `context-spikes.mjs [--by class\|tool\|file]` | fleet-cost |
+| Context growth curve, auto-compacts, >200k tax | `context-growth.mjs [--session id]` | fleet-cost |
+| Cost of idle/resume (cache expired) | `cold-cache.mjs` | fleet-cost |
+| Which tools fail most | `tool-failures.mjs [--by tool\|project\|error]` | fleet-friction |
+| Which sessions are worth learning from (friction rank) | `incidents.mjs [--lens general\|visual\|image]` | fleet-friction |
+| Recurring command chains → tooling to build | `tool-friction.mjs` | fleet-friction, [tooling-improvement](references/tooling-improvement.md) |
+| Which skills never fire (+ their always-on token tax) | `skill-usage.mjs [--project x] [--repo-only] [--cost]` | [fleet-skills-and-prompts](references/fleet-skills-and-prompts.md) |
+| How skills got created/improved | `skill-genesis.mjs` | fleet-skills-and-prompts |
+| How agents read files; does nested CLAUDE.md ever load | `read-patterns.mjs` | fleet-skills-and-prompts |
+| What humans typed / how they prompt / slash & skill usage | `user-prompts.mjs`, `prompt-style.mjs`, `slash-goals.mjs` | fleet-skills-and-prompts |
+| Are hooks the bottleneck (latency, zero tokens) | `hook-cost.mjs [--by command\|event]` | fleet-friction |
+| Subscription quota this week / all profiles / a calendar month | `quota-report.mjs --profile p [--html f]`, `quota-multi.mjs`, `quota-month.mjs --month YYYY-MM` | [fleet-quota](references/fleet-quota.md) |
 | Sessions from other machines / pooled corpora | `sync-server.mjs`, `sync-push.mjs`, `sync-query.mjs`, `session-bundle.mjs`, `hub-service.mjs` | [sync-and-bundles](references/sync-and-bundles.md), [session-sync](references/session-sync.md), [hub-service](references/hub-service.md) |
 | Custom parsing the analyzers don't cover | manual recipes | [claude](references/claude-recipes.md) · [codex](references/codex-recipes.md) · [copilot](references/copilot-recipes.md) |
 
 **Cost-optimization loop:** `token-sinks` (what) → `context-growth` (shape) → `cold-cache`
 (timing fix) + `context-spikes`/`waste` (representation fix). Don't headline cache-read as
-a finding — it is cache-dominated by construction; report what varies.
+a finding — it is cache-dominated by construction; report what varies. Full fleet command
+list with every flag: [fleet-tools](references/fleet-tools.md).
 
 ## Rules that are easy to get wrong
 

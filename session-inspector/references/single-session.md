@@ -40,7 +40,7 @@ cut off there and is resumable. `hitLimit` is the weak any-mention flag (banner 
 not `endedOnLimit`. Rank/branch on `endedOnLimit`; treat `hitLimit` as a hint only.
 
 **Find & resume a cut-off session in one command** — for the recurring "I got rate-limited,
-continue that session" case, don't hand-scan: `node scripts/resumable.mjs` (below) ranks every
+continue that session" case, don't hand-scan: `node scripts/resumable.mjs` (`resume-and-handoff.md`) ranks every
 cut-off session across all profile homes and prints the exact profile-aware `claude --resume`
 command.
 
@@ -150,7 +150,7 @@ Resolves a bare session id (or id *prefix*) / a two-part locator in either order
 (`sessionId/projectDir` or `projectDir/sessionId` — Claude's own on-disk layout,
 where the id half is the **full** uuid because that is the transcript filename) /
 an **ACP agent name** (`projectSlug--sid8`, which is what the status line now
-shows — see below) / a path, across all profile homes, same as the analyzers
+shows — see `statusline.md`) / a path, across all profile homes, same as the analyzers
 (`--profile`/`--config-dir` to prefer one). The folder half is a tiebreak, never a
 filter, so a shortened or stale folder can't hide a valid id.
 
