@@ -36,7 +36,7 @@ Never run those directly — go through `spawn.cmd`.
 | `spawn` | code-metrics-skill, seeded to continue its own `CONTINUE.md` work |
 | `spawn code-metrics` | the same, named |
 | `spawn agentic-kanban -m "fix the flaky base-branch test"` | a specific task |
-| `spawn C:\projects\some-client\pulse` | any path |
+| `spawn C:\projects\some-client\app` | any path |
 | `-b` | bare — no seed prompt, just an empty session in that repo |
 | `-W` | a new **window** instead of a tab |
 | `-p 5x_4` | a specific Claude profile. Short names work: `5x_4`, `team5x_4`, `team_5x_4` all find `.claude-andrena_team_5x_4` |

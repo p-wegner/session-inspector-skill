@@ -46,7 +46,7 @@ Requires Windows Terminal (`wt.exe`) and `claude` on `PATH`.
 spawn                                  code-metrics-skill, seeded to continue its work
 spawn code-metrics                     the same, named
 spawn agentic-kanban -m "fix the flaky test"
-spawn C:\projects\some-client\pulse     any path
+spawn C:\projects\some-client\app      any path
 spawn code-metrics -b                  bare - no seed prompt
 spawn code-metrics -W                  a new WINDOW instead of a tab
 spawn code-metrics -p 5x_4             a specific profile (short names work)
