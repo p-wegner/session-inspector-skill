@@ -48,7 +48,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, statSync, readdirSync } from "fs";
 import { join, resolve, basename } from "path";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 import { createHash } from "crypto";
 import { discover, extractMeta, projectIdentity, readFile, resolveSessionId } from "./lib/sessions.mjs";
 import { serverUrl, deviceName, userName, flag } from "./lib/config.mjs";
@@ -64,9 +64,24 @@ const SCHEMA_VERSION = 1;
  * names, customer and employee references verbatim, with no redaction anywhere
  * in the pipeline. Matched against project, projectKey and cwd — excluded by
  * default, and only `--include-denied` (a deliberate act) overrides it.
- * Extend per-invocation with --deny, or persistently via SESSION_BUNDLE_DENY.
+ *
+ * The persistent list lives OUTSIDE the repo in ~/.session-inspector/bundle-deny.txt
+ * (one regex per line, # comments) — client names must not appear in this public
+ * source. Extend per-invocation with --deny, or via SESSION_BUNDLE_DENY.
  */
-const BUILTIN_DENY = [/some-client/i];
+const BUILTIN_DENY = [];
+function localDenyPatterns() {
+  const out = [];
+  try {
+    const f = join(homedir(), ".session-inspector", "bundle-deny.txt");
+    for (const ln of readFileSync(f, "utf-8").split("\n")) {
+      const t = ln.trim();
+      if (!t || t.startsWith("#")) continue;
+      try { out.push(new RegExp(t, "i")); } catch { console.error(`✗ bundle-deny.txt: invalid regex skipped: ${t}`); }
+    }
+  } catch { /* no local deny file — nothing persistent to add */ }
+  return out;
+}
 
 const safe = (s) => String(s || "").replace(/[^A-Za-z0-9._-]/g, "_");
 const isDir = (p) => { try { return statSync(p).isDirectory(); } catch { return false; } };
@@ -85,7 +100,7 @@ function denyPatterns() {
     try { compiled.push(new RegExp(p, "i")); }
     catch { console.error(`✗ --deny ${p}: not a valid regex`); process.exit(1); }
   }
-  return [...BUILTIN_DENY, ...compiled];
+  return [...BUILTIN_DENY, ...localDenyPatterns(), ...compiled];
 }
 
 function isDenied(rec, patterns) {
