@@ -49,7 +49,9 @@ node scripts/session-bundle.mjs import alice.zip --as-user alice          # merg
   same bundle is a no-op (content-hash dedup).
 - **Sensitive projects are withheld by default.** Transcripts are raw and
   unredacted, so export drops sessions whose project/cwd matches a deny pattern
-  (client work under NDA) and reports what it dropped. `--deny <regex>` /
+  (client work under NDA) and reports what it dropped. The persistent list lives in
+  `~/.session-inspector/bundle-deny.txt` (one regex per line, # comments) — outside
+  the repo, so client names never appear in this source. `--deny <regex>` /
   `SESSION_BUNDLE_DENY` extend it; `--include-denied` overrides deliberately.
   The manifest records only the *count* withheld, never the project names.
 - Filters mirror the query API: `--profile --provider --project --device --user
