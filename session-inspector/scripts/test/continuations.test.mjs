@@ -175,3 +175,86 @@ test("a slash/skill invocation counts as human-driven", () => {
   assert.equal(p.kind, "skill");
   assert.equal(p.humanDriven, true);
 });
+
+// ── pass recency ────────────────────────────────────────────────────────────
+// The failure this guards against, measured 2026-08-27: agentic-kanban's
+// CONTINUE.md had grown to 2279 lines (the convention archives past ~600), so it
+// carried two contradictory pictures at once. Line 6 was a 2026-08-25 pass headed
+// "#807 done"; line 930, inside the 2026-08-23/24 pass, still read "Operator:
+// decide the push. It unblocks #834 and #807" — and the parser, being positional,
+// surfaced the second one as the repo's top next step. It was proposed to a human
+// and written into a handoff brief before another session caught it.
+test("an item from a superseded pass is marked stale, a current one is not", () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "CONTINUE.md"), [
+    "# Continue",
+    "",
+    "## #807 done: coverage CI placement decided (2026-08-25)",
+    "",
+    "### Next steps",
+    "1. Re-run the coverage job once the runner frees up.",
+    "",
+    "## Session 2026-08-23/24 (night): driving the open tickets",
+    "",
+    "### Next steps",
+    "1. **Operator: decide the push.** It unblocks #834 and #807 together.",
+  ].join("\n"));
+  const d = parseContinueDoc(join(dir, "CONTINUE.md"));
+  assert.equal(d.newestPassDate, "2026-08-25");
+  const fresh = d.open.find((i) => /Re-run the coverage job/.test(i.text));
+  const stale = d.open.find((i) => /decide the push/.test(i.text));
+  assert.equal(fresh.stale, false, "the newest pass's item must not be stale");
+  assert.equal(stale.stale, true, "an older pass's item must be flagged");
+  // The date lives on the level-2 pass, not on the "### Next steps" it sits under.
+  assert.equal(stale.passDate, "2026-08-23");
+});
+
+test("an undated standing section is never stale", () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "CONTINUE.md"), [
+    "# Continue",
+    "## 2026-08-26 — a dated pass",
+    "### Next steps",
+    "1. Something from the dated pass.",
+    "## Next steps",           // the convention's standing section: no date, still live
+    "1. Something standing.",
+  ].join("\n"));
+  const d = parseContinueDoc(join(dir, "CONTINUE.md"));
+  const standing = d.open.find((i) => /Something standing/.test(i.text));
+  assert.equal(standing.stale, false);
+  assert.equal(standing.passDate, null);
+});
+
+test("readRepoDocs orders fresh items before stale ones and warns about the doc", () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "CONTINUE.md"), [
+    "# Continue",
+    "## 2026-08-20 — an old pass",
+    "### Next steps",
+    "1. Stale item.",
+    "## 2026-08-26 — the newest pass",
+    "### Next steps",
+    "1. Fresh item.",
+    // pad past the convention's ~600-line archive trigger
+    ...Array(620).fill("filler line, not an item"),
+  ].join("\n"));
+  const docs = readRepoDocs(dir);
+  assert.match(docs.open[0].text, /Fresh item/, "the current pass must be shown first");
+  assert.match(docs.open[1].text, /Stale item/);
+  assert.equal(docs.warnings.length, 1);
+  assert.match(docs.warnings[0], /CONTINUE\.md is \d+ lines/);
+  assert.match(docs.warnings[0], /1 of 2 open item\(s\) come from passes older than 2026-08-26/);
+});
+
+test("a well-archived doc produces no warning and no stale items", () => {
+  const dir = tmp();
+  writeFileSync(join(dir, "CONTINUE.md"), [
+    "# Continue",
+    "## 2026-08-26 — the only pass",
+    "### Next steps",
+    "1. Do the thing.",
+  ].join("\n"));
+  const docs = readRepoDocs(dir);
+  assert.deepEqual(docs.warnings, []);
+  assert.equal(docs.open.filter((i) => i.stale).length, 0);
+});
