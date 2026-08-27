@@ -81,6 +81,12 @@ open, what git says is unpushed or dirty) × the present (which repos already ha
 a live session, which account has quota headroom) — and ranks the result with the
 reasoning shown.
 
+It reads those docs with the convention's own archiving in mind. A `CONTINUE.md`
+that has outgrown the ~600-line archive trigger holds two contradictory pictures at
+once, so items from a pass older than the file's newest dated one are marked
+`⚠stale`, sorted last and scored down, and the doc itself is flagged — demoted
+rather than dropped, since a newer pass does not always restate what it replaced.
+
 Nothing launches on its own. It writes a **plan** in which every candidate is
 `approved: false`, and [spawn-session](https://github.com/p-wegner/spawn-session)
 launches **only** approved entries. That is the human gate: it can be answered,
@@ -381,4 +387,4 @@ harnesses share one implementation.
 
 [MIT](LICENSE)
 
-_Docs last synced with the code at `4a41d31` (2026-08-27)._
+_Docs last synced with the code at `26cc5a9` (2026-08-27)._

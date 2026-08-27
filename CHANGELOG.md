@@ -2,6 +2,19 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-27 — a stale CONTINUE.md pass no longer sets the agenda
+
+**`continuations.mjs` can tell a superseded pass from a current one.** It ranked a repo
+top partly on three tickets that had closed four days earlier: that repo's `CONTINUE.md`
+had grown to 2279 lines, past the ~600-line archive trigger, so it still carried the old
+pass alongside the new one — and the old line was the one proposed as the next step.
+Items from a pass older than the file's newest dated pass are now marked `⚠stale`, shown
+after current ones, scored down, and flagged in the seed message a spawned session
+receives. Docs past ~600 lines get a `⚠ DOCS` warning naming the length and how many
+items predate the newest pass. Stale items are demoted, never hidden — a newer pass does
+not always restate what it replaced. Undated standing sections ("What is true today",
+"Next steps") are never stale, so a well-kept file is unaffected.
+
 ## 2026-08-27 — reread-causes; truer cost numbers; launches that can't lose their prompt
 
 **New tool `reread-causes.mjs`**: answers "are file re-reads avoidable, and does the
