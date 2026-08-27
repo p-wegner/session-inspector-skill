@@ -3,6 +3,44 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-08-27 — continuations.mjs: a superseded CONTINUE.md pass no longer sets the agenda
+
+`continuations.mjs` ranked `agentic-kanban` #1 partly on work that had been done four
+days earlier. Its `CONTINUE.md` had reached **2279 lines** against the convention's
+~600-line archive trigger, so it carried two pictures at once: line 6 was a 2026-08-25
+pass headed "#807 done", line 930 (in the 2026-08-23/24 pass) still read *"Operator:
+decide the push. It unblocks #834 and #807 together."* The parser is positional, so the
+stale line became the proposed top next step, reached a human, and was written into a
+handoff brief before the live agentic-kanban session caught that #807/#831/#834 all
+closed on 2026-08-26.
+
+`lib/repo.mjs` now dates each level-2 pass (any `YYYY-MM-DD` in the heading, latest
+wins) and marks an item from an older-than-newest pass `stale`. Stale items sort last,
+print `⚠stale`, score ~1 instead of 3 (capped at 2), and the seed message tells the
+spawned session to verify them. Docs past ~600 lines get a `⚠ DOCS` warning naming the
+length and the stale count; `readRepoDocs` returns `warnings[]` and the plan JSON
+carries `docWarnings`. **Demoted, never dropped** — a superseding pass does not always
+restate what it replaced, so deletion could lose real work.
+
+Undated headings are deliberately never stale: the convention's standing sections
+("What is true today", "Next steps") carry no date and stay live.
+
+**Verified**: 16/16 in `scripts/test/continuations.test.mjs`, 4 of them new and written
+against this case. Against the real pre-archive file (`agentic-kanban@63b673855d^`,
+2279 lines, 36 passes): 5 of 9 open items flagged stale, including the exact
+"Operator: decide the push" line, `passDate` 2026-08-23 vs newest 2026-08-26. Against
+`slidesmith/CONTINUE.md` (2770 lines, 28 dated passes): 0 stale — all five open items
+are in an undated standing section — and the length warning still fires, which is the
+intended split.
+
+**Not verified**: the separate-cap scoring change is reasoned, not measured against a
+real all-stale repo — none was in the corpus. On the case that prompted this, the score
+barely moves (12+2 vs a saturated 15), because 4 of its 9 items were genuinely open; the
+ordering and labelling are what actually fix that case, not the score.
+
+**Found along the way, not acted on**: `slidesmith` (CONTINUE 2770 / BACKLOG 814 lines)
+is past the archive trigger too. That is slidesmith's own housekeeping, not this repo's.
+
 ## 2026-08-27 — reread-causes.mjs: re-reads are mostly justified
 
 New `session-inspector/scripts/reread-causes.mjs` classifies file re-reads by cause

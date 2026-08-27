@@ -29,6 +29,44 @@ git state (unpushed, dirty) × the present (a live session in that checkout, quo
 headroom per profile). Every score term appends its own reason, so the ranking is
 readable rather than trusted.
 
+### A CONTINUE.md can hold two contradictory pictures at once
+
+The convention writes passes newest-first and archives older ones out past ~600
+lines. When that archive pass is overdue the file keeps *both* pictures, and a
+positional read cannot tell them apart.
+
+Measured 2026-08-27 on `agentic-kanban`, whose `CONTINUE.md` had reached **2279
+lines**: line 6 was a 2026-08-25 pass headed "#807 done", while line 930 — inside
+the 2026-08-23/24 pass — still read *"Operator: decide the push. It unblocks #834
+and #807 together."* The tool surfaced the second as the repo's top next step. It
+reached a human and a handoff brief before another session caught that #807, #831
+and #834 had all closed on 2026-08-26.
+
+So each level-2 pass is dated (from any `YYYY-MM-DD` in its heading), and an item
+from a pass older than the newest dated one is **stale**:
+
+- it sorts **after** current items, so it is not what gets quoted or seeded;
+- it is scored at ~1 point instead of 3, capped at 2 total — a repo whose open
+  items are *all* superseded scores 2, not 15;
+- it is printed `⚠stale`, and the seed message tells the spawned session to verify
+  it is still open;
+- the doc itself gets a `⚠ DOCS` line naming the length and how many items predate
+  the newest pass.
+
+**Stale items are demoted, never dropped.** A superseding pass does not always
+restate what it replaced, so deleting a stale-looking item can lose real work — the
+same asymmetry that makes the parser report anything ambiguous as open. A false
+positive costs a glance; a false negative loses the work.
+
+Undated headings are **not** stale: the convention's standing sections ("What is
+true today", "Next steps", "Blocked") carry no date and stay live no matter how old
+the dated passes below them are. Verified against `slidesmith`, where all five open
+items sit in an undated standing section under 28 dated passes and none are flagged.
+
+The `⚠ DOCS` warning fires on length alone, so it also catches a doc whose passes
+carry no dates at all — where staleness is undetectable and the length is the only
+honest signal available.
+
 Two exclusions, both always reported, never silent:
 - **a session is already live there** → not a candidate (spawning a second agent
   into one checkout is how cross-author commits happen). `--include-live` overrides.

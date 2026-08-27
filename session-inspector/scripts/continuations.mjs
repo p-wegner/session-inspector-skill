@@ -261,10 +261,22 @@ for (const [root, sess] of byRoot) {
   let score = 0;
   const why = [], conflicts = [];
 
+  // Items from a superseded pass score at a third of a fresh one. They are still
+  // counted — a newer pass does not always restate what it replaced — but they
+  // cannot carry a repo to the top of the list on their own, which is exactly
+  // what happened when agentic-kanban ranked #1 partly on three closed tickets.
+  const freshCont = openCont.filter((i) => !i.stale);
+  const staleCont = openCont.filter((i) => i.stale);
   if (openCont.length) {
-    const pts = Math.min(15, openCont.length * 3);
-    score += pts;
-    why.push(`${openCont.length} open item(s) in CONTINUE.md`);
+    // Capped SEPARATELY. A shared cap would swallow the demotion whole: measured on
+    // the 2279-line agentic-kanban file, 4 fresh + 5 stale items and 9 fresh items
+    // both saturate a min(15, n*3), so the stale ones would have cost nothing. What
+    // this separation actually buys is the pathological case — a repo whose open
+    // items are ALL superseded now scores 2, not 15.
+    score += Math.min(15, freshCont.length * 3) + Math.min(2, staleCont.length);
+    why.push(staleCont.length
+      ? `${freshCont.length} current open item(s) in CONTINUE.md (+${staleCont.length} from superseded pass(es), scored low)`
+      : `${openCont.length} open item(s) in CONTINUE.md`);
   }
   if (openBack.length) {
     score += Math.min(6, openBack.length * 2);
@@ -302,6 +314,7 @@ for (const [root, sess] of byRoot) {
 
   candidates.push({
     key: basename(root), target: root, score, why, conflicts, substance,
+    docWarnings: docs.warnings || [],
     sessions: sess, docs, git, liveHere, openCont, openBack, orphanCutoffs, salvaged, newest,
   });
 }
@@ -380,7 +393,12 @@ function seedMessage(c) {
   if (items.length) {
     lines.push("");
     lines.push("Open items the repo's own docs list:");
-    items.forEach((i, n) => lines.push(`${n + 1}. [${i.doc}] ${i.text}`));
+    items.forEach((i, n) => lines.push(`${n + 1}. [${i.doc}]${i.stale ? " (from a SUPERSEDED pass — verify it is still open)" : ""} ${i.text}`));
+  }
+  if (c.docWarnings.length) {
+    lines.push("");
+    lines.push(`Treat those items as a lead, not as fact: ${c.docWarnings.join("; ")}.`
+      + " Check the newest pass at the top of the file, and the tracker, before acting on anything listed above.");
   }
   if (c.orphanCutoffs.length) {
     const o = c.orphanCutoffs[0];
@@ -414,7 +432,9 @@ function summaryLines(c, rank) {
   L.push(`    why      ${c.why[0] || "recent activity"}`);
   for (const w of c.why.slice(1, 4)) L.push(`             ${w}`);
   const items = [...c.openCont, ...c.openBack].slice(0, 3);
-  items.forEach((i, n) => L.push(`    open ${n + 1}   [${i.doc}] ${clip(i.text, 84)}`));
+  items.forEach((i, n) => L.push(`    open ${n + 1}   [${i.doc}]${i.stale ? " ⚠stale" : ""} ${clip(i.text, 84)}`));
+  // Printed before the evidence line: it changes how the items above should be read.
+  for (const w of c.docWarnings.slice(0, 2)) L.push(`    ⚠ DOCS   ${w}`);
   if (c.newest) {
     L.push(`    last ask "${clip(c.newest.lastHuman || c.newest.goal, 84)}"`);
     L.push(`    evidence ${c.newest.sessionId.slice(0, 8)} · ${localTime(c.newest.endTime)} · ${c.newest.turns} turns · ended ${c.newest.ending} · ${c.newest.prov.label}`);
@@ -454,6 +474,7 @@ const planCandidates = shortlist.map((c, i) => ({
   summary: summaryLines(c, i + 1),
   why: c.why,
   conflicts: c.conflicts,
+  docWarnings: c.docWarnings,
   openItems: [...c.openCont, ...c.openBack].slice(0, 6),
   git: c.git,
   evidence: c.sessions.slice(0, 3).map((s) => ({
