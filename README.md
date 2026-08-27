@@ -381,4 +381,4 @@ harnesses share one implementation.
 
 [MIT](LICENSE)
 
-_Docs last synced with the code at `64aca90` (2026-08-26)._
+_Docs last synced with the code at `4a41d31` (2026-08-27)._

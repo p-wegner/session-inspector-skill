@@ -2,6 +2,47 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-08-27 — reread-causes; truer cost numbers; launches that can't lose their prompt
+
+**New tool `reread-causes.mjs`**: answers "are file re-reads avoidable, and does the
+agent re-read after every edit?" — instead of charging every 2nd+ read as waste, it
+splits re-reads by cause: after an own edit, after a compaction, pagination (a new
+range/view of a known file), or genuine same-view duplication. Measured on a real
+3-day fleet: ~83% of re-read tokens were pagination and only ~1% true duplicates; the
+agent re-read after just ~6% of edits. `waste.mjs` now labels its dup-read figure an
+upper bound and points here.
+
+**Cost estimates got more honest**: `token-sinks.mjs` and `quota-report.mjs` price
+cache-writes at 2× for the 1-hour cache Claude Code actually uses (read from the
+transcript's `cache_creation.ephemeral_1h` field), 1.25× otherwise — totals rise
+accordingly. Report headers now state exactly which sessions are counted (provider,
+minimum turns, mtime window), and long project names keep their identifying tail
+instead of being cut mid-name.
+
+**spawn-session launches are self-contained**: every launch parameter (seed prompt
+file, profile, session id, resume id, mode flags) is staged into one JSON file and the
+new tab receives only its path — nothing else crosses the cmd → Windows Terminal →
+PowerShell chain, which had measurably lost prompts and profiles (seeded handoff
+sessions arriving without ever taking their first turn). Also fixed on the way:
+`-resume` silently dropped the session id (it was never passed to the tab), and a `&`
+in a prompt broke the `-n` dry-run display.
+
+**New reference `example-prompts.md`**: the recurring team questions about context and
+sessions ("where did tokens go", "are re-reads avoidable", "are rules followed",
+monorepo CLAUDE.md split, dead skills, subagent ROI, recurring friction) as
+ready-to-ask prompts — each with the command to run and what to read off.
+
+**Bundle privacy**: `session-bundle`'s persistent deny list moved out of the source
+into `~/.session-inspector/bundle-deny.txt` (one regex per line), so protected project
+names never appear in this public repo. `--deny` and `SESSION_BUNDLE_DENY` work as
+before. Note: the repo's git history was rewritten on 2026-08-27 to scrub a client
+name from old blobs — re-clone rather than pull if you have an old checkout.
+
+**Fixes**: `context-growth --session <id>` answers in seconds instead of reading the
+whole corpus; `context-spikes`/`waste` share one classifier for harness-injected
+content (skill bodies, compaction summaries, handoff briefs), so both report the same
+classes.
+
 ## 2026-08-26 — session-inspector SKILL.md shrunk 12×; context-spikes classifies harness injections
 
 `session-inspector/SKILL.md` went from **19,871 to ~1,600 tokens** (its always-on
