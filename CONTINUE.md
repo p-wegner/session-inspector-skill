@@ -3,6 +3,30 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-08-30 — continuations.mjs: tiered recency scoring + `--since-restart`
+
+Recency was one flat "+10 if <48h" bucket, the same bonus at 2h and at 47h. Peter's
+ask: after a device restart he wants to resume the last things he was doing even when
+they have no CONTINUE.md/BACKLOG.md content yet. Two changes in
+`scripts/continuations.mjs`:
+
+- Recency is now tiered: +25 (<6h), +18 (<12h), +10 (<48h), +5 (<7d). A repo in the
+  <12h tier also counts as having "substance" on its own, so the thin-work gate no
+  longer hides it just because the docs haven't caught up.
+- New `--since-restart` flag: sets the scan window to `os.uptime()`-derived boot time,
+  turns on the thin-work bypass implicitly, and sorts the shortlist by recency alone
+  instead of by score — "resume what I was last doing", not "resume the most-documented
+  thing that's also recent".
+
+**Verified**: existing 16/16 `scripts/test/continuations.test.mjs` still pass (no test
+added for the new scoring/flag — reasoned and manually run against the live fleet
+corpus, not unit-tested). `--json` output still parses; `--since-restart` on the live
+corpus correctly windowed to boot time and sorted by `newest.endTime` descending.
+
+**Not verified**: no dedicated regression test for the new tiers or `--since-restart`
+in `continuations.test.mjs` — worth adding before the next scoring change touches this
+file blind.
+
 ## 2026-08-27 — continuations.mjs: a superseded CONTINUE.md pass no longer sets the agenda
 
 `continuations.mjs` ranked `agentic-kanban` #1 partly on work that had been done four

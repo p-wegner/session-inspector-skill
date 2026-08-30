@@ -21,6 +21,10 @@
  *   node scripts/continuations.mjs --days 14 --top 8
  *   node scripts/continuations.mjs --project kanban     # substring on repo path/name
  *   node scripts/continuations.mjs --all-provenance     # include board/monitor agent sessions
+ *   node scripts/continuations.mjs --since-restart      # "what was I doing right before this
+ *                                                        #  reboot" — window = since last boot
+ *                                                        #  (os.uptime()), sorted by recency
+ *                                                        #  alone, docs-substance gate skipped
  *   node scripts/continuations.mjs --json
  *
  *   # the human gate — nothing spawns until a person picks:
@@ -40,6 +44,7 @@
 import { readFileSync, existsSync } from "fs";
 import { basename, dirname } from "path";
 import { execFileSync } from "child_process";
+import os from "os";
 import { discover } from "./lib/sessions.mjs";
 import { parseClaude } from "./lib/parse.mjs";
 import { classifyProvenance } from "./lib/provenance.mjs";
@@ -61,7 +66,8 @@ const asJson = has("--json");
 const minSize = parseInt(opt("--min-size", "50000"), 10);
 const minTurns = parseInt(opt("--min-turns", "8"), 10);
 const includeLive = has("--include-live");
-const includeThin = has("--include-thin");
+let includeThin = has("--include-thin");
+const sinceRestart = has("--since-restart");
 const planPath = opt("--plan", "");
 const reviewPath = opt("--review", "");
 const approvePath = opt("--approve", "");
@@ -69,7 +75,15 @@ const pickArg = opt("--pick", "");
 const profileFilter = (opt("--profiles", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const nowMs = Date.now();
-const windowStartMs = days > 0 ? nowMs - days * 86400000 : 0;
+// `os.uptime()` is seconds since the machine last booted — cross-platform, no
+// shell-out needed. "--since-restart" is the "I just rebooted, what was I doing
+// right before" case: it isn't served by CONTINUE.md/BACKLOG.md content (a
+// session may have been mid-thought with nothing written down yet), so it
+// bypasses the docs-substance gate entirely and sorts by recency instead of
+// score — see below, after candidates are built.
+const bootMs = nowMs - os.uptime() * 1000;
+const windowStartMs = sinceRestart ? bootMs : (days > 0 ? nowMs - days * 86400000 : 0);
+if (sinceRestart) includeThin = true;
 
 // ── plan file ────────────────────────────────────────────────────────────────
 // Schema, validation, the launcher path and the gate itself live in
@@ -291,8 +305,16 @@ for (const [root, sess] of byRoot) {
     score -= 25;
     why.push(`its cut-off session${salvaged.length > 1 ? "s were" : " was"} already ${salvaged[0].successorLabel}`);
   }
+  // Tiered rather than one flat "fresh" bucket. A repo worked on in the last
+  // few hours (the classic "machine just restarted, what was I mid-thought on"
+  // case) needs to outrank one that merely has more CONTINUE.md bullet points —
+  // recency was previously capped at +10, the same as a repo worked on 47h ago,
+  // which made it too cheap to beat a well-documented but week-old repo.
   const hAge = (nowMs - new Date(newest.endTime || 0).getTime()) / 3600000;
-  if (hAge < 48) { score += 10; why.push(`worked ${ageStr(newest.endTime)} — context is fresh`); }
+  const veryFresh = hAge < 12;
+  if (hAge < 6) { score += 25; why.push(`worked ${ageStr(newest.endTime)} — very fresh`); }
+  else if (veryFresh) { score += 18; why.push(`worked ${ageStr(newest.endTime)} — fresh`); }
+  else if (hAge < 48) { score += 10; why.push(`worked ${ageStr(newest.endTime)} — context is fresh`); }
   else if (hAge < 168) { score += 5; why.push(`last worked ${ageStr(newest.endTime)}`); }
   if (git.ahead > 0) { score += 6; why.push(`${git.ahead} unpushed commit(s)`); }
   if (git.dirty > 0) { score += 4; why.push(`${git.dirty} uncommitted file(s)`); }
@@ -309,17 +331,29 @@ for (const [root, sess] of byRoot) {
   // Evidence that there is OPEN WORK, as opposed to merely recent work. Without
   // this gate a repo someone touched yesterday and finished outranks a repo with
   // six documented open items, because recency is cheap to earn.
+  //
+  // Exception: a repo worked on in the last 12h counts as having substance even
+  // with a clean tree and no docs items. A session cut short by a restart (or
+  // just ended mid-thought) may not have written anything down yet — the whole
+  // point of "what was I just doing" is that CONTINUE.md hasn't caught up.
   const substance = openCont.length + openBack.length + orphanCutoffs.length
-    + (git.dirty > 0 ? 1 : 0) + (git.ahead > 0 ? 1 : 0);
+    + (git.dirty > 0 ? 1 : 0) + (git.ahead > 0 ? 1 : 0) + (veryFresh ? 1 : 0);
 
   candidates.push({
-    key: basename(root), target: root, score, why, conflicts, substance,
+    key: basename(root), target: root, score, why, conflicts, substance, veryFresh,
     docWarnings: docs.warnings || [],
     sessions: sess, docs, git, liveHere, openCont, openBack, orphanCutoffs, salvaged, newest,
   });
 }
 
-candidates.sort((a, b) => b.score - a.score);
+// --since-restart is explicitly "resume what I was last doing", not "resume the
+// most-documented work" — sort purely by how recently it was touched, ignoring
+// how much CONTINUE.md/BACKLOG.md content it happens to carry.
+if (sinceRestart) {
+  candidates.sort((a, b) => new Date(b.newest?.endTime || 0) - new Date(a.newest?.endTime || 0));
+} else {
+  candidates.sort((a, b) => b.score - a.score);
+}
 
 // Two exclusions, both reported rather than silent — a filtered-out candidate a
 // human cannot see is indistinguishable from one the tool never found.
@@ -522,7 +556,9 @@ if (asJson) {
 }
 
 console.log("═".repeat(74));
-console.log(`CONTINUATION CANDIDATES  —  ${candidates.length} repo(s) from ${scanned.length} session(s), last ${days} day(s)`);
+console.log(sinceRestart
+  ? `CONTINUATION CANDIDATES  —  ${candidates.length} repo(s) from ${scanned.length} session(s), since last boot (${ageStr(new Date(bootMs).toISOString())}), sorted by recency`
+  : `CONTINUATION CANDIDATES  —  ${candidates.length} repo(s) from ${scanned.length} session(s), last ${days} day(s)`);
 console.log("═".repeat(74));
 if (!candidates.length) {
   console.log("\nNothing found. Try --days 30, drop --project, or --all-provenance to include agent sessions.");

@@ -19,6 +19,7 @@ node scripts/continuations.mjs                      # ranked shortlist + why, pe
 node scripts/continuations.mjs --days 14 --top 8
 node scripts/continuations.mjs --project kanban      # one repo
 node scripts/continuations.mjs --profiles 5x,5x_2,5x_3,5x_4   # accounts to spread across
+node scripts/continuations.mjs --since-restart       # "what was I doing right before this reboot"
 node scripts/continuations.mjs --json
 ```
 
@@ -72,7 +73,41 @@ Two exclusions, both always reported, never silent:
   into one checkout is how cross-author commits happen). `--include-live` overrides.
 - **recent but no open work** (no doc items, clean tree, nothing cut off) → recency
   alone is cheap to earn and should not outrank six documented open items.
-  `--include-thin` overrides.
+  `--include-thin` overrides — and a repo touched in the last 12h is automatically
+  exempt from this gate (see below): a session ended by a restart, or just ended
+  mid-thought, may not have written anything to CONTINUE.md yet.
+
+### Recency scoring is tiered, and the freshest tier bypasses the docs gate
+
+Recency was originally one flat "+10 if <48h" bucket — the same bonus for a repo
+worked on 2h ago and one worked on 47h ago. That made it too cheap to beat a
+well-documented but week-old repo, which is wrong for the "I just rebooted, what
+was I mid-thought on" case. It is now tiered:
+
+| last worked | score |
+|---|---|
+| < 6h | +25 |
+| < 12h | +18 |
+| < 48h | +10 |
+| < 7d | +5 |
+
+A repo in the **< 12h** tier also counts as having "substance" on its own — it is
+never filtered out by the thin-work gate even with a clean tree and an empty
+CONTINUE.md, because the whole point of that case is that the docs haven't caught
+up yet.
+
+### `--since-restart` — "what was I doing right before this reboot"
+
+```powershell
+node scripts/continuations.mjs --since-restart
+```
+
+Sets the scan window to the machine's own boot time (`os.uptime()` — no shell-out,
+cross-platform), turns `--include-thin` on implicitly, and **sorts by recency
+alone instead of by score** — the intent is "resume the last things touched", not
+"resume the most-documented thing that also happens to be recent". Everything
+else (live-session exclusion, profile assignment, `--plan`/`--review`/`--approve`
+gate) works exactly as in the default mode.
 
 ### The human gate
 
