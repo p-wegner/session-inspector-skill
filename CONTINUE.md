@@ -3,6 +3,43 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-08 — token-budget: Opus 5 priced, plus two defects found next to it
+
+`tokt session` printed `$0.00000?` for every Opus 5 transcript: `src/pricing.js` had no
+`opus-5` entry, so token counts were exact but cost was unavailable. Added at $5/$25 per
+MTok. Verifying that rate against the claude-api skill (its model table +
+`shared/models.md` + `shared/prompt-caching.md`) turned up two more:
+
+- **Sonnet 5 was billed at $3/$15**, sharing one `/sonnet-4|sonnet-5/` pattern with
+  Sonnet 4.6. Sonnet 5 is **$2/$10**; 4.6 is the $3/$15 one. Now two patterns, specific
+  first.
+- **Fast mode was unpriced.** It is a genuine premium tier — $10/$50, and only on Opus 5
+  and Opus 4.8 — the transcript records it at `usage.speed`, and `costForUsage` already
+  received that record. So a `/fast` session was silently costed at half. Read from
+  `usage.speed`; no caller change.
+
+Also gave Fable/Mythos 5.1 their 0.025x cache-read multiplier (a quarter of the usual
+0.1x) rather than the flat rate.
+
+**A 1M-context window is not a premium tier** — Opus 5's 1M window is its default *and*
+maximum at standard pricing — so a `claude-opus-5[1m]`-style id needs no separate rate.
+Written into the header comment because the bracketed suffix invites the opposite guess.
+
+**Verified**: the new `test/run.js` check **fails against the old `pricing.js` and passes
+against the new one** (confirmed by stashing the change), so it is a real regression
+guard, not a test that has never failed. All 13 checks pass. Totals hand-checked against
+the arithmetic per 1M of each token class: opus-5 standard 36.75, fast 73.50, 1h-TTL
+write 40.50, fable-5-1 72.75. End to end, session `25cbd200` now reports **$21.9636**
+instead of `$0.00000?`.
+
+**Tried and rejected**: handling `usage.service_tier` (batch traffic bills at 50%). Every
+record in the sampled transcripts is `standard`, and interactive Claude Code sessions
+never batch — so it would be untestable code guarding a case this tool cannot see.
+
+**Known, not ours**: `node --test test/` fails — `test/run.js` is a standalone script with
+its own runner, not a `node:test` file, so the harness finds no tests. Fails identically
+with our change stashed. Left alone; `node test/run.js` is the suite that actually runs.
+
 ## 2026-08-30 — continuations.mjs: tiered recency scoring + `--since-restart`
 
 Recency was one flat "+10 if <48h" bucket, the same bonus at 2h and at 47h. Peter's

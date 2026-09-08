@@ -7,7 +7,7 @@ const { scan } = require('../src/scan');
 const { audit } = require('../src/audit');
 const { analyzeSkill, parseFrontmatter } = require('../src/skill');
 const { parseEnvelope, normalizeEnvelope } = require('../src/claude-run');
-const { costForUsage, ratesFor } = require('../src/pricing');
+const { costForUsage, ratesFor, cacheReadMultFor } = require('../src/pricing');
 
 let pass = 0;
 function ok(name, fn) { try { fn(); console.log('  ✓', name); pass++; } catch (e) { console.error('  ✗', name, '\n   ', e.message); process.exitCode = 1; } }
@@ -123,6 +123,35 @@ ok('pricing: known models priced, unknown returns null', () => {
   const c = costForUsage('claude-haiku-4-5-20251001', { output_tokens: 1_000_000 });
   assert.strictEqual(c, 5, 'haiku output = $5/1M');
   assert.strictEqual(costForUsage('mystery-model', { output_tokens: 100 }), null, 'unknown => null');
+});
+
+ok('pricing: opus-5, fast mode, and the sonnet-5/4.6 split', () => {
+  // Opus 5 at Opus 4.8's rate. A 1M-context id is NOT a premium tier, so the
+  // bracketed-suffix form must resolve to the same $5/$25.
+  assert.deepStrictEqual(ratesFor('claude-opus-5'), [5, 25], 'opus-5 = $5/$25');
+  assert.deepStrictEqual(ratesFor('claude-opus-5[1m]'), [5, 25], '1M context is not a premium tier');
+
+  // Fast mode IS a premium tier, and only on Opus 5 / 4.8.
+  assert.deepStrictEqual(ratesFor('claude-opus-5', 'fast'), [10, 50], 'opus-5 fast = $10/$50');
+  assert.deepStrictEqual(ratesFor('claude-opus-4-8', 'fast'), [10, 50], 'opus-4.8 fast = $10/$50');
+  assert.deepStrictEqual(ratesFor('claude-opus-4-7', 'fast'), [5, 25], 'no fast mode on 4.7');
+  assert.deepStrictEqual(ratesFor('claude-sonnet-5', 'fast'), [2, 10], 'no fast mode on sonnet');
+
+  // Sonnet 5 and Sonnet 4.6 price differently - regressing them behind one
+  // pattern is the bug this guards.
+  assert.deepStrictEqual(ratesFor('claude-sonnet-5'), [2, 10], 'sonnet-5 = $2/$10');
+  assert.deepStrictEqual(ratesFor('claude-sonnet-4-6'), [3, 15], 'sonnet-4.6 = $3/$15');
+
+  // speed rides in on the usage record, as it does in a real transcript.
+  const u = { input_tokens: 1e6, output_tokens: 1e6, cache_read_input_tokens: 1e6, cache_creation_input_tokens: 1e6 };
+  assert.strictEqual(costForUsage('claude-opus-5', u), 36.75, '5 + 25 + 0.5 read + 6.25 write(5m)');
+  assert.strictEqual(costForUsage('claude-opus-5', { ...u, speed: 'fast' }), 73.5, 'fast doubles per-token rates');
+  assert.strictEqual(costForUsage('claude-opus-5', { ...u, speed: 'standard' }), 36.75, 'standard == unset');
+
+  // Fable/Mythos 5.1 read cache at a quarter of the usual 0.1x.
+  assert.strictEqual(cacheReadMultFor('claude-fable-5-1'), 0.025, 'fable-5.1 cache read 0.025x');
+  assert.strictEqual(cacheReadMultFor('claude-opus-5'), 0.1, 'everyone else 0.1x');
+  assert.strictEqual(costForUsage('claude-fable-5-1', u), 72.75, '10 + 50 + 0.25 read + 12.5 write');
 });
 
 console.log(`\n${pass} checks passed`);
