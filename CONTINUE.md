@@ -3,6 +3,42 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-15 (3) — a session can be handed to the OTHER agent
+
+**New tool: `session-inspector/scripts/brief.mjs`** — a harness-neutral handoff brief, written to
+be read by a different agent than the one that produced it (claude → codex, codex → claude). The
+judgement is in `scripts/lib/brief.mjs` and tested; the script resolves the session and does the IO.
+
+Why it is not a resume: a session id cannot cross harnesses. `claude --resume <id> --fork-session`
+and `codex fork <id>` both hand an id back to the tool that owns the transcript, and the two stores
+are different formats in different trees.
+
+**The rule it never breaks: it does not upgrade a claim.** A committed tracking file's record is
+evidence, printed with its source; what the session said about itself is an assertion, printed under
+"unverified". The token budget trims anchors, machine-state detail and the quoted last message —
+never the evidence.
+
+**Four defects found and fixed during the build, each invisible to reading the output:**
+1. the vocabulary table rewrote a term inside a backticked flag name, inventing a flag. Code spans
+   are now held out of the translation, and the two generic entries ("skill", "hook") were dropped.
+2. anchors listed the previous session's temp scratchpad — a tree the receiver has no reason to
+   trust and the OS may have cleared. Anchors are now repo-relative and temp paths are dropped.
+3. the Goal section came out EMPTY for a seeded codex run, which is exactly the kind of session a
+   handoff is about: its prompts arrive as `response_item/message` role `user`, and `parseCodex`
+   reads only `event_msg/user_message`. Measured on a board-monitor run: 17 of the former, zero of
+   the latter. `codexHumanPrompts` recovers them and skips the injected envelopes.
+4. a `CONTINUE.md` with nothing itemisable rendered an empty section, which reads as "nothing is
+   open". It now says so explicitly.
+
+**Verified.** `node --test session-inspector/scripts/test/*.test.mjs` → **87 passed** (14 new), and
+both directions were run live through the hotkey in `claude-pick`: the receiving codex session read
+the brief, said the goal was not self-contained, said it was treating the unverified section as
+unverified, and ran `git status` before touching anything. That behaviour — not "it continued" — is
+the check.
+
+**Not verified.** The copilot direction. `--for copilot` is accepted and neutral, but no copilot
+session was handed anything.
+
 ## 2026-09-15 (2) — correction: the portability pass broke four PowerShell recipes
 
 **`%USERPROFILE%` is cmd syntax and PowerShell does not expand it.** The pass above replaced one

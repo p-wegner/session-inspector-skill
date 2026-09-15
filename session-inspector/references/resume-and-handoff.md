@@ -40,6 +40,59 @@ trusting a $0.00 estimate.
 rather than the cut-off one. `-p auto` picks the account with the most headroom,
 which is the whole point — a handoff can go anywhere, a resume cannot.
 
+## Across harnesses: `brief.mjs` (claude ↔ codex)
+
+**A session id cannot cross harnesses, so neither can a resume.**
+`claude --resume <id> --fork-session` and `codex fork <id>` both hand an id back
+to the tool that owns the transcript, and the two stores are different formats in
+different trees. What crosses is a BRIEF: the key parts, written down, seeded into
+a fresh session of the other agent.
+
+```bash
+node scripts/brief.mjs <path|id-prefix>            # auto-detects the provider
+node scripts/brief.mjs --latest --provider codex   # newest codex session
+node scripts/brief.mjs <locator> --for claude      # target harness: vocabulary + instructions
+node scripts/brief.mjs <locator> --for codex --out b.md --seed-out s.txt
+node scripts/brief.mjs <locator> --json            # the same content, structured
+node scripts/brief.mjs <locator> --budget 3000     # trim harder (default 4500 tokens)
+```
+
+`--out` prints the path alone on stdout, so a launcher can capture it; the token
+count goes to stderr. `--seed-out` writes the one-line prompt that seeds the
+receiving session, which is a POINTER to the brief file and never the brief text:
+Windows Terminal splits its own command line on `;`, a Herdr pane re-parses what is
+typed into it, and a path has no `;`, no newline and no quote.
+
+**The rule the whole tool serves: it never upgrades a claim.** What a committed
+`CONTINUE.md` / `BACKLOG.md` records is EVIDENCE and is printed with its source
+named; what the session said about itself is an ASSERTION and is printed under
+"unverified". The two are never merged, and the token budget trims the recoverable
+sections (anchors, machine-state detail, the quoted last message) rather than the
+evidence. A `CONTINUE.md` written as prose, with nothing itemisable in it, makes the
+brief say so explicitly instead of leaving a blank section that reads as "nothing
+is open".
+
+Fixed sections: source + repo state (branch, dirty count, last commit) · goal ·
+what the tracking files record · do-not-redo · what the session asserts · anchors
+(repo-relative, never the previous session's temp scratchpad) · machine state left
+running (claude only — a codex session has no background tools, and the brief says
+that rather than implying nothing is running) · how to continue · what the brief
+does not contain.
+
+**The hotkey.** `claude-pick/herdr-handoff.ps1` is this wired to a gesture:
+Ctrl+Alt+X (or `prefix+shift+o` inside Herdr) reads the focused Herdr pane, works
+out which harness it is and which session, writes the brief, and opens the other
+agent in a pane beside it. Permissions are not carried across — a handoff that
+silently escalated would be a permission grant nobody asked for.
+
+**What "verified" means here**, and it is not "it continued": seed the other agent
+and have it state the next step AND the do-not-redo list before acting. Measured on
+2026-09-15, both directions: the receiving codex session read the brief, said the
+goal was not self-contained and that it was treating the unverified section as
+unverified, then ran `git status` and read the tracking files before touching
+anything. A receiving agent that misses a constraint means the brief is wrong, not
+the agent.
+
 ## Resume sessions after a crash / reboot / rate-limit
 
 When a batch of sessions dies at once (hard reboot, power loss) or a session is

@@ -22,6 +22,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | …its subagents' results (act on / re-inject, don't re-run) | `subagent-results.mjs <locator> [--unresolved] [--brief -o f.md]` | same |
 | **Edit** what a session says (redact, fix a prompt) | `session-edit.mjs extract … → edit → apply --quiet` | [session-edit](references/session-edit.md) — **read the confidentiality rules first** |
 | **Cut off by a limit — continue it** | `resumable.mjs` → recommends **handoff**, not resume | [resume-and-handoff](references/resume-and-handoff.md) |
+| **Hand it to the OTHER agent** (claude → codex, codex → claude) | `brief.mjs <locator> --for codex --out b.md --seed-out s.txt` | [resume-and-handoff](references/resume-and-handoff.md) |
 | Batch died (reboot/crash) | `session-resume.mjs --profile <p> --reboot` | same |
 | **Who is running right now** | `live.mjs [--watch]` | [live-and-capacity](references/live-and-capacity.md) |
 | **How many subagents can I spawn** | `fleet capacity --field recommended` / `fleet gate --count N` (`claude-pick/fleet/fleet.cmd`) | same |

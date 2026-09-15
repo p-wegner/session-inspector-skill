@@ -2,6 +2,30 @@
 
 User-visible changes, newest first. Updated sporadically on request, not per commit.
 
+## 2026-09-15 — hand a session to the other agent
+
+**`brief.mjs` writes a handoff brief that crosses harnesses.** A session id cannot: both
+`claude --resume <id> --fork-session` and `codex fork <id>` need the harness that owns the
+transcript. So the brief carries the key parts instead — goal, repo state, what the tracking
+files record, the do-not-redo list, what the session merely asserts, anchors, and what it left
+running — in fixed sections, inside a token budget, with every claim's source named.
+
+```bash
+node scripts/brief.mjs <path|id-prefix> --for codex --out b.md --seed-out s.txt
+```
+
+`--for claude|codex|any` sets the target's vocabulary and its "how to continue" block. `--out`
+prints the path alone, so a launcher can capture it. `--seed-out` writes the one-line prompt that
+seeds the receiving session — a pointer to the brief file, never the brief text, because prompt
+prose on a command line does not survive Windows Terminal or a Herdr pane.
+
+It never upgrades a claim: a tracking file's record is evidence and names its source, the session's
+own account is printed as unverified, and the budget trims the recoverable sections rather than the
+evidence. A codex session's prompts are recovered from the channel a seeded run actually uses, so
+the goal is no longer blank for exactly the sessions a handoff is about.
+
+The gesture that uses it is Ctrl+Alt+X in `claude-pick` (or `prefix+shift+o` inside Herdr).
+
 ## 2026-08-27 — a stale CONTINUE.md pass no longer sets the agenda
 
 **`continuations.mjs` can tell a superseded pass from a current one.** It ranked a repo
