@@ -159,7 +159,7 @@ layout — `spawnCmdPath()` resolves the launcher from the repo root and keeps
 fallbacks for both older layouts.
 
 The split had been costing something concrete: the launcher path was hardcoded as
-`C:\projects\org\spawn-session\spawn.cmd` in four places, and the
+`<clone-root>\spawn-session\spawn.cmd` in four places, and the
 spawn-plan schema existed as two copies in two repos that had to stay in
 agreement. Both are gone. `scripts/lib/spawn-plan.mjs` now owns the schema, its
 validation, the gate (`approvedEntries`), and `spawnCmdPath()`, which resolves the

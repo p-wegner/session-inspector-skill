@@ -16,8 +16,8 @@ rem   spawn code-metrics -p 5x_4   a specific Claude profile (short names work)
 rem   spawn code-metrics -safe     do not inherit this session's permission mode
 rem   spawn code-metrics -dsp      forward --dangerously-skip-permissions
 rem
-rem Target resolution, in order: an existing path, then C:\projects\org\<name>,
-rem then C:\projects\org\<name>-skill. That last hop is why `code-metrics`
+rem Target resolution, in order: an existing path, then <clone-root>\<name>, then
+rem <clone-root>\<name>-skill. That last hop is why `code-metrics`
 rem finds `code-metrics-skill`.
 rem
 rem The launching and the launched work are deliberately split: this file only
@@ -157,7 +157,7 @@ goto parse
 :usage
 echo spawn [target] [-m "prompt"] [-p profile] [-W] [-b] [-dsp] [extra claude args]
 echo.
-echo   target   path, or a name under C:\projects\org (with or without -skill).
+echo   target   path, or a name under the clone root (with or without -skill).
 echo            Default: code-metrics-skill.
 echo   -m       seed the first turn with this prompt ("-" reads it from stdin).
 echo   -mf      seed from a FILE - use this from a script or another agent.
@@ -193,12 +193,22 @@ if not defined TARGET set "TARGET=code-metrics"
 
 set "DEST="
 if exist "%TARGET%\" set "DEST=%TARGET%"
-if not defined DEST if exist "C:\projects\org\%TARGET%\" set "DEST=C:\projects\org\%TARGET%"
-if not defined DEST if exist "C:\projects\org\%TARGET%-skill\" set "DEST=C:\projects\org\%TARGET%-skill"
+rem The clone root - the folder holding this checkout and its sibling repos. Asked of
+rem repo-root.mjs rather than derived here, so cmd and the node scripts use ONE rule:
+rem `%~dp0` does not dereference a junction, and every skill dir here is junctioned into
+rem several Claude profiles. SPAWN_ROOT overrides it for a layout with no siblings.
+if not defined SPAWN_ROOT for /f "usebackq delims=" %%I in (`node "%ROOT%repo-root.mjs" --print`) do set "SPAWN_ROOT=%%I"
+rem ACP_JS is the same override the node helpers read, so one env var moves both.
+if defined ACP_JS set "ACPJS=%ACP_JS%"
+if not defined ACPJS set "ACPJS=%SPAWN_ROOT%\acp\acp.js"
+
+if not defined DEST if exist "%SPAWN_ROOT%\%TARGET%\" set "DEST=%SPAWN_ROOT%\%TARGET%"
+if not defined DEST if exist "%SPAWN_ROOT%\%TARGET%-skill\" set "DEST=%SPAWN_ROOT%\%TARGET%-skill"
 
 if not defined DEST (
   echo [spawn] cannot resolve target: %TARGET%
-  echo         tried the path itself, C:\projects\org\%TARGET%, and -skill.
+  echo         tried the path itself, %SPAWN_ROOT%\%TARGET%, and -skill.
+  echo         If that root is wrong, set SPAWN_ROOT to the folder holding your repos.
   exit /b 1
 )
 
@@ -388,7 +398,7 @@ if exist "%BASE%" del "%BASE%" >nul 2>&1
 if not defined NEWAGENT (
   echo [spawn] the new session could not be identified. It may still be starting.
   echo         Do NOT treat this as a completed handoff - check the tab, then run
-  echo         `node "C:/projects/org/acp/acp.js" list` yourself.
+  echo         `node "%ACPJS%" list` yourself.
   exit /b 2
 )
 
@@ -399,7 +409,7 @@ echo [spawn] HANDOFF RECEIPT
 echo   continued by : %NEWAGENT%
 echo   repo         : %DEST%
 if defined HOFILE echo   brief        : %HOFILE%
-echo   reach it     : node "C:/projects/org/acp/acp.js" send --to %NEWAGENT% --msg "..."
+echo   reach it     : node "%ACPJS%" send --to %NEWAGENT% --msg "..."
 echo.
 echo [spawn] The new session is live and addressable. This session's work is handed
 echo         over; it is safe to close once you have nothing else in flight.

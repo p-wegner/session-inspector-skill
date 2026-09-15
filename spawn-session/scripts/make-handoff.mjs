@@ -29,6 +29,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { acpJs } from "./repo-root.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n, d = null) => {
@@ -176,8 +177,8 @@ parts.push(``);
 parts.push(`It may still be open. Over the ACP bus:`);
 parts.push(``);
 parts.push("```");
-parts.push(`node "C:/projects/org/acp/acp.js" list`);
-parts.push(`node "C:/projects/org/acp/acp.js" send --to <its-name> --msg "..."`);
+parts.push(`node "${acpJs()}" list`);
+parts.push(`node "${acpJs()}" send --to <its-name> --msg "..."`);
 parts.push("```");
 parts.push(``);
 

@@ -22,6 +22,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { acpJs } from "./repo-root.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt = null) => {
@@ -29,7 +30,7 @@ const flag = (name, dflt = null) => {
   return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : dflt;
 };
 
-const ACP_JS = process.env.ACP_JS || "C:/projects/org/acp/acp.js";
+const ACP_JS = acpJs();
 const cwdArg = flag("--cwd", process.cwd());
 const timeoutSec = Number(flag("--timeout", "90")) || 90;
 

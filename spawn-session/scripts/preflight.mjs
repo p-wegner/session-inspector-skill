@@ -28,6 +28,7 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, statSync } from "
 import { join } from "path";
 import { homedir } from "os";
 import { execFileSync } from "child_process";
+import { fleetCmd } from "./repo-root.mjs";
 
 const argv = process.argv.slice(2);
 const has = (n) => argv.includes(n);
@@ -38,7 +39,7 @@ const target = opt("--target");
 const pickMode = has("--pick-profile");
 const exclude = opt("--exclude").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 
-const FLEET = "C:\\projects\\org\\claude-pick\\fleet\\fleet.cmd";
+const FLEET = fleetCmd();
 
 // ── profile homes ────────────────────────────────────────────────────────────
 // A sibling `~/.claude-*` dir is only an auth profile if it has a `projects` dir;

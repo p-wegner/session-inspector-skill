@@ -23,7 +23,7 @@ do not share skills, and there is no auto-propagation. Note the target is the
 root is junctioned separately, as the `session-inspector` skill):
 
 ```powershell
-$target = "C:\projects\org\claude-session-tools\spawn-session"
+$target = "<path to this checkout>\spawn-session"   # e.g. ..\claude-session-tools\spawn-session
 foreach ($p in (Get-ChildItem $env:USERPROFILE -Directory -Filter ".claude*")) {
   $link = Join-Path $p.FullName "skills\$(Split-Path $target -Leaf)"
   if (-not (Test-Path $link)) {
@@ -67,8 +67,8 @@ spawn code-metrics -force              skip the preflight refusals
 Anything unrecognised is forwarded to `claude` verbatim. `-h` / `--help` prints the
 same list.
 
-**Target resolution**, in order: an existing path → `C:\projects\org\<name>` →
-`C:\projects\org\<name>-skill`. That last hop is why `code-metrics` resolves to
+**Target resolution**, in order: an existing path → `<clone-root>\<name>` →
+`<clone-root>\<name>-skill`. That last hop is why `code-metrics` resolves to
 `code-metrics-skill`. An unresolvable target exits 1 and prints what it tried,
 rather than starting a session in an unintended directory.
 

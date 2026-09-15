@@ -3,6 +3,37 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-15 (5) — the clone root is derived, and the checkout names no machine
+
+**Zero occurrences of the employer's name in any tracked file**, down from 38 across 10. The
+working-tree half of the pass above, and it was a code change rather than a replacement: three
+absolute paths were load-bearing — `spawn.cmd` *resolved targets* under one, `preflight.mjs` ran
+`fleet.cmd` from another, `wait-for-agent.mjs` / `batch.mjs` / `make-handoff.mjs` shelled out to
+`acp.js` at a third.
+
+**New: `spawn-session/scripts/repo-root.mjs`.** One rule for all of them. The root is *derived* from
+this file's own location (`<root>/<checkout>/spawn-session/scripts`, so three levels up), not
+configured, so a fresh clone anywhere works with no setup. `SPAWN_ROOT`, `ACP_JS` and `FLEET_CMD`
+override it for a layout whose repos are not siblings.
+
+**`realpathSync` is the whole trick, and it was verified rather than assumed.** Every skill dir here
+is junctioned into several Claude profiles, so without it the root resolves to `~/.claude/skills`.
+`spawn.cmd` cannot do this in batch — `%~dp0` does not dereference a junction — so it asks
+`repo-root.mjs --print` instead of carrying a second rule that would drift.
+
+**Verified by running it, not by reading it:**
+- `spawn code-metrics -n` still resolves the `-skill` hop, invoked **both** by full path and through
+  the profile junction — the junction case is the one `%~dp0` would have got wrong;
+- `SPAWN_ROOT=C:\projects` redirects resolution to a different root;
+- an unresolvable target now names the root it tried and says to set `SPAWN_ROOT`;
+- `preflight.mjs --json` came back `"room for ~6 more session(s)"`, so the derived `fleet.cmd` is
+  not merely a well-formed path but the real one;
+- `make-handoff.mjs` wrote a brief whose ACP lines carry the resolved `acp.js`;
+- 87 tests pass (`node --test "session-inspector/scripts/test/*.test.mjs"`).
+
+Docs took the same pass: profile-name and session-locator examples use `org` rather than one
+employer, and the setup snippet says `<path to this checkout>` instead of one developer's disk.
+
 ## 2026-09-15 (4) — the published history stops naming the organisation
 
 **87 commit messages were rewritten and force-pushed.** This repo's only remote is public GitHub,
@@ -27,16 +58,9 @@ re-cloned or hard-reset; a `git pull` there will try to merge two histories. The
 `fix/continuations-stale-pass-detection` branch had zero unique commits and was repointed to the
 rewritten commit at the same position (tree hash confirmed identical).
 
-**Two things deliberately NOT done:**
-1. **The working tree still names the employer in 10 tracked files, 38 times** — `spawn.cmd`,
-   `README.md`, `SKILL.md`, `preflight.mjs`, `batch.mjs`, `make-handoff.mjs`, `wait-for-agent.mjs`,
-   `spawn-session.ps1`, plus `CONTINUE.md`/`CHANGELOG.md` prose. This is not a find-and-replace:
-   `spawn.cmd` *resolves targets* under that path and `preflight.mjs` hardcodes a fleet path, so the
-   fix is to make the clone root configurable (env var with a documented default), the same shape as
-   the home-path pass in (2). Open.
-2. **Author and committer emails still carry the work domain, on all 87 commits.** Unchanged by this
-   rewrite. That is the committer's own work identity rather than a client fact, and rewriting it
-   would change authorship — a separate decision, not this one's to make.
+**One thing deliberately NOT done:** author and committer emails still carry the work domain, on
+all 87 commits. Unchanged by the rewrite. That is the committer's own work identity rather than a
+client fact, and rewriting it would change authorship — a separate decision, not this one's to make.
 
 ## 2026-09-15 (3) — a session can be handed to the OTHER agent
 
@@ -364,7 +388,7 @@ or in a gitignored `*.local.md` beside it.
 The move brought the full history over (`git subtree add`) and the per-profile
 `skills\spawn-session` junctions were repointed to the new path; verified by
 resolving `spawn.cmd` through every profile's junction. The old
-`C:\projects\org\spawn-session` is empty and carries a `MOVED.md`; it could
+`<clone-root>\spawn-session` is empty and carries a `MOVED.md`; it could
 not be deleted because the PowerShell hosts of sessions launched from the old path
 still hold a handle. Delete it once those tabs are closed.
 
@@ -395,7 +419,7 @@ inherited markers. That consolidation is the reason `-resume` exists here.
 - **`-m -`** — reads stdin; refuses an empty read (exit 65) instead of staging a
   blank prompt. Checked both directions.
 - **preflight duplicate-session** — refused a second spawn into
-  `C:\projects\org\acp` while `acp-e5@org_team_5x_3` was live there, naming
+  `<clone-root>\acp` while `acp-e5@org_team_5x_3` was live there, naming
   it and its pid. Exit 3.
 - **preflight capacity** — reads `fleet snapshot --json`'s
   `system.headroomProcesses`. Two defects found and fixed while wiring it:
@@ -462,7 +486,7 @@ caller feeding ids from `session-resume --between` should expect it.
 ## What the merge changed in the code
 
 - `spawnCmdPath()` in `../session-inspector/scripts/lib/spawn-plan.mjs` resolves this launcher
-  relative to the repo, replacing a hardcoded `C:\projects\org\...` path in
+  relative to the repo, replacing a hardcoded `<clone-root>\...` path in
   four call sites. A clone anywhere works, and so does a junctioned copy.
 - `batch.mjs` imports the plan schema, its validation and the approval gate from
   that same lib instead of re-implementing them — they were two copies in two

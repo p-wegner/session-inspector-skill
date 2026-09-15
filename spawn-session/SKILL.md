@@ -15,7 +15,7 @@ elsewhere; use this when you want *that repo* worked on.
 ## Use it
 
 ```powershell
-& "C:\projects\org\claude-session-tools\spawn-session\spawn.cmd" [target] [flags]
+& "<path to this checkout>\spawn-session\spawn.cmd" [target] [flags]
 ```
 
 The human spelling from inside a session is `! spawn` once the folder is on PATH.
@@ -56,8 +56,8 @@ Never run those directly — go through `spawn.cmd`.
 
 Anything unrecognised is forwarded to `claude` verbatim.
 
-**Target resolution**, in order: an existing path → `C:\projects\org\<name>` →
-`C:\projects\org\<name>-skill`. That last hop is why `code-metrics` finds
+**Target resolution**, in order: an existing path → `<clone-root>\<name>` →
+`<clone-root>\<name>-skill`. That last hop is why `code-metrics` finds
 `code-metrics-skill`. An unresolvable target exits 1 and says what it tried, rather
 than starting a session somewhere unintended.
 

@@ -29,6 +29,7 @@ import { join, dirname, resolve } from "path";
 import { tmpdir } from "os";
 import { execFileSync, spawnSync } from "child_process";
 import { fileURLToPath } from "url";
+import { acpJs } from "./repo-root.mjs";
 // One repo now, so the schema, the validation and the gate are shared with the
 // tool that WRITES these plans instead of being a second copy of both.
 import { readPlan, approvedEntries, gateHelp } from "../../session-inspector/scripts/lib/spawn-plan.mjs";
@@ -162,6 +163,6 @@ const launched = receipts.filter((r) => r.status === "launched");
 console.log("");
 console.log(`${launched.length} launched, ${receipts.length - launched.length} not.`);
 if (launched.length) {
-  console.log("Reach any of them:  node \"C:/projects/org/acp/acp.js\" send --to <agent> --msg \"...\"");
+  console.log(`Reach any of them:  node "${acpJs()}" send --to <agent> --msg "..."`);
 }
 process.exit(receipts.some((r) => r.status === "failed") ? 1 : 0);
