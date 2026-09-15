@@ -18,7 +18,7 @@
  * flat subscription.
  *
  * Usage:
- *   node scripts/quota-report.mjs --profile org_team_5x_2                 # since last Fri 12:00 Berlin
+ *   node scripts/quota-report.mjs --profile acme_team_2                 # since last Fri 12:00 Berlin
  *   node scripts/quota-report.mjs --profile <name> --since 2026-07-10T10:00:00Z
  *   node scripts/quota-report.mjs --profile <name> --json                     # full machine-readable blob
  *   node scripts/quota-report.mjs --profile <name> --html report.html         # write a dashboard

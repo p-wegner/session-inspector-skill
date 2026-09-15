@@ -6,7 +6,7 @@ _session-inspector reference. Moved verbatim out of `SKILL.md` on 2026-08-26 so 
 
 Claude Code reads its config dir from `CLAUDE_CONFIG_DIR`; unset, it defaults to
 `~/.claude`. Parallel/team setups run with a **per-profile config dir that is a
-sibling** of `~/.claude` — e.g. `~/.claude-org_team_5x` — so those sessions
+sibling** of `~/.claude` — e.g. `~/.claude-acme_team` — so those sessions
 land under `~/.claude-<suffix>/projects/…`, **invisible to any tool that hard-codes
 `~/.claude/projects`**. If a session you know exists doesn't show up, this is almost
 always why.
@@ -18,7 +18,7 @@ Every Claude-reading script now discovers **all** of these via
 3. `~/.claude/projects` **plus every `~/.claude-<suffix>` / `~/.claude_<suffix>` sibling home**
 
 In `--list`, when more than one home exists the dir label is prefixed with the home
-tag (`.claude-org_team_5x/C--projects-…`) so identically-named project dirs across
+tag (`.claude-acme_team/C--projects-…`) so identically-named project dirs across
 profiles stay distinguishable. Codex (`~/.codex`) and Copilot (`~/.copilot`) are
 single-home and unaffected.
 
@@ -35,8 +35,8 @@ visible. Don't pre-`find` the `.jsonl` path or guess the profile — just pass t
 ## Directory naming convention (Claude)
 
 Each working directory maps to a session dir by replacing path separators with `--`:
-- `C:\org\.worktrees\feature_ak-17-...` → `C--org--worktrees-feature-ak-17-...`
-- `C:\org\agentic-kanban\packages\.worktrees\feature_ak-N-...` → `C--org-agentic-kanban-packages--worktrees-feature-ak-N-...`
+- `C:\acme\.worktrees\feature_42-...` → `C--acme--worktrees-feature-42-...`
+- `C:\acme\myproject\packages\.worktrees\feature_N-...` → `C--acme-myproject-packages--worktrees-feature-N-...`
 
 Multiple `.jsonl` files in one dir = multiple sessions (e.g. original run + re-launched review). Sort by `LastWriteTime` descending to find the latest.
 

@@ -84,7 +84,7 @@ test("malformed lines are skipped without throwing", () => {
 });
 
 test("cwdToSlug matches Claude's project-dir encoding", () => {
-  assert.equal(cwdToSlug("C:\\projects\\org\\claude-pick"), "C--projects-org-claude-pick");
+  assert.equal(cwdToSlug("C:\\projects\\acme\\claude-pick"), "C--projects-acme-claude-pick");
   assert.equal(cwdToSlug("/home/x/my project"), "-home-x-my-project");
   assert.equal(cwdToSlug(null), null);
 });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * QUOTA MONTH — a CALENDAR-RANGE quota dashboard: everything the org_team_5x*
+ * QUOTA MONTH — a CALENDAR-RANGE quota dashboard: everything the sibling auth
  * profiles did inside an explicit wall-clock window (default: the current calendar
  * month), across all profiles combined plus per-profile.
  *
@@ -13,7 +13,7 @@
  * included, cost = pay-go-equivalent "subscription value". A session that spans the
  * range boundary contributes only its in-range turns.
  *
- * Only `~/.claude-org_team_5x*` profiles are discovered — the personal `~/.claude`
+ * Only sibling `~/.claude-<name>` profiles are discovered — the personal `~/.claude`
  * profile is deliberately never read. Pass --profiles to narrow further.
  *
  * Usage:
@@ -21,7 +21,7 @@
  *   node scripts/quota-month.mjs --month 2026-07 --html july.html      # same thing
  *   node scripts/quota-month.mjs                                        # current month → terminal
  *   node scripts/quota-month.mjs --month 2026-07 --json
- *   node scripts/quota-month.mjs --profiles org_team_5x,org_team_5x_2 --month 2026-07
+ *   node scripts/quota-month.mjs --profiles acme_team,acme_team_2 --month 2026-07
  *
  * Dates are Berlin wall-clock (see --tz); --to is EXCLUSIVE.
  */
@@ -29,6 +29,7 @@ import { readdirSync, statSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { walkJsonl, parseFileEvents, scanLimits, collapseLimits, detectWeeklyReset, weeklyWindows, aggregate } from "./lib/quota.mjs";
+import { authProfiles, profileShortener } from "./lib/config.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
@@ -77,17 +78,15 @@ const openEnded = toMs > nowMs;                // range not finished yet
     : `${new Date(fromMs + tzOffset * 3600e3).toISOString().slice(0, 10)} → ${new Date(toMs + tzOffset * 3600e3 - 1).toISOString().slice(0, 10)}`;
 }
 
-// ── profiles: org_team_5x* only, never the personal ~/.claude ──────────────
-function discoverProfiles() {
-  const home = homedir(); const out = [];
-  for (const e of readdirSync(home)) {
-    const m = e.match(/^\.claude-(org_team_5x.*)$/);
-    if (m && existsSync(join(home, e, "projects"))) out.push(m[1]);
-  }
-  return out.sort((a, b) => a.length - b.length || a.localeCompare(b));
+// ── profiles: every sibling auth profile, never the personal ~/.claude ────────
+// Discovery lives in lib/config.mjs. It used to be a local regex with one team's
+// profile prefix baked in, so on any other machine this found nothing and exited 1.
+const profiles = flag("profiles", "") ? flag("profiles", "").split(",").map(s => s.trim()).filter(Boolean) : authProfiles();
+if (!profiles.length) {
+  console.error("No auth profiles found. Expected sibling config dirs ~/.claude-<name>/projects.");
+  console.error("Pass --profiles a,b or set CLAUDE_PROFILES to name them explicitly.");
+  process.exit(1);
 }
-const profiles = flag("profiles", "") ? flag("profiles", "").split(",").map(s => s.trim()).filter(Boolean) : discoverProfiles();
-if (!profiles.length) { console.error("No org_team_5x* profiles found (use --profiles a,b)."); process.exit(1); }
 
 // ── parse (once) ──────────────────────────────────────────────────────────────
 // A transcript last written before the range starts cannot hold in-range turns,
@@ -263,7 +262,7 @@ const dt=s=>{try{return new Date(s).toLocaleString('en-GB',{timeZone:'Europe/Ber
 const dmon=s=>{try{return new Date(s).toLocaleDateString('en-GB',{timeZone:'Europe/Berlin',day:'2-digit',month:'short'})}catch(e){return s}};
 const dayName=s=>new Date(s+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
 const dayNum=s=>String(+s.slice(8,10));
-const shortProf=n=>n.replace('org_team_','');
+const shortProf = profileShortener(profiles);
 const shortProj=p=>(p||'').replace(/^C--projects-[^-]+-/,'').replace(/^C--/,'');
 
 let state={scope:'combined',win:'total'};

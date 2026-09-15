@@ -270,8 +270,8 @@ export function readFile(path) {
 // ── Locator parsing ────────────────────────────────────────────────────────
 
 /** Does this segment look like a session id (or an id prefix)? UUIDs are hex
- *  groups joined by single dashes, so a project folder ("C--projects-org",
- *  "org-client-a") never qualifies: it has non-hex letters, or doubled dashes. */
+ *  groups joined by single dashes, so a project folder ("C--projects-acme",
+ *  "acme-myproject") never qualifies: it has non-hex letters, or doubled dashes. */
 export function looksLikeSessionId(seg) {
   return /^[0-9a-f]{4,}(-[0-9a-f]{1,12})*-?$/i.test(seg);
 }
@@ -295,7 +295,7 @@ export function looksLikeSessionId(seg) {
  *
  * Deliberately conservative, and only ever consulted as a fallback (see
  * locatorCandidates), so it declines anything already meaningful:
- *   "C--projects-org-acp"  -> null   tail is not id-shaped; a bare Claude
+ *   "C--projects-acme-acp"  -> null   tail is not id-shaped; a bare Claude
  *                                        project-folder name stays a folder
  *   a bare uuid                -> null   no doubled dash
  *   "<folder>/<full-uuid>"     -> never reaches here; the primary parse wins

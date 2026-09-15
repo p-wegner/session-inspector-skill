@@ -12,7 +12,7 @@ test("fileKey pulls the first file path out of a shell command, else bash:<verb>
     ["Bash", "sleep 295; echo waited", "bash:sleep"],
     ["Bash", "X=1 && for f in a b; do echo $f; done", "bash:echo"],
     ["Bash", "for f in *.md; do wc -l $f; done", "bash:wc"],
-    ["PowerShell", "Get-Content C:\\projects\\org\\x\\monitor-setup.ts -Tail 40", "C:\\projects\\org\\x\\monitor-setup.ts"],
+    ["PowerShell", "Get-Content C:\\projects\\acme\\x\\monitor-setup.ts -Tail 40", "C:\\projects\\acme\\x\\monitor-setup.ts"],
     ["Read", "C:\\a\\b.ts", "C:\\a\\b.ts"],
     ["Bash", "", ""],
   ];
@@ -40,7 +40,7 @@ test("classifyHumanText separates harness content from human text", () => {
 });
 
 test("shortPath keeps root + tail (basename and nearest ancestors), drops the middle", () => {
-  const p = "C:/projects/org/agentic-kanban/.claude/worktrees/agentic-kanban/ak-903/packages/server/src/services/pre-merge-gate.service.ts";
+  const p = "C:/projects/acme/agentic-kanban/.claude/worktrees/agentic-kanban/ak-903/packages/server/src/services/pre-merge-gate.service.ts";
   const s = shortPath(p, 60);
   assert.ok(s.length <= 60, s);
   assert.ok(s.startsWith("C:/…/"), s);
@@ -53,8 +53,8 @@ test("shortPath keeps root + tail (basename and nearest ancestors), drops the mi
 });
 
 test("padTail keeps the identifying tail of long labels", () => {
-  const a = padTail("C--projects-org--worktrees-agentic-kanban-ak-903", 30);
-  const b = padTail("C--projects-org--worktrees-agentic-kanban-ak-904", 30);
+  const a = padTail("C--projects-acme--worktrees-agentic-kanban-ak-903", 30);
+  const b = padTail("C--projects-acme--worktrees-agentic-kanban-ak-904", 30);
   assert.notEqual(a, b);
   assert.ok(a.endsWith("ak-903") && a.length === 30, a);
   assert.equal(padTail("short", 8), "short   ");

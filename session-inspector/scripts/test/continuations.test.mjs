@@ -151,8 +151,8 @@ test("board-launched sessions are not human-driven", () => {
 });
 
 test("a worktree cwd alone marks an agent workspace", () => {
-  assert.equal(isAgentWorkspace("C:\\projects\\org\\.worktrees\\ak-690"), true);
-  assert.equal(isAgentWorkspace("C:\\projects\\org\\acp"), false);
+  assert.equal(isAgentWorkspace("C:\\projects\\acme\\.worktrees\\ak-690"), true);
+  assert.equal(isAgentWorkspace("C:\\projects\\acme\\acp"), false);
   const p = classifyProvenance(transcript("fix the flaky test"), "C:\\projects\\x\\.worktrees\\ak-1");
   assert.equal(p.humanDriven, false);
 });

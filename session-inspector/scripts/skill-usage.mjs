@@ -224,7 +224,6 @@ function toktBin() {
     join(dirname(here), "..", "token-budget", "bin", "tokt.js"),   // sibling skill in this repo
     join(skillsDir, "token-budget", "bin", "tokt.js"),
     join(HOME, ".claude", "skills", "token-budget", "bin", "tokt.js"),
-    "C:/projects/org/token-budget/bin/tokt.js",
   ].filter(Boolean);
   _toktBin = cands.find((p) => existsSync(p)) || null;
   return _toktBin;

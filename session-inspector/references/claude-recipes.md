@@ -43,7 +43,7 @@ Write-Output "Lines: $((Get-Content $file.FullName).Count)"
 This reads only the last N lines to avoid loading large files:
 
 ```powershell
-$file = "C:\Users\pwegner\.claude\projects\C--org--worktrees-feature-ak-17-add-an-alternativ-graph-based-view-of-ti\dc54e6e0-f6b1-4a89-a1fa-478c88150f34.jsonl"
+$file = "%USERPROFILE%\.claude\projects\C--acme--worktrees-feature-42-alternative-graph-view-of-the-ti\0f1e2d3c-4b5a-6c7d-8e9f-a0b1c2d3e4f5.jsonl"
 $tail = 40  # adjust as needed
 
 $lines = Get-Content $file -Tail $tail
@@ -75,7 +75,7 @@ Write-Output "Last text: $lastText"
 These are sessions where the prompt was delivered but Claude produced zero assistant turns. Common causes: auth failure, process killed before responding, stdin closed before model replied.
 
 ```powershell
-$dir = "C:\Users\pwegner\.claude\projects\C--org--worktrees-feature-ak-17-add-an-alternativ-graph-based-view-of-ti"
+$dir = "%USERPROFILE%\.claude\projects\C--acme--worktrees-feature-42-alternative-graph-view-of-the-ti"
 
 Get-ChildItem $dir -Filter "*.jsonl" | Sort-Object LastWriteTime -Descending | ForEach-Object {
   $lines = Get-Content $_.FullName

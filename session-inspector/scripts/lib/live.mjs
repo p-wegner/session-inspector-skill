@@ -43,7 +43,7 @@ const SENTINEL_TYPES = new Set([
  * sessions/, projects/ and .credentials.json from the same root.
  *
  * Returns [{ id, dir }] with the main profile first. `id` is "default" for
- * ~/.claude and the suffix otherwise (e.g. "org_team_5x_2").
+ * ~/.claude and the suffix otherwise (e.g. "acme_team_2").
  */
 export function claudeProfileHomes() {
   const out = [];
@@ -247,7 +247,7 @@ function readTail(path, bytes) {
 
 /**
  * Claude's cwd -> project-dir encoding: every non-alphanumeric character becomes a
- * dash, so "C:\projects\org\claude-pick" -> "C--projects-org-claude-pick".
+ * dash, so "C:\projects\claude-pick" -> "C--projects-acme-claude-pick".
  * Verified against the live tree; findTranscript still falls back to a scan if the
  * encoding ever changes, so this is an optimization rather than a dependency.
  */

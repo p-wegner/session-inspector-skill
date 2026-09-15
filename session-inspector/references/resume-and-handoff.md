@@ -57,7 +57,7 @@ command (or opens a dedicated Windows Terminal tab per session).
 
 ```powershell
 # Plan the most recent crash cluster (auto-detects the near-simultaneous kill):
-node scripts/session-resume.mjs --profile org_team_5x --project acme --reboot
+node scripts/session-resume.mjs --profile acme_team --project acme --reboot
 
 node scripts/session-resume.mjs --profile <name> --between 16:45-17:30   # scope by wall-clock window
 node scripts/session-resume.mjs --profile <name> --rate-limited          # only usage/rate-limit cutoffs

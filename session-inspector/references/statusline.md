@@ -17,9 +17,9 @@ object on **stdin**. The three fields that matter here:
 
 | Field | Example | Use |
 |-------|---------|-----|
-| `transcript_path` | `~/.claude/projects/C--org-foo/3f2c…b1.jsonl` | The exact transcript file — feed it straight to the analyzer. |
+| `transcript_path` | `~/.claude/projects/C--acme-foo/3f2c…b1.jsonl` | The exact transcript file — feed it straight to the analyzer. |
 | `session_id` | `3f2c…b1` | The session UUID (also the filename stem). |
-| `cwd` | `C:\org\foo` | Fallback to derive the project folder when `transcript_path` is absent. |
+| `cwd` | `C:\acme\foo` | Fallback to derive the project folder when `transcript_path` is absent. |
 
 `transcript_path` already **is** the path the analyzer wants, so the locator is
 really just a compact, human-selectable rendering of it:
@@ -27,19 +27,19 @@ really just a compact, human-selectable rendering of it:
 
 **Put the id first, and shorten both parts.** A status line gets truncated on the
 right when the terminal is narrow, so whatever you print last is what disappears.
-The id is the key; the folder is only a hint. Printing `8e3f1bec/org-client-a`
-instead of `C--projects-org-client-a/8e3f1bec-4da1-…` means a narrow window still
+The id is the key; the folder is only a hint. Printing `8e3f1bec/acme-myproject`
+instead of `C--projects-acme-myproject/8e3f1bec-4da1-…` means a narrow window still
 shows something you can paste. The resolver here handles it:
 
 - **Either order.** `<id>/<folder>` and `<folder>/<id>` both resolve — the segment
   that *looks* like a uuid is taken as the id, whichever side it is on.
 - **Id prefixes.** 8 hex digits is plenty; the resolver prefix-matches, and reports
   the candidates if a stub ever matches more than one session.
-- **The folder is a tiebreak, never a filter.** A shortened (`org-client-a`) or
+- **The folder is a tiebreak, never a filter.** A shortened (`acme-myproject`) or
   stale folder narrows the matches when it hits and is ignored when it doesn't, so
   it can't turn a good id into "not found". It is matched as a *substring*, so a
   slug that was truncated for width still narrows correctly.
-- **A doubled-dash name resolves too.** `C--projects-org-client-a--8e3f1bec` — the
+- **A doubled-dash name resolves too.** `C--projects-acme-myproject--8e3f1bec` — the
   shape an agent bus registers (`<project-slug>--<sid8>`) — splits at its **last**
   doubled dash into id + folder hint. Tried only as a fallback, after the ordinary
   parse finds nothing, so a bare project-folder name (doubled dashes and all) is
@@ -147,14 +147,14 @@ to another agent:
 
 ```bash
 # the locator works verbatim — no need to expand it to a path first:
-node scripts/analyze-claude-session.mjs 8e3f1bec/org-client-a
+node scripts/analyze-claude-session.mjs 8e3f1bec/acme-myproject
 node scripts/analyze-claude-session.mjs 8e3f1bec          # id prefix alone is fine
-node scripts/analyze-claude-session.mjs C--projects-org-client-a--8e3f1bec  # a bus name pastes too
+node scripts/analyze-claude-session.mjs C--projects-acme-myproject--8e3f1bec  # a bus name pastes too
 node scripts/analyze-claude-session.mjs ~/.claude/projects/<project-folder>/<session-id>.jsonl
 ```
 
 …or paste the locator to a fresh/stronger agent: *"use the session-inspector skill
-on `8e3f1bec/org-client-a` — figure out why it stalled and finish it."*
+on `8e3f1bec/acme-myproject` — figure out why it stalled and finish it."*
 
 With [cross-machine sync](session-sync.md) running, the same locator is also
 searchable from any device: `node scripts/sync-query.mjs search "<session-id>"`,

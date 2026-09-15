@@ -32,9 +32,9 @@ being dropped:
 
 `device` was enough while the corpus was one person's laptop + desktop. `user`
 exists so several developers' transcripts can be pooled into one store and still
-be told apart; `profile` so "everything that ran under my org subscriptions"
+be told apart; `profile` so "everything that ran under my work subscriptions"
 is a query rather than a path glob. `profile` matches as a **substring**
-(`--profile org` → the whole `org_team_5x*` family); `device` and `user`
+(`--profile acme` → the whole `acme_team*` family); `device` and `user`
 match exactly.
 
 Records written before these fields existed simply have them empty — filters
@@ -72,7 +72,7 @@ node scripts/sync-push.mjs
 ```powershell
 node scripts/sync-push.mjs                  # all providers, only new/changed since last run
 node scripts/sync-push.mjs --provider claude
-node scripts/sync-push.mjs --profile org  # only the org_team_5x* auth profiles
+node scripts/sync-push.mjs --profile acme  # only the acme_team* auth profiles
 node scripts/sync-push.mjs --days 7         # only sessions touched in the last 7 days
 node scripts/sync-push.mjs --dry-run        # show what would upload, send nothing
 node scripts/sync-push.mjs --force          # re-evaluate every file (ignore local push-state)
@@ -120,7 +120,7 @@ node scripts/sync-query.mjs meta                          # devices / users / pr
 node scripts/sync-query.mjs list --provider claude --limit 20
 node scripts/sync-query.mjs search "leaderboard" --deep   # full-text across transcripts
 node scripts/sync-query.mjs list --project agentic-kanban --device desktop-13vrhen
-node scripts/sync-query.mjs list --user alice --profile org   # one person, one account family
+node scripts/sync-query.mjs list --user alice --profile acme   # one person, one account family
 node scripts/sync-query.mjs get <key>                     # print raw transcript ("key" shown by list/search)
 node scripts/sync-query.mjs get <key> --save out.jsonl
 node scripts/sync-query.mjs get <key> --analyze           # fetch + run the matching analyze-<provider>-session.mjs
@@ -153,7 +153,7 @@ Sync needs both machines up, on the same tailnet, at the same time. A **bundle**
 drops all three requirements: one zip carrying selected transcripts plus a
 manifest, movable by any means (scp, USB, chat). Two jobs:
 
-1. **Archive/share a slice** — "every session from my org profiles".
+1. **Archive/share a slice** — "every session from my work profiles".
 2. **Pool corpora across people** — several developers each export a bundle, one
    person imports them all, and the combined store is queried as a single
    population. This is what makes compounding-engineering analysis work over a
@@ -169,10 +169,10 @@ manifest, movable by any means (scp, USB, chat). Two jobs:
 ### Export
 
 ```powershell
-node scripts/session-bundle.mjs export --profile org --out team.zip
+node scripts/session-bundle.mjs export --profile acme --out team.zip
 node scripts/session-bundle.mjs export --from server --days 30 --out last30.zip
-node scripts/session-bundle.mjs export --profile org --dry-run
-node scripts/session-bundle.mjs export --profile org --format dir --out ./team
+node scripts/session-bundle.mjs export --profile acme --dry-run
+node scripts/session-bundle.mjs export --profile acme --format dir --out ./team
 ```
 
 `--from local` (default) reads this box's profiles directly — no server needed.

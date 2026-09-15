@@ -92,7 +92,7 @@ touches (10%) never received their CLAUDE.md — every one of them was a Grep/sh
 of 15 injected)**; where a Read followed, the median lag was 1 call but p90 9 and max 16. The
 closing mechanism is a PostToolUse hook on `Bash|Grep|Glob` that resolves the touched paths to
 nested CLAUDE.md + matching rules and injects them as `additionalContext` — reference
-implementation and a `claude -p` A/B eval in `C:projectsorgcontext-disclosure-hook`.
+implementation and a `claude -p` A/B eval in ``<repo-root>\context-disclosure-hook``.
 Claude only.
 
 `slash-goals.mjs` answers **"what was the agent asked to do, and how?"** — per

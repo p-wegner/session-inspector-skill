@@ -12,7 +12,7 @@ different accounts anchor their weekly window on different weekday+times. It rea
 the profile's own `"You've hit your weekly limit · resets …"` banners (the
 `resets Jul 17, 12pm` / `resets 6am` forms), derives the reset weekday+clock in
 Europe/Berlin, and steps back in 7-day multiples to the most recent boundary
-at/before now (e.g. `org_team_5x` → Tue 6am, `org_team_5x_2` → Fri 12pm).
+at/before now (e.g. `acme_team` → Tue 6am, `acme_team_2` → Fri 12pm).
 Override the cutoff with `--since <ISO>`, disable detection with
 `--no-auto-reset` (falls back to Fri 12:00 Berlin), and set the UTC offset with
 `--tz N` (default 2 = CEST). The detected schedule + the banner it came from are
@@ -26,10 +26,10 @@ with a repeat count) that doubles as evidence for the reset window. `--json` for
 the full blob; `--html <file>` writes a **self-contained, theme-aware dashboard**
 (inline SVG charts, no external assets) you open locally. Cost model matches
 `token-sinks.mjs`. Claude only. Example:
-`node scripts/quota-report.mjs --profile org_team_5x_2 --html quota.html`.
+`node scripts/quota-report.mjs --profile acme_team_2 --html quota.html`.
 
 `quota-multi.mjs` is the **"complete picture"** companion to `quota-report.mjs`:
-one self-contained, switchable dashboard covering **every** `org_team_5x*`
+one self-contained, switchable dashboard covering **every** `acme_team*`
 profile (or `--profiles a,b,…`), **every weekly reset window per profile**, plus
 a **Combined grand total** across all profiles. It parses each transcript ONCE
 (shared core in `lib/quota.mjs` — pricing, per-turn event parse, banner scan,
@@ -53,7 +53,7 @@ a single `--since` for ONE profile, and `quota-multi.mjs` slices by each account
 own weekly reset, so a month is smeared across windows that start on different
 weekdays. This one takes an explicit wall-clock range (`--month 2026-07`, or
 `--from`/`--to`; Berlin wall-clock, `--to` exclusive) and reports **all
-`org_team_5x*` profiles combined + per profile** inside it. Same `lib/quota.mjs`
+`acme_team*` profiles combined + per profile** inside it. Same `lib/quota.mjs`
 accounting, so the numbers reconcile with the other two views.
 
 Range-specific behaviour worth knowing: days with no activity are **zero-filled**

@@ -25,7 +25,7 @@ Copilot CLI stores full session transcripts as `events.jsonl` in `~/.copilot/ses
 
 ```powershell
 # Analyze a specific session
-node scripts/analyze-copilot-session.mjs "C:\Users\pwegner\.copilot\session-state\390de5e5-...\events.jsonl"
+node scripts/analyze-copilot-session.mjs "%USERPROFILE%\.copilot\session-state\1a2b3c4d-...\events.jsonl"
 
 # List all Copilot sessions (most recent first)
 node scripts/analyze-copilot-session.mjs --list
@@ -52,7 +52,7 @@ Get-ChildItem "$env:USERPROFILE\.copilot\session-state" -Directory |
 ## Parse Copilot session tail (manual)
 
 ```powershell
-$file = "C:\Users\pwegner\.copilot\session-state\SESSION_ID\events.jsonl"
+$file = "%USERPROFILE%\.copilot\session-state\SESSION_ID\events.jsonl"
 $tail = 30
 
 $lines = Get-Content $file -Tail $tail
@@ -92,7 +92,7 @@ Write-Host "Agent summary: $($summary.agentSummary.Substring(0, [math]::Min(500,
 
 ```powershell
 $issueNum = "32"
-$board = Invoke-RestMethod "http://localhost:$env:KANBAN_SERVER_PORT/api/projects/f6046402-8373-4294-9624-e0e4e54e1961/board" -TimeoutSec 10
+$board = Invoke-RestMethod "http://localhost:$env:KANBAN_SERVER_PORT/api/projects/1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d/board" -TimeoutSec 10
 $issue = $board.issues | Where-Object { $_.issueNumber -eq $issueNum }
 $ws = $issue.workspaces | Select-Object -First 1
 Write-Host "Workspace: $($ws.id) branch=$($ws.branch) status=$($ws.status)"

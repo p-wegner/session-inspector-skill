@@ -4,7 +4,7 @@
  * This file only exists because the two halves are now ONE repo. While they were
  * separate, `continuations.mjs` (which writes plans) and `spawn-session/batch.mjs`
  * (which launches them) each had their own copy of the schema check, and the
- * launcher path was a hardcoded `C:\projects\org\spawn-session\spawn.cmd` in
+ * launcher path was one hardcoded absolute path in
  * four places. Both were the cost of the split, not decisions worth keeping.
  *
  * The plan file stays a plain, versioned JSON document: it is written by one tool,
@@ -42,8 +42,12 @@ export function spawnCmdPath() {
   ]) {
     if (existsSync(legacy)) return resolve(legacy);
   }
-  const old = "C:\\projects\\org\\spawn-session\\spawn.cmd";
-  return existsSync(old) ? old : inRepo;         // report the expected path when absent
+  // $SPAWN_CMD is the escape hatch for a layout none of the above describes. It
+  // replaces what used to be one absolute path from the author's machine, which
+  // could only ever help on that machine and shipped to everyone else.
+  const env = process.env.SPAWN_CMD;
+  if (env && existsSync(env)) return resolve(env);
+  return inRepo;                                 // report the expected path when absent
 }
 
 /** Is the launcher actually installed? Callers must degrade, not pretend. */

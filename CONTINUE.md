@@ -3,6 +3,63 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-15 — session-inspector: portable off this machine for the first time
+
+Found by a capability pass on the skill, which flagged 19 fenced programs carrying one
+machine's absolute paths. The survey then turned up something worse than untidy text: two
+of the tools could not work anywhere else.
+
+**The two real bugs.**
+
+- **`quota-multi.mjs` and `quota-month.mjs` could find no profiles at all.** Each carried
+  its own copy of `discoverProfiles()` matching one team's literal profile prefix, so on
+  any other box the list came back empty and both exited 1 with "No ... profiles found".
+  `lib/config.mjs` already implemented the sibling-profile convention portably, with env
+  overrides, and neither tool used it. Discovery is now `authProfiles()` there, once:
+  every `~/.claude-<name>` with a `projects/` dir, personal `~/.claude` excluded unless
+  asked, and `$CLAUDE_PROFILES` as the escape hatch that replaces editing a regex.
+- **`continuations.mjs` never reported capacity off this machine.** `fleetCapacity()`
+  hard-coded one absolute path to `fleet.cmd` and returned `null` when absent — identical
+  to "fleet not installed", so the failure was invisible. Now `$FLEET_BIN`, then PATH,
+  then a sibling checkout beside this repo. **Worth knowing: `fleet` is not on PATH on the
+  author's box either**, so a PATH-only fix would have regressed it here; the sibling
+  lookup resolves the same binary the hard-coded path did.
+
+**Display without a baked-in family.** `shortProf` stripped one team's literal prefix. It
+is now `profileShortener(profiles)` in `config.mjs`, which strips the longest common prefix
+of the actual set and only cuts on a separator, so `acme_team_5x`/`acme_team_9` never
+degrade to `x`/`9`. Same output as before on this machine.
+
+**`skill-usage.mjs` and `lib/spawn-plan.mjs`** each ended their otherwise-portable
+candidate lists with one personal absolute path. Dropped; `spawn-plan` gains `$SPAWN_CMD`.
+
+**The text.** This repo is on public GitHub, so personal and device references are noise to
+every reader but one — and here several were examples people copy. Replaced across 23
+files: the user's home path became `%USERPROFILE%`, the profile family became `acme_team*`
+(matching the `acme` placeholder the repo already used), a real worktree and branch name
+became a neutral one of the same shape, and **two real session UUIDs** became obviously
+synthetic ones. Also fixed one path whose backslashes had been eaten somewhere upstream,
+leaving the segments run together.
+
+**Checked against the scrub list** (`~/.claude/notes/confidential-terms.txt`, 25 terms,
+parser positive-controlled): **zero** client or engagement terms in this repo, before or
+after. This was a portability and personal-reference problem, not a confidentiality one.
+
+**Verified.** `node --test scripts/test/*.test.mjs` → **73 passed**, same as before the
+change. `authProfiles()` returns the same four profiles and `profileShortener` the same
+short labels as the hard-coded versions did. The no-profiles error path prints the new
+actionable message. No control bytes in any changed file.
+
+**One caveat.** Four test files had fixtures rewritten: a first pass changed an expected
+slug without its input and broke `cwdToSlug matches Claude's project-dir encoding`, because
+the input used escaped double backslashes the pattern missed. Inputs and expectations are
+now changed together, and the suite is green — but these are string fixtures, so a reviewer
+should confirm the pairs still read as intended rather than trusting the count.
+
+**Not done.** `spawn-session/SKILL.md` and `spawn-session/README.md` still contain one
+personal home-path example each, and this file's own older entries plus `CHANGELOG.md`
+mention personal paths. Out of scope for this pass, which was `session-inspector/` only.
+
 ## 2026-09-08 — token-budget: Opus 5 priced, plus two defects found next to it
 
 `tokt session` printed `$0.00000?` for every Opus 5 transcript: `src/pricing.js` had no

@@ -26,7 +26,7 @@ Full setup, config knobs, REST API, and privacy scope in `references/session-syn
 Every record also carries **`user`** (which human) and **`profile`** (which
 `~/.claude-*` auth profile / account) — filter with `--user` / `--profile` on
 `sync-query.mjs`, or the dropdowns in the web UI. `--profile` matches as a
-substring, so `--profile org` selects the whole `org_team_5x*` family.
+substring, so `--profile acme` selects the whole `acme_team*` family.
 
 ## Hand sessions over as a file: bundles (`session-bundle.mjs`)
 
@@ -36,9 +36,9 @@ slice, or for **pooling corpora across several people** so compounding-engineeri
 analysis runs over the whole population rather than one person's sessions.
 
 ```powershell
-node scripts/session-bundle.mjs export --profile org --out team.zip   # from this box's profiles
+node scripts/session-bundle.mjs export --profile acme --out team.zip   # from this box's profiles
 node scripts/session-bundle.mjs export --from server --days 30 --out last30.zip  # across ALL synced devices
-node scripts/session-bundle.mjs export --profile org --dry-run        # what would go in
+node scripts/session-bundle.mjs export --profile acme --dry-run        # what would go in
 node scripts/session-bundle.mjs inspect team.zip                          # manifest summary, imports nothing
 node scripts/session-bundle.mjs import alice.zip --as-user alice          # merge someone else's corpus
 ```

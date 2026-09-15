@@ -10,8 +10,8 @@
  * in memory. Subagents included. Cost = pay-go-equivalent "subscription value".
  *
  * Usage:
- *   node scripts/quota-multi.mjs --html combined.html                 # all org_team_5x* profiles
- *   node scripts/quota-multi.mjs --profiles org_team_5x,org_team_5x_2 --html out.html
+ *   node scripts/quota-multi.mjs --html combined.html                 # every sibling auth profile
+ *   node scripts/quota-multi.mjs --profiles acme_team,acme_team_2 --html out.html
  *   node scripts/quota-multi.mjs --json                               # full nested blob
  *   node scripts/quota-multi.mjs --tz 2 --max-windows 8
  */
@@ -19,6 +19,7 @@ import { readdirSync, statSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { walkJsonl, parseFileEvents, scanLimits, collapseLimits, detectWeeklyReset, weeklyWindows, aggregate } from "./lib/quota.mjs";
+import { authProfiles, profileShortener } from "./lib/config.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
@@ -28,17 +29,15 @@ const jsonOut = argv.includes("--json");
 const htmlPath = flag("html", "");
 const nowMs = Date.now();
 
-// discover profiles
-function discoverProfiles() {
-  const home = homedir(); const out = [];
-  for (const e of readdirSync(home)) {
-    const m = e.match(/^\.claude-(org_team_5x.*)$/);
-    if (m && existsSync(join(home, e, "projects"))) out.push(m[1]);
-  }
-  return out.sort((a, b) => a.length - b.length || a.localeCompare(b));
+// Discovery lives in lib/config.mjs, which already knows the sibling-profile
+// convention. It used to be a local regex with one team's profile prefix baked
+// in, so on any other machine this found nothing and exited 1.
+const profiles = (flag("profiles", "") ? flag("profiles", "").split(",").map(s => s.trim()).filter(Boolean) : authProfiles());
+if (!profiles.length) {
+  console.error("No auth profiles found. Expected sibling config dirs ~/.claude-<name>/projects.");
+  console.error("Pass --profiles a,b or set CLAUDE_PROFILES to name them explicitly.");
+  process.exit(1);
 }
-const profiles = (flag("profiles", "") ? flag("profiles", "").split(",").map(s => s.trim()).filter(Boolean) : discoverProfiles());
-if (!profiles.length) { console.error("No org_team_5x* profiles found (use --profiles a,b)."); process.exit(1); }
 
 // ── build per-profile records + windows ───────────────────────────────────────
 const allRecords = []; // for combined
@@ -167,7 +166,7 @@ const esc=s=>(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"
 const dt=s=>{try{return new Date(s).toLocaleString('en-GB',{timeZone:'Europe/Berlin',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}catch(e){return s}};
 const dmon=s=>{try{return new Date(s).toLocaleDateString('en-GB',{timeZone:'Europe/Berlin',day:'2-digit',month:'short'})}catch(e){return s}};
 const dayName=s=>new Date(s+'T12:00:00Z').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
-const shortProf=n=>n.replace('org_team_','');
+const shortProf = profileShortener(profiles);
 const shortProj=p=>(p||'').replace(/^C--projects-[^-]+-/,'').replace(/^C--/,'');
 
 let state={scope:'combined',win:'total'};

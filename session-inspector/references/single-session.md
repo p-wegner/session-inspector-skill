@@ -157,10 +157,10 @@ filter, so a shortened or stale folder can't hide a valid id.
 **Paste whatever you have.** The status line prints the compact
 `🔖 <sid8>/<slug>` form (since 2026-08-21 both halves are split out of the name the
 ACP hook registered, so the two agree); `acp list` and the bus itself use the full
-`C--projects-org-acp--869f8e8a`. Both resolve here. The ACP shape is tried only
+`C--projects-acme-acp--869f8e8a`. Both resolve here. The ACP shape is tried only
 as a **fallback**, after the ordinary parse finds nothing, so no locator that worked
 before can change meaning — in particular a bare project-folder name
-(`C--projects-org-acp`, doubled dashes and all) is still read as a folder, not
+(`C--projects-acme-acp`, doubled dashes and all) is still read as a folder, not
 split into an id. `splitAcpAgentName` / `locatorCandidates` in `lib/sessions.mjs`;
 covered by `scripts/test/locator.test.mjs`.
 

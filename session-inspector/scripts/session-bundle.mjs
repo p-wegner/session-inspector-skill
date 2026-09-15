@@ -7,7 +7,7 @@
  * A bundle is the offline, hand-it-over form: one zip carrying the selected
  * transcripts plus a manifest describing where they came from. Two uses:
  *
- *   1. archive/share a slice  — "all sessions from my org_team_5x* profiles"
+ *   1. archive/share a slice  — "all sessions from my acme_team* profiles"
  *   2. POOL CORPORA           — several developers each export a bundle, one
  *                               person imports them all, and the combined set is
  *                               queried as one. Every record keeps its `user`,
@@ -15,9 +15,9 @@
  *                               two people's sessionIds can never collide.
  *
  * Usage:
- *   node scripts/session-bundle.mjs export --profile org --out team.zip
+ *   node scripts/session-bundle.mjs export --profile acme --out team.zip
  *   node scripts/session-bundle.mjs export --from server --days 30 --out last30.zip
- *   node scripts/session-bundle.mjs export --profile org --dry-run
+ *   node scripts/session-bundle.mjs export --profile acme --dry-run
  *   node scripts/session-bundle.mjs inspect team.zip
  *   node scripts/session-bundle.mjs import team.zip
  *   node scripts/session-bundle.mjs import alice.zip --as-user alice
@@ -26,7 +26,7 @@
  *   --from local|server   local = this box's profiles (default); server = a sync server
  *   --out <path>          .zip (default) or directory with --format dir
  *   --format zip|dir      dir skips the archiver entirely (always works)
- *   --profile <substr>    auth-profile filter, e.g. "org" hits org_team_5x*
+ *   --profile <substr>    auth-profile filter, e.g. "acme" hits acme_team*
  *   --kind <k>            main | subagent | workflow (default: all three)
  *   --provider <name>     claude | codex | copilot
  *   --project <substr>    match against project / projectKey

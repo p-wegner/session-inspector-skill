@@ -14,7 +14,7 @@
  * Usage:
  *   node scripts/session-edit.mjs extract --latest [-o edits.md]
  *   node scripts/session-edit.mjs extract <path.jsonl> [--no-thinking] [--no-tool-results]
- *   node scripts/session-edit.mjs extract --session 874e3950 --profile org_team_5x
+ *   node scripts/session-edit.mjs extract --session 874e3950 --profile acme_team
  *   node scripts/session-edit.mjs apply edits.md [--dry-run] [--no-backup] [--force] [--quiet]
  *
  * Editable by default: human prompts (`user` string content), assistant `text`

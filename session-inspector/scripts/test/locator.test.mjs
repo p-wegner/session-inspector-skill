@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { splitLocator, splitAcpAgentName, locatorCandidates } from "../lib/sessions.mjs";
 
 const UUID = "869f8e8a-de60-4026-9f85-85414d54e0fb";
-const FOLDER = "C--projects-org-acp";
+const FOLDER = "C--projects-acme-acp";
 
 // ── the primary parse must not budge ────────────────────────────────────────
 // Every one of these worked before ACP names existed; the id half is the FULL
@@ -21,12 +21,12 @@ const UNCHANGED = [
   ["bare full uuid", UUID, { idPart: UUID, dirPart: null }],
   ["folder/full-uuid (on-disk layout)", `${FOLDER}/${UUID}`, { idPart: UUID, dirPart: FOLDER }],
   ["folder/full-uuid.jsonl", `${FOLDER}/${UUID}.jsonl`, { idPart: UUID, dirPart: FOLDER }],
-  ["sid8/folder (older status line)", "869f8e8a/org-acp", { idPart: "869f8e8a", dirPart: "org-acp" }],
+  ["sid8/folder (older status line)", "869f8e8a/acme-acp", { idPart: "869f8e8a", dirPart: "acme-acp" }],
   ["full path", `C:/Users/x/.claude/projects/${FOLDER}/${UUID}.jsonl`, { idPart: UUID, dirPart: FOLDER }],
   // A naive folder name on its own stays a folder name: doubled dashes and
   // non-hex letters are exactly what disqualifies it from being an id.
   ["naive folder name alone", FOLDER, { idPart: FOLDER, dirPart: null }],
-  ["trimmed folder name alone", "org-acp", { idPart: "org-acp", dirPart: null }],
+  ["trimmed folder name alone", "acme-acp", { idPart: "acme-acp", dirPart: null }],
 ];
 
 for (const [label, locator, want] of UNCHANGED) {
@@ -61,8 +61,8 @@ for (const [label, input] of [
   ["a bare full uuid", UUID],
   ["a short id stub", "869f8e8a"],
   ["a naive folder name", FOLDER],
-  ["a trimmed folder name", "org-acp"],
-  ["no doubled dash at all", "org-acp-869f8e8a"],
+  ["a trimmed folder name", "acme-acp"],
+  ["no doubled dash at all", "acme-acp-869f8e8a"],
   ["nothing after the dashes", "C--projects-acp--"],
   ["a non-hex tail", `${FOLDER}--zzzzzzzz`],
 ]) {

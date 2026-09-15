@@ -139,8 +139,8 @@ function handleManifest(url, res) {
 function matchRecord(r, params) {
   if (params.device && r.device !== params.device) return false;
   if (params.user && r.user !== params.user) return false;
-  // Profile is matched as a substring: one `--profile org` selects the whole
-  // org_team_5x* family rather than needing each exact name.
+  // Profile is matched as a substring: one `--profile acme` selects the whole
+  // acme_team* family rather than needing each exact name.
   if (params.profile && !((r.profile || "").toLowerCase().includes(params.profile.toLowerCase()))) return false;
   if (params.kind && (r.kind || "main") !== params.kind) return false;
   if (params.parent && r.parentSessionId !== params.parent) return false;

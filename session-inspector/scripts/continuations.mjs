@@ -42,7 +42,7 @@
  */
 
 import { readFileSync, existsSync } from "fs";
-import { basename, dirname } from "path";
+import { basename, dirname, join, delimiter, resolve } from "path";
 import { execFileSync } from "child_process";
 import os from "os";
 import { discover } from "./lib/sessions.mjs";
@@ -368,7 +368,7 @@ const shortlist = eligible.slice(0, top);
 // subscription's 5-hour window does not carry the whole fan-out. Profiles that
 // already host a live session sort last; --profiles constrains the pool.
 function shortName(profileId) {
-  // ".claude-org_team_5x_4" / "org_team_5x_4" → "5x_4" (what spawn -p takes)
+  // ".claude-acme_team_4" / "acme_team_4" → "5x_4" (what spawn -p takes)
   const m = String(profileId).match(/(?:team[_-]?)?([0-9]+x(?:_[0-9]+)?)$/i);
   return m ? m[1] : String(profileId);
 }
@@ -397,9 +397,36 @@ shortlist.forEach((c, i) => {
 // the machine surface. And a .cmd must go through the shell — execFileSync on it
 // throws EINVAL on Windows, which looked exactly like "fleet not installed" and
 // meant this never reported capacity at all.
+// Where the launcher is differs per box, so it is resolved rather than assumed:
+// $FLEET_BIN wins, then `fleet.cmd`/`fleet` anywhere on PATH. This used to be one
+// absolute path from the author's machine, so everywhere else capacity was
+// silently never reported — the null return looks identical to "not installed".
+function resolveFleetBin() {
+  const explicit = process.env.FLEET_BIN;
+  if (explicit) return existsSync(explicit) ? explicit : null;
+  const exts = process.platform === "win32" ? [".cmd", ".exe", ".bat", ""] : [""];
+  const tryDir = (dir) => {
+    for (const ext of exts) {
+      const p = join(dir, "fleet" + ext);
+      if (existsSync(p)) return p;
+    }
+    return null;
+  };
+  for (const dir of (process.env.PATH || "").split(delimiter).filter(Boolean)) {
+    const hit = tryDir(dir);
+    if (hit) return hit;
+  }
+  // A sibling checkout beside this repo — the usual layout when both are cloned
+  // into one root, and the reason this keeps working without anyone exporting
+  // FLEET_BIN. Same resolution trick lib/spawn-plan.mjs uses for the launcher.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const repoRoot = resolve(here, "..", "..");
+  return tryDir(resolve(repoRoot, "..", "claude-pick", "fleet"));
+}
+
 function fleetCapacity() {
-  const bin = "C:\\projects\\org\\claude-pick\\fleet\\fleet.cmd";
-  if (!existsSync(bin)) return null;
+  const bin = resolveFleetBin();
+  if (!bin) return null;
   try {
     const out = execFileSync(process.env.COMSPEC || "cmd.exe", ["/c", bin, "snapshot", "--json"], {
       encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 30000, maxBuffer: 32 * 1024 * 1024,

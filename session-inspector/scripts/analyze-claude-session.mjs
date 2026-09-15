@@ -101,7 +101,7 @@ function printSummary(s) {
 // Resolve the Claude config dir (which profile's transcripts to read).
 // Priority: --config-dir <path> | --profile <name> (=> ~/.claude-<name>) |
 // $CLAUDE_CONFIG_DIR | default ~/.claude. Lets --list/--latest see non-default
-// auth profiles (e.g. ~/.claude-org_team_5x) instead of only ~/.claude.
+// auth profiles (e.g. ~/.claude-acme_team) instead of only ~/.claude.
 export function resolveConfigDir(argv = process.argv) {
   const cd = argv[argv.indexOf("--config-dir") + 1];
   if (argv.includes("--config-dir") && cd) return cd;
@@ -180,7 +180,7 @@ function matchSessions(sessions, idPart, dirPart, argv) {
   }
 
   // The dir hint is a TIEBREAK, not a filter that may hide the answer: the status
-  // line shortens the folder for width ("C--projects-org-client-a" -> "org-client-a"),
+  // line shortens the folder for width ("C--projects-acme-myproject" -> "acme-myproject"),
   // and a session can be resumed from a different cwd, so a hint that matches nothing
   // must not turn a good id into "not found". Match on the id first, narrow by dir after.
   const matchDir = (s) => {

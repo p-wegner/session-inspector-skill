@@ -8,7 +8,7 @@ export const DEFAULT_PORT = 8765;
 /**
  * Claude Code reads its home from CLAUDE_CONFIG_DIR; when unset it defaults to
  * ~/.claude. Teams / parallel setups run with a per-profile config dir — a
- * SIBLING of ~/.claude such as ~/.claude-org_team_5x — so transcripts land
+ * SIBLING of ~/.claude such as ~/.claude-acme_team — so transcripts land
  * under ~/.claude-<suffix>/projects, invisible to any tool that hard-codes
  * ~/.claude/projects. This helper returns EVERY Claude projects dir on the box.
  *
@@ -52,10 +52,10 @@ export function claudeProjectDirs() {
  * the `.claude` prefix stripped:
  *
  *   ~/.claude/projects                      -> "default"
- *   ~/.claude-org_team_5x_2/projects    -> "org_team_5x_2"
+ *   ~/.claude-acme_team_2/projects          -> "acme_team_2"
  *
  * A profile is a separate *account*, so this is the field you filter on when
- * bundling "everything that ran under my org subscriptions". Dirs reached via
+ * bundling "everything that ran under my work subscriptions". Dirs reached via
  * $CLAUDE_PROJECT_DIRS that don't follow the convention fall back to the dir name.
  */
 export function profileOfProjectsDir(dir) {
@@ -63,6 +63,59 @@ export function profileOfProjectsDir(dir) {
   if (home === ".claude") return "default";
   const m = home.match(/^\.claude[-_](.+)$/);
   return m ? m[1] : home;
+}
+
+/**
+ * Every AUTH PROFILE on this box that has transcripts — the sibling config dirs
+ * `~/.claude-<suffix>` / `~/.claude_<suffix>`, as bare suffixes.
+ *
+ * This used to be copy-pasted into the quota tools as a literal
+ * `/^\.claude-(<one team's profile prefix>.*)$/`, which meant they found nothing at
+ * all on any machine but the author's and exited 1 with "no profiles found". The
+ * discovery rule is the same convention `claudeProjectDirs()` already implements,
+ * so it belongs here once rather than in each caller with a different hard-coded
+ * family baked in.
+ *
+ *   includeDefault  also return the personal `~/.claude` as "default". Off by
+ *                   default: the quota views are about *accounts you pay for
+ *                   separately*, and the personal profile is deliberately excluded.
+ *
+ * $CLAUDE_PROFILES (comma-separated) overrides discovery entirely — the escape
+ * hatch for a layout this convention does not describe, and the portable
+ * replacement for editing the regex.
+ */
+export function authProfiles({ includeDefault = false } = {}) {
+  const env = (process.env.CLAUDE_PROFILES || "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (env.length) return env;
+  const out = [];
+  for (const dir of claudeProjectDirs()) {
+    const p = profileOfProjectsDir(dir);
+    if (p === "default" && !includeDefault) continue;
+    if (!out.includes(p)) out.push(p);
+  }
+  return out.sort((a, b) => a.length - b.length || a.localeCompare(b));
+}
+
+/**
+ * A display shortener for a set of profile names: strips the longest common
+ * prefix, so `acme_team_5x` / `acme_team_5x_2` render as `5x` / `5x_2` without
+ * anyone hard-coding what the shared part is. One profile keeps its full name —
+ * there is no common prefix to remove, and a lone empty label is useless.
+ */
+export function profileShortener(profiles) {
+  const names = [...profiles];
+  if (names.length < 2) return (n) => n;
+  let prefix = names[0];
+  for (const n of names.slice(1)) {
+    let i = 0;
+    while (i < prefix.length && i < n.length && prefix[i] === n[i]) i++;
+    prefix = prefix.slice(0, i);
+    if (!prefix) break;
+  }
+  // only cut on a separator, so `acme_team_5x`/`acme_team_9` never becomes `x`/`9`
+  const cut = Math.max(prefix.lastIndexOf("_"), prefix.lastIndexOf("-"));
+  const at = cut >= 0 ? cut + 1 : 0;
+  return (n) => (at && n.length > at ? n.slice(at) : n);
 }
 
 /**

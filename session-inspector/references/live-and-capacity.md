@@ -70,15 +70,15 @@ window, and serialising work when there was plenty of room.
 `fleet` is **not on PATH by default** — invoke it by full path (works from any cwd):
 
 ```bash
-FLEET=/c/projects/org/claude-pick/fleet/fleet.cmd     # git-bash
-# PowerShell/cmd: C:\projects\org\claude-pick\fleet\fleet.cmd
+FLEET=/c/projects/claude-pick/fleet/fleet.cmd     # git-bash
+# PowerShell/cmd: C:\projects\claude-pick\fleet\fleet.cmd
 
 "$FLEET" capacity --field recommended     # -> 6
 "$FLEET" gate --count 8                   # exit 0 = go, 3 = not enough room
 "$FLEET" capacity --json                  # full reasoning
 ```
 
-(Adding `C:\projects\org\claude-pick\fleet` to PATH makes the bare `fleet`
+(Adding `C:\projects\claude-pick\fleet` to PATH makes the bare `fleet`
 command work; the examples below assume `$FLEET` so they run either way.)
 
 It works with or without its background daemon — never start one just to ask.

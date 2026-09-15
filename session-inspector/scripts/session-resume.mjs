@@ -27,7 +27,7 @@
  * The rule lives in lib/resume-economics.mjs; `--fresh-age` still tunes it.
  *
  * Reads transcripts from a chosen Claude profile dir (default ~/.claude), so it
- * works with non-default auth profiles like ~/.claude-org_team_5x.
+ * works with non-default auth profiles like ~/.claude-acme_team.
  *
  * Node builtins only. Reuses lib/parse.mjs so a session reads the same here as
  * in analyze-claude-session.mjs.
@@ -36,7 +36,7 @@
  *   node session-resume.mjs [selectors] [output]
  *
  * Profile / where to read:
- *   --profile <name>       ~/.claude-<name>   (e.g. --profile org_team_5x)
+ *   --profile <name>       ~/.claude-<name>   (e.g. --profile acme_team)
  *   --config-dir <path>    explicit config dir; else $CLAUDE_CONFIG_DIR; else ~/.claude
  *
  * Which sessions (selectors; combine freely):

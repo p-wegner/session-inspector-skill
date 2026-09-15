@@ -9,7 +9,7 @@
  * Usage:
  *   node scripts/sync-push.mjs                       # push all providers, incremental
  *   node scripts/sync-push.mjs --provider claude     # one provider
- *   node scripts/sync-push.mjs --profile org     # only auth profiles matching (substring)
+ *   node scripts/sync-push.mjs --profile acme     # only auth profiles matching (substring)
  *   node scripts/sync-push.mjs --days 7              # only sessions touched in last 7 days
  *   node scripts/sync-push.mjs --dry-run             # show what WOULD upload
  *   node scripts/sync-push.mjs --force               # ignore local state, re-evaluate all
