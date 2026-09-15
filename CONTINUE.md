@@ -229,7 +229,7 @@ Landed and verified:
 ## token-budget (merged 2026-08-26)
 
 Brought in with `git subtree add --prefix=token-budget` from the GitHub remote (the
-local checkout `C:\projectsndrena	oken-budget` was a *shallow* clone and could not
+local checkout beside this repo was a *shallow* clone and could not
 serve as a subtree source — "did not send all necessary objects"). Verified: `node
 token-budget/test/run.js` → 12 checks passed after `npm install`; all five profiles'
 `skills	oken-budget` junctions repointed here and `tokt.js count` resolves through
