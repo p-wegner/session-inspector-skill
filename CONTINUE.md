@@ -3,6 +3,33 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-15 (2) — correction: the portability pass broke four PowerShell recipes
+
+**`%USERPROFILE%` is cmd syntax and PowerShell does not expand it.** The pass above replaced one
+machine's home directory with `%USERPROFILE%` everywhere, including inside four double-quoted
+PowerShell strings, where it builds a literal path starting with a percent sign. Each of those
+recipes then reports that no session file was found, with nothing to say why.
+
+Broken: `references/claude-recipes.md:46` and `:78`, `references/copilot-recipes.md:28` and `:55`.
+All four now read `$env:USERPROFILE`, **which is how the same two files already spelled it in six
+places the pass never touched** — the correct form was sitting three lines above the broken one,
+inside the same fence. That is the tell the substitution's own checks could not see: they asked only
+whether the personal path was gone, and it was.
+
+**Found by an independent reader, not by the pass.** A second rater reading this skill for a
+capability judgement flagged it and named the failure mode exactly. The pass that introduced it had
+reported "73 passed, same as before the change", which was true and did not cover a fenced example
+no test executes.
+
+**Verified this time by running it, not by reading it.** `$env:USERPROFILE\.claude\projects`
+resolves and the directory exists; the `%USERPROFILE%` form resolves to a literal percent-sign path
+that does not. `node --test session-inspector/scripts/test/*.test.mjs` → **73 passed**, unchanged.
+Zero `%USERPROFILE%` left under `session-inspector/`.
+
+**Standing lesson for this repo:** a fenced command in a reference file is executable text that no
+test runs. When a bulk substitution touches one, resolve it in the shell it is written for before
+calling the pass done.
+
 ## 2026-09-15 — session-inspector: portable off this machine for the first time
 
 Found by a capability pass on the skill, which flagged 19 fenced programs carrying one
@@ -35,7 +62,8 @@ candidate lists with one personal absolute path. Dropped; `spawn-plan` gains `$S
 
 **The text.** This repo is on public GitHub, so personal and device references are noise to
 every reader but one — and here several were examples people copy. Replaced across 23
-files: the user's home path became `%USERPROFILE%`, the profile family became `acme_team*`
+files: the user's home path became `%USERPROFILE%` in prose and `$env:USERPROFILE` inside
+PowerShell (see the correction below), the profile family became `acme_team*`
 (matching the `acme` placeholder the repo already used), a real worktree and branch name
 became a neutral one of the same shape, and **two real session UUIDs** became obviously
 synthetic ones. Also fixed one path whose backslashes had been eaten somewhere upstream,

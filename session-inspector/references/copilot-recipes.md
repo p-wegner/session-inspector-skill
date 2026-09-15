@@ -25,7 +25,7 @@ Copilot CLI stores full session transcripts as `events.jsonl` in `~/.copilot/ses
 
 ```powershell
 # Analyze a specific session
-node scripts/analyze-copilot-session.mjs "%USERPROFILE%\.copilot\session-state\1a2b3c4d-...\events.jsonl"
+node scripts/analyze-copilot-session.mjs "$env:USERPROFILE\.copilot\session-state\1a2b3c4d-...\events.jsonl"
 
 # List all Copilot sessions (most recent first)
 node scripts/analyze-copilot-session.mjs --list
@@ -52,7 +52,7 @@ Get-ChildItem "$env:USERPROFILE\.copilot\session-state" -Directory |
 ## Parse Copilot session tail (manual)
 
 ```powershell
-$file = "%USERPROFILE%\.copilot\session-state\SESSION_ID\events.jsonl"
+$file = "$env:USERPROFILE\.copilot\session-state\SESSION_ID\events.jsonl"
 $tail = 30
 
 $lines = Get-Content $file -Tail $tail
