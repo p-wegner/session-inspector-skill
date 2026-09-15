@@ -3,6 +3,41 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-15 (4) — the published history stops naming the organisation
+
+**87 commit messages were rewritten and force-pushed.** This repo's only remote is public GitHub,
+and nothing had ever scrubbed it. A scan against the shared term list (`~/.claude/notes/confidential-terms.txt`,
+read at run time — the list is never copied into a repo that publishes) found the employer's name in
+23 places across 12 commit messages, and a client's name in 2 of them, as session locators of the
+form `C--projects-<org>-<client>--8e3f1bec`.
+
+**What was done:** `git filter-repo --replace-message` over a throwaway mirror clone, two rules
+(the employer's name to `org`, the client's to `client-a`), then a force-push of `master` only.
+`org` was already the placeholder this repo used elsewhere, so the locators stay well-formed.
+
+**Verified, not assumed:**
+- all 87 tree hashes are pairwise identical before and after, so the rewrite touched messages and
+  nothing else;
+- a **fresh clone from GitHub** scans clean against the full 27-term list — the check runs against
+  what is actually published, not against the local tip;
+- a pre-rewrite `git bundle` of every ref was taken first.
+
+**SHAs changed from the root: `19ad3db` → `2bd62c2`.** Any other clone of this repo must be
+re-cloned or hard-reset; a `git pull` there will try to merge two histories. The local
+`fix/continuations-stale-pass-detection` branch had zero unique commits and was repointed to the
+rewritten commit at the same position (tree hash confirmed identical).
+
+**Two things deliberately NOT done:**
+1. **The working tree still names the employer in 10 tracked files, 38 times** — `spawn.cmd`,
+   `README.md`, `SKILL.md`, `preflight.mjs`, `batch.mjs`, `make-handoff.mjs`, `wait-for-agent.mjs`,
+   `spawn-session.ps1`, plus `CONTINUE.md`/`CHANGELOG.md` prose. This is not a find-and-replace:
+   `spawn.cmd` *resolves targets* under that path and `preflight.mjs` hardcodes a fleet path, so the
+   fix is to make the clone root configurable (env var with a documented default), the same shape as
+   the home-path pass in (2). Open.
+2. **Author and committer emails still carry the work domain, on all 87 commits.** Unchanged by this
+   rewrite. That is the committer's own work identity rather than a client fact, and rewriting it
+   would change authorship — a separate decision, not this one's to make.
+
 ## 2026-09-15 (3) — a session can be handed to the OTHER agent
 
 **New tool: `session-inspector/scripts/brief.mjs`** — a harness-neutral handoff brief, written to
