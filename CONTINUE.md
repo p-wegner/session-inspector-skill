@@ -3,6 +3,27 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-18 — one price table, with current list prices
+
+**`session-inspector/scripts/lib/quota.mjs` is the only pricing table now.** `token-sinks.mjs` and
+`quota-report.mjs` carried their own copies and both had drifted: Sonnet priced at $3/$15 (Sonnet 4.6)
+while every recent session runs Sonnet 5 at $2/$10, and no Fable row at all in two of the three, so
+Fable 5.1 fell back to Opus prices. Both now import `costUsdTotals` from the lib. Rows gained a `cr`
+column, the cache-read multiplier, because Fable 5.1 reads at 0.025x ($0.25/MTok) rather than 0.1x.
+Row order matters: `sonnet-5` must precede the generic `sonnet` row, `fable-5-1` the generic `fable`.
+
+**Verified against Claude Code's own accounting, not by reading.** Some transcripts carry a
+`cost-state` line (`totalCostUSD`, per-model tokens). Session 3bcf8e3b's Fable 5.1 record, fed
+through the new `costUsd`, returns $14.72 — the same figure to the cent. Then `token-sinks --days 1
+--by model`, `quota-report --profile org_team_5x_2` and `fleet-stats --days 60` ran clean.
+
+**Found while comparing a gateway session to subscription sessions** (2026-09-18): the gateway
+session's cache_read sat pinned at 46–57k while input grew to 307k, every subscription session of
+the same shape had cache_read at 93–98% of context. The write-up lives in the nexos-tools repo
+(`docs/reports/2026-09-18-gateway-cache-plateau.md`). Two tool gaps it exposed, open: `context-growth --session` prints the total curve only, so the plateau is invisible
+without a per-turn input/cache_read split; and `cost-state` is per process, so a resumed session's
+record covers only its last leg and cannot serve as a session total.
+
 ## 2026-09-15 (5) — the clone root is derived, and the checkout names no machine
 
 **Zero occurrences of the employer's name in any tracked file**, down from 38 across 10. The

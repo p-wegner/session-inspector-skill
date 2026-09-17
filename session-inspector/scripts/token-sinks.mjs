@@ -34,31 +34,12 @@ import { readFileSync, readdirSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { claudeProjectDirs } from "./lib/config.mjs";
+import { costUsdTotals } from "./lib/quota.mjs";
 import { padTail } from "./lib/chunk-kind.mjs";
 
 // ── pricing ────────────────────────────────────────────────────────────────
-// $/1M tokens. cacheRead = 0.1x input. cacheWrite: 1.25x for a 5-minute cache, 2x for the
-// 1-hour cache Claude Code uses — the transcript says which (usage.cache_creation.ephemeral_*).
-const PRICING = [
-  { match: /opus/, in: 5, out: 25 },
-  { match: /sonnet/, in: 3, out: 15 },
-  { match: /haiku/, in: 1, out: 5 },
-];
-function priceFor(model) {
-  const p = PRICING.find((p) => p.match.test(model || ""));
-  return p || { in: 5, out: 25 }; // default to opus pricing when unknown
-}
-function costUsd(model, t) {
-  const p = priceFor(model);
-  return (
-    (t.input * p.in +
-      t.output * p.out +
-      t.cacheCreation1h * p.in * 2 +
-      (t.cacheCreation - t.cacheCreation1h) * p.in * 1.25 +
-      t.cacheRead * p.in * 0.1) /
-    1_000_000
-  );
-}
+// Pricing lives in lib/quota.mjs (one table for every cost-reporting tool).
+const costUsd = costUsdTotals;
 const zeroTokens = () => ({ input: 0, output: 0, cacheCreation: 0, cacheCreation1h: 0, cacheRead: 0 });
 function addTokens(a, b) {
   a.input += b.input;
@@ -297,6 +278,6 @@ for (const r of rows.slice(0, top)) {
 }
 console.log("═".repeat(78));
 console.log(
-  "Note: cost = est. USD from per-model pricing (cache-read 0.1x; cache-write 2x for 1h-cache turns, 1.25x otherwise).\n" +
+  "Note: cost = est. USD from per-model pricing (list prices in lib/quota.mjs; cache-read 0.1x, 0.025x on Fable 5.1; cache-write 2x for 1h-cache turns, 1.25x otherwise).\n" +
   "      Codex sessions counted in raw tokens but not costed (different pricing).",
 );

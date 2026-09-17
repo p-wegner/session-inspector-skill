@@ -12,8 +12,8 @@
  * (`<session>/subagents/agent-*.jsonl`) ARE included: they hit the API and burn
  * the same quota.
  *
- * Cost model matches token-sinks.mjs: $/1M in/out, cache-read 0.1x in,
- * cache-write 1.25x in. opus 5/25 · sonnet 3/15 · haiku 1/5. Est. USD is what the
+ * Cost model is lib/quota.mjs (one table for every tool): $/1M in/out, cache-read 0.1x in (0.025x on Fable 5.1),
+ * cache-write 2x in (1h cache) or 1.25x (5m). fable 5.1 10/50 · opus 5/25 · sonnet 5 2/10 · haiku 1/5. Est. USD is what the
  * usage WOULD have cost at API pay-go rates — i.e. the value extracted from the
  * flat subscription.
  *
@@ -30,6 +30,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { classify } from "./lib/prompts.mjs";
 import { toolDisplayName } from "./lib/parse.mjs";
+import { costUsdTotals } from "./lib/quota.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -139,16 +140,8 @@ const noAuto = argv.includes("--no-auto-reset");
 let since, sinceMs, resetInfo = null;
 const until = new Date();
 
-// ── pricing (mirror token-sinks.mjs) ──────────────────────────────────────────
-const PRICING = [
-  { match: /opus/, in: 5, out: 25 },
-  { match: /sonnet/, in: 3, out: 15 },
-  { match: /haiku/, in: 1, out: 5 },
-];
-const priceFor = (m) => PRICING.find((p) => p.match.test(m || "")) || { in: 5, out: 25 };
-const costUsd = (m, t) =>
-  (t.input * priceFor(m).in + t.output * priceFor(m).out +
-    t.cacheCreation * priceFor(m).in * 1.25 + t.cacheRead * priceFor(m).in * 0.1) / 1e6;
+// ── pricing: one table for every tool, in lib/quota.mjs ──
+const costUsd = costUsdTotals;
 const zt = () => ({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
 const addT = (a, b) => { a.input += b.input; a.output += b.output; a.cacheCreation += b.cacheCreation; a.cacheRead += b.cacheRead; };
 const rawT = (t) => t.input + t.output + t.cacheCreation + t.cacheRead;

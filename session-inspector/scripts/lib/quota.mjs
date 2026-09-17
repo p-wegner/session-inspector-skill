@@ -12,17 +12,29 @@ import { join } from "path";
 import { classify } from "./prompts.mjs";
 import { toolDisplayName } from "./parse.mjs";
 
-// ── pricing ($/1M; cache-read 0.1x in; cache-write 2x in for 1h-cache turns, 1.25x otherwise) ──
+// ── pricing ($/1M, Anthropic list, checked 2026-09-18 against the claude-api skill's model table) ──
+// `cr` is the cache-read multiplier on the input price: 0.1x everywhere except Claude Fable 5.1
+// (0.025x, $0.25/MTok). Cache writes cost 2x input for the 1-hour cache Claude Code uses and 1.25x
+// for a 5-minute cache; the transcript says which (usage.cache_creation.ephemeral_*). Order matters:
+// the first matching row wins, so the versioned sonnet row must precede the generic one.
 export const PRICING = [
-  { match: /fable|mythos/, in: 10, out: 50 },
-  { match: /opus/, in: 5, out: 25 },
-  { match: /sonnet/, in: 3, out: 15 },
-  { match: /haiku/, in: 1, out: 5 },
+  { match: /fable-5-1|mythos-5-1/, in: 10, out: 50, cr: 0.025 },
+  { match: /fable|mythos/, in: 10, out: 50, cr: 0.1 },
+  { match: /opus/, in: 5, out: 25, cr: 0.1 },
+  { match: /sonnet-5/, in: 2, out: 10, cr: 0.1 },
+  { match: /sonnet/, in: 3, out: 15, cr: 0.1 },
+  { match: /haiku/, in: 1, out: 5, cr: 0.1 },
 ];
-export const priceFor = (m) => PRICING.find((p) => p.match.test(m || "")) || { in: 5, out: 25 };
-export const costUsd = (m, t) =>
-  (t.i * priceFor(m).in + t.o * priceFor(m).out +
-    (t.cw1h || 0) * priceFor(m).in * 2 + (t.cw - (t.cw1h || 0)) * priceFor(m).in * 1.25 + t.cr * priceFor(m).in * 0.1) / 1e6;
+export const priceFor = (m) => PRICING.find((p) => p.match.test(m || "")) || { in: 5, out: 25, cr: 0.1 };
+/** Compact-shape cost: t = { i, o, cw, cw1h, cr } (quota-report / quota-multi events). */
+export const costUsd = (m, t) => {
+  const p = priceFor(m);
+  return (t.i * p.in + t.o * p.out +
+    (t.cw1h || 0) * p.in * 2 + (t.cw - (t.cw1h || 0)) * p.in * 1.25 + t.cr * p.in * p.cr) / 1e6;
+};
+/** Long-shape cost: t = { input, output, cacheCreation, cacheCreation1h?, cacheRead } (token-sinks, quota-report totals). */
+export const costUsdTotals = (m, t) =>
+  costUsd(m, { i: t.input, o: t.output, cw: t.cacheCreation, cw1h: t.cacheCreation1h || 0, cr: t.cacheRead });
 export const zt = () => ({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
 export const addT = (a, b) => { a.input += b.input; a.output += b.output; a.cacheCreation += b.cacheCreation; a.cacheRead += b.cacheRead; };
 export const rawT = (t) => t.input + t.output + t.cacheCreation + t.cacheRead;
