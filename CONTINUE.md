@@ -188,113 +188,53 @@ second source of truth.
 
 ## spawn-session
 
-The rest of this file concerns `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
-skills** in the session-inspector repo (`spawn-session/` beside
-`session-inspector/`, neither nested in the other), which does
-have a GitHub remote — so keep anything genuinely machine-specific out of here,
-or in a gitignored `*.local.md` beside it.
+The rest of this file concerns `spawn-session/`, one of the three sibling skills in this repo.
+Current state, present tense. The repo has a GitHub remote, so anything machine-specific belongs
+in a gitignored `*.local.md` beside this file rather than here.
 
-The move brought the full history over (`git subtree add`) and the per-profile
-`skills\spawn-session` junctions were repointed to the new path; verified by
-resolving `spawn.cmd` through every profile's junction. The old
-`<clone-root>\spawn-session` is empty and carries a `MOVED.md`; it could
-not be deleted because the PowerShell hosts of sessions launched from the old path
-still hold a handle. Delete it once those tabs are closed.
+Standard skill layout: `SKILL.md`, `README.md` and the entry point `spawn.cmd` at the skill root,
+every helper under `scripts/` (`spawn-session.ps1`, `batch.mjs`, `preflight.mjs`, `make-handoff.mjs`,
+`ledger.mjs`, `repo-root.mjs`, `stage-launch.mjs`, `trust-folder.mjs`, `wait-for-agent.mjs`,
+`write-text.mjs`). `spawn.cmd` resolves them via `%~dp0scripts\`; `batch.mjs` reaches the sibling
+skill via `../../session-inspector/scripts`.
 
-## What is true today
+`spawn.cmd` is the **only** session launcher here. `session-resume.mjs` delegates to it
+(`session-inspector/scripts/session-resume.mjs:438`) rather than writing its own per-session `.cmd`,
+which used to leak `CLAUDE_CODE_CHILD_SESSION=1` into every relaunched session and turn transcript
+saving off. That consolidation is why `-resume` exists here at all.
 
-`spawn-session/` follows the standard skill layout since 2026-08-23: `SKILL.md`,
-`README.md` and the entry point `spawn.cmd` at the skill root, every helper
-(`spawn-session.ps1`, `batch.mjs`, `preflight.mjs`, `make-handoff.mjs`, `ledger.mjs`,
-`trust-folder.mjs`, `wait-for-agent.mjs`, `write-text.mjs`) under `scripts/`.
-`spawn.cmd` resolves them via `%~dp0scripts\`; `batch.mjs` reaches the sibling skill
-via `../../session-inspector/scripts`. Verified by `spawn.cmd -h`, `node --check` on every script,
-`preflight.mjs --pick-profile` and `batch.mjs` resolving `spawn-plan.mjs` after the move.
+**Prefer `-handoff -from <session-id>` over `-resume`.** Resume cannot cross profiles, and a session
+is normally cut off because its account hit a limit; its cache is also dead by then (measured across
+five real cut-offs: $11.24 cold against $0.56 warm). The rule lives in
+`session-inspector/scripts/lib/resume-economics.mjs`. The 2026-08-22 verification matrix for `-mf`,
+`-m -`, preflight, `-p auto`, `-batch` and the ledger, and the full resume-vs-handoff reasoning, are
+in [`docs/archive/CONTINUE-archive.md`](docs/archive/CONTINUE-archive.md).
 
-`spawn.cmd` is now the **only** session launcher on this machine. session-inspector's
-`session-resume.mjs` used to write its own per-session `.cmd` that set
-`CLAUDE_CONFIG_DIR`, `cd`'d and ran `claude` — and nothing else — so every session it
-relaunched from inside a Claude session inherited `CLAUDE_CODE_CHILD_SESSION=1` and
-**silently saved no transcript**. It now calls `spawn.cmd -resume`, which scrubs the
-inherited markers. That consolidation is the reason `-resume` exists here.
+## Resume identity — settled 2026-09-18
 
-## Verified (2026-08-22), and by what check
+**`claude --resume <id>` keeps the session id and appends to the same transcript, and the
+conversation is carried over.** Probed headlessly in a throwaway cwd: `claude -p` wrote
+`5c65c738….jsonl`, then `claude -p --resume 5c65c738… "what word did I ask you to remember"`
+answered `PINEAPPLE`, reported `session_id: 5c65c738…`, and appended to that same file — one
+session id across all 35 lines, no second transcript anywhere.
 
-- **`-mf <file>`** — the prompt reaches the session as a file path. Checked with a
-  prompt containing `(parens)`, a `;` and `"quotes"`: the dry run shows
-  `-PromptFile "<path>"` and nothing is re-quoted. This is the fix for a real
-  failure where `-m` with parentheses died in cmd with
-  `"plus" kann syntaktisch an dieser Stelle nicht verarbeitet werden`.
-- **`-m -`** — reads stdin; refuses an empty read (exit 65) instead of staging a
-  blank prompt. Checked both directions.
-- **preflight duplicate-session** — refused a second spawn into
-  `<clone-root>\acp` while `acp-e5@org_team_5x_3` was live there, naming
-  it and its pid. Exit 3.
-- **preflight capacity** — reads `fleet snapshot --json`'s
-  `system.headroomProcesses`. Two defects found and fixed while wiring it:
-  `fleet status --json` prints its human table (so it never parsed), and
-  `execFileSync` on a `.cmd` throws `EINVAL` on Windows — which was
-  indistinguishable from "fleet not installed". Snapshot is cached in `%TEMP%`
-  for 90s: 7.9s cold, 0.6s warm, so a batch pays once.
-- **`-p auto`** — picked `org_team_5x_4` (5h at 4%) over `org_team_5x_2`
-  (5h at 24%). Ranks on 5-hour utilization, then 7-day, then live sessions.
-  Excludes `~/.claude-*` dirs with no `projects/` — `.claude-share` is a
-  shared-skills folder and was being offered as an account to spawn under.
-- **`-batch`** — the gate holds: an all-`approved:false` plan exits 3 with the
-  review instructions, a bad schema exits 1, and a 2-of-3 approved plan dry-ran
-  both entries with per-entry profiles and a receipt table.
-- **ledger** — `~/.spawn-session/ledger.jsonl` gets one line per spawn; confirmed
-  written on a live launch.
+That closes the worry the 2026-08-22 entry was really about. What it does **not** cover: the
+interactive TUI was not re-probed (the 2026-08-22 tab is long gone, its `f67071d0…` registry id
+never wrote a transcript in any profile, and the `58656cf0…` transcript has not grown since
+2026-08-20). So the narrow registry question — whether the *session registry* keys a resumed tab
+under a fresh id — is still open, and is now cosmetic: the session itself is the same one.
 
-## Resume is no longer the recommended path (2026-08-22)
+Scanned 400 recent transcripts across profiles for a file carrying more than one `sessionId`, or
+one that disagrees with its filename: zero. Resume forks a transcript only when asked
+(`--fork-session`).
 
-`-resume` stays, but it is **not** what the tooling now advises for a cut-off
-session, and the open question below matters much less as a result. Two structural
-reasons, both worst in exactly the case that makes you reach for it:
-
-- **It cannot cross profiles.** The session is pinned to the account it ran on —
-  and a session is normally cut off *because that account hit its limit*.
-- **The cache is dead by then.** 1-hour TTL, so the first turn re-writes the whole
-  context at 2x instead of reading it at 0.1x. Measured across the five real
-  cut-offs on this box: $11.24 cold against $0.56 warm, before any new work.
-
-So prefer `-handoff -from <session-id>`, which runs on any account (`-p auto`) and
-costs cents. `-from` is the flag that makes this possible at all: before it,
-`-handoff` always described the *calling* session. The rule lives in
-session-inspector's `lib/resume-economics.mjs`.
-
-## Unverified — and specifically what is not proven
-
-**Whether `-resume` actually continues the prior conversation.** The wiring is
-verified: the dry run shows `-ResumeId "<id>"`, and a live launch started claude in
-the right cwd under the right profile (`spawn.cmd … -resume 58656cf0-… -safe`, pid
-32284, registry under `.claude-org_team_5x_2`). But the session's registry entry
-carries a **new** session id (`f67071d0…`), the old transcript's mtime did not
-change, and no new transcript had been written yet — so from outside the TUI the
-resumed and fresh cases look identical.
-
-Two things were tried and did NOT settle it:
-- An ACP message asking the session whether it had prior context — no reply while
-  it sat idle.
-- A control tab running plain `claude --resume <id>` without this launcher — it
-  never registered a session, because a hand-rolled launcher does not pre-accept
-  the folder-trust dialog (which `spawn.cmd` does via `trust-folder.mjs`). The
-  control was therefore stuck on the trust prompt and proved nothing.
-
-Note the resume semantics are Claude Code's, not this repo's — `resumable.mjs` has
-always printed `claude --resume <id>` and this only changes which launcher runs it.
-The open question is narrow: **does the session registry report a new id for a
-resumed session?** Settle it by looking at one resumed tab and seeing whether the
-conversation is there.
-
-Also unverified: `-resume` against a session with **no messages** starts a fresh
-session — observed with a 9-line transcript whose first entry was
-`queue-operation`. That looked like a launcher bug for a while; it is not, but a
-caller feeding ids from `session-resume --between` should expect it.
+**Still unverified:** `-resume` against a session with **no messages** starts a fresh session —
+observed with a 9-line transcript whose first entry was `queue-operation`. That looked like a
+launcher bug for a while; it is not, but a caller feeding ids from `session-resume --between`
+should expect it.
 
 ## Next steps
 
-- [ ] Settle the registry-id question above by eye, then record the answer here. LOW priority now that handoff, not resume, is the recommended path.
 - [ ] `-batch` has only been dry-run end to end. Run one real approved plan.
 - [ ] Verified by dry run only: `-from` + `-handoff` writing a brief for another
       profile's session. The brief header and machine-state panel were checked;

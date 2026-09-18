@@ -3,7 +3,9 @@
 Passes moved out of [`../../CONTINUE.md`](../../CONTINUE.md) once they were no longer the current
 day's work. **Verbatim, newest first.** Nothing here was re-verified on the way in, and nothing
 here is edited afterwards — it is the readable trail, not a second source of truth. Present tense
-inside a section means "present tense on the day it was written".
+inside a section means "present tense on the day it was written". One section carried no date in
+its heading when it was a standing section of the live file; a date was added to the heading and
+nothing else.
 
 ## 2026-09-15 (5) — the clone root is derived, and the checkout names no machine
 
@@ -185,3 +187,62 @@ should confirm the pairs still read as intended rather than trusting the count.
 personal home-path example each, and this file's own older entries plus `CHANGELOG.md`
 mention personal paths. Out of scope for this pass, which was `session-inspector/` only.
 
+## 2026-08-22/23 — spawn-session: the subtree move into this repo
+
+The rest of this file concerns `spawn-session/`. Current state, present tense. Since 2026-08-22 this skill is one of **two sibling
+skills** in the session-inspector repo (`spawn-session/` beside
+`session-inspector/`, neither nested in the other), which does
+have a GitHub remote — so keep anything genuinely machine-specific out of here,
+or in a gitignored `*.local.md` beside it.
+
+The move brought the full history over (`git subtree add`) and the per-profile
+`skills\spawn-session` junctions were repointed to the new path; verified by
+resolving `spawn.cmd` through every profile's junction. The old
+`<clone-root>\spawn-session` is empty and carries a `MOVED.md`; it could
+not be deleted because the PowerShell hosts of sessions launched from the old path
+still hold a handle. Delete it once those tabs are closed.
+
+## Verified (2026-08-22), and by what check
+
+- **`-mf <file>`** — the prompt reaches the session as a file path. Checked with a
+  prompt containing `(parens)`, a `;` and `"quotes"`: the dry run shows
+  `-PromptFile "<path>"` and nothing is re-quoted. This is the fix for a real
+  failure where `-m` with parentheses died in cmd with
+  `"plus" kann syntaktisch an dieser Stelle nicht verarbeitet werden`.
+- **`-m -`** — reads stdin; refuses an empty read (exit 65) instead of staging a
+  blank prompt. Checked both directions.
+- **preflight duplicate-session** — refused a second spawn into
+  `<clone-root>\acp` while `acp-e5@org_team_5x_3` was live there, naming
+  it and its pid. Exit 3.
+- **preflight capacity** — reads `fleet snapshot --json`'s
+  `system.headroomProcesses`. Two defects found and fixed while wiring it:
+  `fleet status --json` prints its human table (so it never parsed), and
+  `execFileSync` on a `.cmd` throws `EINVAL` on Windows — which was
+  indistinguishable from "fleet not installed". Snapshot is cached in `%TEMP%`
+  for 90s: 7.9s cold, 0.6s warm, so a batch pays once.
+- **`-p auto`** — picked `org_team_5x_4` (5h at 4%) over `org_team_5x_2`
+  (5h at 24%). Ranks on 5-hour utilization, then 7-day, then live sessions.
+  Excludes `~/.claude-*` dirs with no `projects/` — `.claude-share` is a
+  shared-skills folder and was being offered as an account to spawn under.
+- **`-batch`** — the gate holds: an all-`approved:false` plan exits 3 with the
+  review instructions, a bad schema exits 1, and a 2-of-3 approved plan dry-ran
+  both entries with per-entry profiles and a receipt table.
+- **ledger** — `~/.spawn-session/ledger.jsonl` gets one line per spawn; confirmed
+  written on a live launch.
+
+## Resume is no longer the recommended path (2026-08-22)
+
+`-resume` stays, but it is **not** what the tooling now advises for a cut-off
+session, and the open question below matters much less as a result. Two structural
+reasons, both worst in exactly the case that makes you reach for it:
+
+- **It cannot cross profiles.** The session is pinned to the account it ran on —
+  and a session is normally cut off *because that account hit its limit*.
+- **The cache is dead by then.** 1-hour TTL, so the first turn re-writes the whole
+  context at 2x instead of reading it at 0.1x. Measured across the five real
+  cut-offs on this box: $11.24 cold against $0.56 warm, before any new work.
+
+So prefer `-handoff -from <session-id>`, which runs on any account (`-p auto`) and
+costs cents. `-from` is the flag that makes this possible at all: before it,
+`-handoff` always described the *calling* session. The rule lives in
+session-inspector's `lib/resume-economics.mjs`.
