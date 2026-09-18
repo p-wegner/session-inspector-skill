@@ -35,6 +35,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -50,7 +51,7 @@ const by = (opt("--by", "") || "").toLowerCase();          // stack|project|mode
 const days = parseInt(opt("--days", "0"), 10);
 const top = parseInt(opt("--top", "8"), 10);
 const asJson = flag("--json");
-const windowStartMs = days > 0 ? Date.now() - days * 86400000 - 86400000 : 0;
+const windowStartMs = days > 0 ? Date.now() - days * 86400000 : 0; // transcript mtime; no slack day, nothing filters it back out later
 
 // ── per-session collection ───────────────────────────────────────────────────
 
@@ -60,16 +61,19 @@ function ctxOf(u) {
 }
 
 const rows = [];
+reach.begin("fleet-stats", { days, project: projectQ });
 for (const s of discover("claude")) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const folder = basename(dirname(s.path));
   const lines = content.split("\n");
 
   // Rich stats from the shared parser (tools, commands, tokens, limits, meta).
   const st = parseClaude(lines);
   const id = projectIdentity(st.cwd || "");
-  if (projectQ && ![folder, st.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
+  if (projectQ && ![folder, st.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
   if (!st.assistantTurns) continue;
 
   // Second light pass: per-turn context curve (for the biggest single-turn jump)
@@ -165,7 +169,7 @@ function buildGroups() {
 // ── output ─────────────────────────────────────────────────────────────────────
 
 if (asJson) {
-  const payload = { scope: { project: projectQ || null, days: days || null, by: by || null }, sessions: rows.length };
+  const payload = { reach: reach.toJSON(), scope: { project: projectQ || null, days: days || null, by: by || null }, sessions: rows.length };
   if (by) payload.groups = buildGroups();
   payload.distribution = {
     turns: { mean: mean(rows.map(r => r.turns)), median: median(rows.map(r => r.turns)), p90: pct(rows.map(r => r.turns), .9), max: maxOf(rows.map(r => r.turns)) },
@@ -188,6 +192,7 @@ if (asJson) {
   const scope = [projectQ && `project~${projectQ}`, days && `${days}d`].filter(Boolean).join("  ");
   console.log("═".repeat(80));
   console.log(`FLEET STATISTICS — ${rows.length} Claude sessions${scope ? "  ·  " + scope : ""}`);
+  console.log(reach.line());
   console.log("═".repeat(80));
 
   // ---- comparison table (when --by given) ----

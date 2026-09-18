@@ -38,6 +38,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -50,7 +51,7 @@ const sessionQ = (opt("--session", "") || "").toLowerCase();
 const days = parseInt(opt("--days", "0"), 10);
 const THRESH = parseInt(opt("--threshold", "200000"), 10);
 const asJson = flag("--json");
-const windowStartMs = days > 0 ? Date.now() - days * 86400000 - 86400000 : 0;
+const windowStartMs = days > 0 ? Date.now() - days * 86400000 : 0; // transcript mtime; no slack day, nothing filters it back out later
 
 const BUCKETS = [0, 20000, 50000, 100000, 150000, 180000, 200000, Infinity];
 const BLABEL = ["<20k", "20-50k", "50-100k", "100-150k", "150-180k", "180-200k", ">200k"];
@@ -66,16 +67,19 @@ const bcount = new Array(BLABEL.length).fill(0);
 let totalCompacts = 0, totalTurns = 0, totalCacheRead = 0, cacheReadAbove = 0, turnsAbove = 0;
 
 const sessions = discover("claude");
+reach.begin("context-growth", { days, project: projectQ });
 for (const s of sessions) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
   const folder = basename(dirname(s.path));
   // session id and folder are known WITHOUT reading the file — with --session this
   // turns a whole-corpus read into a single-file read
-  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) { reach.exclude("other --session"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
-  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
+  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
 
   let compacts = 0, turns = 0, maxCtx = 0, model = "?", version = "?";
   let crTot = 0, crAbove = 0, nAbove = 0, crossIdx = -1;
@@ -83,7 +87,7 @@ for (const s of sessions) {
   const seen = new Set(); // one record per API call, not per content-block row
   for (const ln of content.split("\n")) {
     if (!ln.trim()) continue;
-    let o; try { o = JSON.parse(ln); } catch { continue; }
+    let o; try { o = JSON.parse(ln); } catch { reach.badLine(); continue; }
     if (o.version) version = o.version;
     if (o.isCompactSummary) { compacts++; totalCompacts++; }
     if (o.type === "assistant" && o.message) {
@@ -110,7 +114,7 @@ for (const s of sessions) {
 const pct = (arr, p) => { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); return a[Math.min(a.length - 1, Math.floor(a.length * p))]; };
 
 if (asJson) {
-  console.log(JSON.stringify({
+  console.log(JSON.stringify({ reach: reach.toJSON(),
     scope: { project: projectQ || null, session: sessionQ || null, days: days || null, threshold: THRESH },
     totals: { turns: totalTurns, compacts: totalCompacts, cacheRead: totalCacheRead, cacheReadAbove, turnsAbove,
       pctTurnsAbove: totalTurns ? +(100 * turnsAbove / totalTurns).toFixed(1) : 0,
@@ -122,6 +126,7 @@ if (asJson) {
 } else {
   const k = (n) => (n / 1000).toFixed(0) + "k";
   console.log("=== SCOPE ===");
+  console.log(reach.line());
   console.log(`sessions=${perSession.length}  turns=${totalTurns}  threshold=${k(THRESH)}` +
     (projectQ ? `  project~${projectQ}` : "") + (sessionQ ? `  session~${sessionQ}` : "") + (days ? `  days=${days}` : ""));
 

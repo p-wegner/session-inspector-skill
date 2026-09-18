@@ -31,6 +31,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { summarize } from "./lib/parse.mjs";
@@ -47,7 +48,7 @@ const days = parseInt(opt("--days", "0"), 10);
 const top = parseInt(opt("--top", "16"), 10);
 const lens = opt("--lens", "general");
 const asJson = flag("--json");
-const windowStartMs = days > 0 ? Date.now() - days * 86400000 - 86400000 : 0;
+const windowStartMs = days > 0 ? Date.now() - days * 86400000 : 0; // transcript mtime; no slack day, nothing filters it back out later
 
 // ── defect lexicons (the "rework happened" vocabulary) ───────────────────────
 const LEX = {
@@ -63,16 +64,20 @@ const GEN_CMD = /\b(gen|batch|reslide|split-grid|brand-grab)\.(c?js|mjs)\b|chatg
 const sessions = discover(provider === "all" ? "all" : provider);
 const rows = [];
 
+reach.begin("incidents", { days, project: projectQ });
 for (const s of sessions) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
   let content;
-  try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
 
   const meta = extractMeta(s.provider, content);
   const id = projectIdentity(meta.cwd || "");
   const folder = s.provider === "claude" ? basename(dirname(s.path)) : "";
   const haystack = [folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase();
-  if (projectQ && !haystack.includes(projectQ)) continue;
+  if (projectQ && !haystack.includes(projectQ)) { reach.exclude("other --project"); continue; }
 
   const sum = summarize(s.provider, content);
   if (!sum) continue;
@@ -119,10 +124,11 @@ for (const s of sessions) {
 rows.sort((a, b) => b.score - a.score);
 const out = rows.slice(0, top);
 
-if (asJson) { console.log(JSON.stringify({ scope: { provider, project: projectQ || "(all)", days: days || "all", lens }, count: rows.length, sessions: out }, null, 2)); process.exit(0); }
+if (asJson) { console.log(JSON.stringify({ reach: reach.toJSON(), scope: { provider, project: projectQ || "(all)", days: days || "all", lens }, count: rows.length, sessions: out }, null, 2)); process.exit(0); }
 
 const pad = (s, w) => String(s).padEnd(w);
 console.log(`\nIncident ranking — project:${projectQ || "(all)"}  provider:${provider}  lens:${lens}  window:${days || "all"}`);
+console.log(reach.line());
 console.log(`${rows.length} sessions with friction. Top ${out.length}:\n`);
 if (!out.length) { console.log("(none)\n"); process.exit(0); }
 for (const r of out) {

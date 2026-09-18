@@ -30,10 +30,10 @@
  *   node scripts/token-sinks.mjs --json               # machine-readable
  */
 
-import { readFileSync, readdirSync, statSync, existsSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
-import { claudeProjectDirs } from "./lib/config.mjs";
+import { readFileSync } from "fs";
+import { basename, dirname } from "path";
+import { discover } from "./lib/sessions.mjs";
+import { reach } from "./lib/reach.mjs";
 import { costUsdTotals } from "./lib/quota.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { padTail } from "./lib/chunk-kind.mjs";
@@ -64,7 +64,7 @@ function parseClaude(path) {
     const s = line.trim();
     if (!s) continue;
     let obj;
-    try { obj = JSON.parse(s); } catch { continue; }
+    try { obj = JSON.parse(s); } catch { reach.badLine(); continue; }
     if (obj.timestamp) {
       if (!firstTs) firstTs = obj.timestamp;
       lastTs = obj.timestamp;
@@ -98,7 +98,7 @@ function parseCodex(path) {
     const s = line.trim();
     if (!s) continue;
     let obj;
-    try { obj = JSON.parse(s); } catch { continue; }
+    try { obj = JSON.parse(s); } catch { reach.badLine(); continue; }
     if (obj.timestamp) {
       if (!firstTs) firstTs = obj.timestamp;
       lastTs = obj.timestamp;
@@ -119,61 +119,38 @@ function parseCodex(path) {
 }
 
 // ── collect sessions in the window ───────────────────────────────────────────
-function collectClaude(cutoffMs) {
-  const out = [];
-  for (const base of claudeProjectDirs()) {
-    for (const dir of readdirSync(base)) {
-      const dirPath = join(base, dir);
-      let files;
-      try { files = readdirSync(dirPath); } catch { continue; }
-      for (const f of files) {
-        if (!f.endsWith(".jsonl")) continue;
-        const p = join(dirPath, f);
-        let st;
-        try { st = statSync(p); } catch { continue; }
-        if (st.mtimeMs < cutoffMs) continue; // stat-filter first
-        const parsed = parseClaude(p);
-        out.push({
-          provider: "claude",
-          sessionId: f.replace(/\.jsonl$/, ""),
-          project: dir,
-          path: p,
-          modified: st.mtime,
-          ...parsed,
-        });
-      }
-    }
-  }
-  return out;
+// Discovery is lib/sessions.mjs's, the same one sync uses: every profile, every
+// codex home (CODEX_HOME / CODEX_HOMES), and the nested subagent and workflow
+// transcripts. Those nested files carry their own API usage, which is billed and
+// never appears in the parent's transcript; this tool used to walk the top level
+// only, so its total left out subagent spend while quota-report included it.
+// A nested transcript is attributed to its parent session.
+// The project dir a Claude transcript sits under: <base>/<slug>/<uuid>.jsonl for a
+// main transcript, <base>/<slug>/<uuid>/subagents/... for a nested one.
+function slugOf(d) {
+  const p = d.kind === "main" ? d.path : d.path.slice(0, d.path.indexOf(d.parentSessionId) + d.parentSessionId.length);
+  return basename(dirname(p));
 }
 
-function collectCodex(cutoffMs) {
-  const base = join(homedir(), ".codex", "sessions");
+function collect(provider, cutoffMs) {
   const out = [];
-  if (!existsSync(base)) return out;
-  // sessions/YYYY/MM/DD/*.jsonl — walk recursively
-  const walk = (dir) => {
-    let entries;
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) { walk(p); continue; }
-      if (!e.name.endsWith(".jsonl")) continue;
-      let st;
-      try { st = statSync(p); } catch { continue; }
-      if (st.mtimeMs < cutoffMs) continue;
-      const parsed = parseCodex(p);
-      out.push({
-        provider: "codex",
-        sessionId: e.name.replace(/\.jsonl$/, ""),
-        project: parsed.cwd || "(unknown)",
-        path: p,
-        modified: st.mtime,
-        ...parsed,
-      });
-    }
-  };
-  walk(base);
+  for (const d of discover(provider)) {
+    if (d.provider === "copilot") continue; // no usage records; see docs/agent-feature-matrix.md
+    reach.found(d.provider, d.profile, d.kind === "main" ? d.sessionId : d.parentSessionId);
+    if (d.mtime.getTime() < cutoffMs) { reach.exclude(`outside --days ${days}`); continue; }
+    reach.file(d.path);
+    const parsed = d.provider === "claude" ? parseClaude(d.path) : parseCodex(d.path);
+    const sessionId = d.kind === "main" ? d.sessionId : d.parentSessionId;
+    out.push({
+      provider: d.provider,
+      sessionId,
+      kind: d.kind,
+      project: d.provider === "claude" ? slugOf(d) : (parsed.cwd || "(unknown)"),
+      path: d.path,
+      modified: d.mtime,
+      ...parsed,
+    });
+  }
   return out;
 }
 
@@ -203,9 +180,8 @@ const jsonOut = args.includes("--json");
 
 const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
-let sessions = [];
-if (provider === "all" || provider === "claude") sessions.push(...collectClaude(cutoffMs));
-if (provider === "all" || provider === "codex") sessions.push(...collectCodex(cutoffMs));
+reach.begin("token-sinks", { days, provider, by, project: undefined });
+const sessions = collect(provider === "all" ? "all" : provider, cutoffMs);
 
 // attach per-session cost (codex left at 0 — different provider/pricing)
 for (const s of sessions) {
@@ -228,25 +204,32 @@ for (const s of sessions) {
   const k = keyOf(s);
   let g = groups.get(k);
   if (!g) {
-    g = { key: k, tokens: zeroTokens(), cost: 0, sessions: 0, provider: s.provider, model: s.model, project: s.project };
+    g = { key: k, tokens: zeroTokens(), cost: 0, sessionIds: new Set(), transcripts: 0, provider: s.provider, model: s.model, project: s.project };
     groups.set(k, g);
   }
   addTokens(g.tokens, s.tokens);
   g.cost += s.cost;
-  g.sessions++;
+  g.sessionIds.add(`${s.provider}:${s.sessionId}`);
+  g.transcripts++;
   if (g.provider !== s.provider) g.provider = "mixed";
 };
 
-let rows = [...groups.values()].map((g) => ({ ...g, rawTokens: rawTotal(g.tokens) }));
+let rows = [...groups.values()].map(({ sessionIds, ...g }) => ({ ...g, sessions: sessionIds.size, rawTokens: rawTotal(g.tokens) }));
 const sortKey = sort === "tokens" ? (r) => r.rawTokens : sort === "output" ? (r) => r.tokens.output : (r) => r.cost;
 rows.sort((a, b) => sortKey(b) - sortKey(a));
 
 // totals
-const totals = { tokens: zeroTokens(), cost: 0, sessions: sessions.length };
+const totals = {
+  tokens: zeroTokens(), cost: 0,
+  sessions: new Set(sessions.map((s) => `${s.provider}:${s.sessionId}`)).size,
+  transcripts: sessions.length,
+  nestedTranscripts: sessions.filter((s) => s.kind !== "main").length,
+};
 for (const s of sessions) { addTokens(totals.tokens, s.tokens); totals.cost += s.cost; }
 
 if (jsonOut) {
-  console.log(JSON.stringify({ days, by, provider, sort, totals, rows: rows.slice(0, top) }, null, 2));
+  reach.shown(Math.min(top, rows.length), rows.length);
+  console.log(JSON.stringify({ contract: "session-inspector/token-sinks/1", days, by, provider, sort, totals, rows: rows.slice(0, top), reach: reach.toJSON() }, null, 2));
   process.exit(0);
 }
 
@@ -254,7 +237,7 @@ console.log("═".repeat(78));
 console.log(`TOKEN SINKS — last ${days}d · grouped by ${by} · sorted by ${sort} · provider=${provider}`);
 console.log("═".repeat(78));
 console.log(
-  `Sessions in window: ${totals.sessions} (${provider === "all" ? "Claude + Codex" : provider}, any length, transcript mtime within ${days}d)   ` +
+  `Sessions in window: ${totals.sessions} (+${totals.nestedTranscripts} subagent/workflow transcripts, costed to their parent; ${provider === "all" ? "Claude + Codex" : provider}, transcript mtime within ${days}d)   ` +
   `Raw tokens: ${fmtTok(rawTotal(totals.tokens))}   ` +
   `Est. cost (claude): ${fmtUsd(totals.cost)}`,
 );
@@ -262,6 +245,8 @@ console.log(
   `  in ${fmtTok(totals.tokens.input)} · out ${fmtTok(totals.tokens.output)} · ` +
   `cache-write ${fmtTok(totals.tokens.cacheCreation)} · cache-read ${fmtTok(totals.tokens.cacheRead)}`,
 );
+reach.shown(Math.min(top, rows.length), rows.length);
+console.log(reach.line());
 console.log("─".repeat(78));
 const keyW = by === "project" ? 48 : 22;
 console.log(

@@ -14,6 +14,7 @@
 
 import { classify } from "./prompts.mjs";
 import { firstRowOf } from "./usage.mjs";
+import { reach } from "./reach.mjs";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -105,7 +106,7 @@ export function parseClaude(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
 
     if (obj.timestamp) { if (!stats.startTime) stats.startTime = obj.timestamp; stats.endTime = obj.timestamp; }
     if (obj.sessionId && !stats.sessionId) stats.sessionId = obj.sessionId;
@@ -228,7 +229,7 @@ export function parseCodex(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
     const type = obj.type, payload = obj.payload || {}, ts = obj.timestamp;
     if (ts) { if (!stats.startTime) stats.startTime = ts; stats.endTime = ts; }
 
@@ -287,7 +288,7 @@ export function parseCopilot(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
     const type = obj.type, data = obj.data || {}, ts = obj.timestamp;
     if (ts && (!stats.endTime || ts > stats.endTime)) stats.endTime = ts;
 
@@ -367,7 +368,7 @@ export function claudeEvents(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
     const ts = obj.timestamp || "";
     const msg = obj.message;
     if (!msg) continue;
@@ -407,7 +408,7 @@ export function codexEvents(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
     const ts = obj.timestamp || "", payload = obj.payload || {};
 
     if (obj.type === "event_msg") {
@@ -445,7 +446,7 @@ export function copilotEvents(lines) {
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let obj; try { obj = JSON.parse(trimmed); } catch { continue; }
+    let obj; try { obj = JSON.parse(trimmed); } catch { reach.badLine(); continue; }
     const ts = obj.timestamp || "", type = obj.type, data = obj.data || {};
 
     if (type === "user.message") ev.push({ ts, type: "user", tool: "", text: data.content || "" });

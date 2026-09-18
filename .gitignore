@@ -6,3 +6,7 @@ hub.pid
 .playwright-cli/
 *.stackdump
 resume-briefs/
+
+# Skill-analysis runs over REAL transcripts (session ids, costs, project names).
+# This repo is public; the analysis stays local.
+docs/analysis/

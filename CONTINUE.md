@@ -1,7 +1,76 @@
 # CONTINUE — claude-session-tools
 
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
-`token-budget/`, `spawn-session/`.
+`token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
+the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
+
+## 2026-09-18 — published reach on the fleet tools (BACKLOG item 1, in progress)
+
+**Why.** A skill-design shape pass classified `session-inspector` as an Instrument whose numbers
+are consumed as data, so a wrong count does not stay in chat. It was missing published reach: parsers
+dropped unparseable lines with a bare `catch { continue; }`, and nothing said which profiles, agents
+or windows a total covered.
+
+**`scripts/lib/reach.mjs`**, a per-process singleton. Tools call `begin`, `found` and
+`exclude(reason)`, and **`read` is computed as found minus excluded**, never reported by the tool. `lib/parse.mjs`,
+`lib/quota.mjs` and `lib/usage.mjs` count bad lines and folded usage rows into it, per file and
+reset on each read, so a file read twice counts once. Each wired tool prints one `reach:` line under
+its header and a `reach` block in `--json`, and names whether the measuring session is included.
+
+**Wired (12):** token-sinks, tool-friction, quota-multi, fleet-stats, waste, context-growth,
+cold-cache, context-spikes, reread-causes, slash-goals, incidents, prompt-style.
+**Not yet:** tool-failures, user-prompts, read-patterns, hook-cost, skill-usage, skill-genesis,
+cache-health, quota-report, quota-month. The same two-pass pattern applies. The script that wired
+the `discover()`-based nine was scratch, and the pattern is `found → exclude → file → badLine`.
+
+**Three defects the reach line exposed, all fixed:**
+- **`token-sinks` left out subagent and workflow transcripts, and ignored `CODEX_HOMES`.** It had
+  its own discovery. It now uses `lib/sessions.mjs` `discover()` and costs nested transcripts to
+  their parent. The 3-day Claude total went from $1,726 to $1,910. Session count unchanged (502):
+  sessions are distinct ids now, and transcripts are counted separately.
+- **`tool-friction` printed the disk-wide file count as "sessions scanned"** (19,130 → 1,019 for 7 days).
+- **`--days N` read N+1 days in five tools** (fleet-stats, waste, context-growth, slash-goals,
+  incidents). The window had a slack day, and nothing filtered it back out. `prompt-style` keeps it,
+  because it filters each prompt by timestamp. With `--days 1`, every wired Claude tool now reads the
+  same 305 transcripts (it was 428 against 305).
+
+`quota-multi` now says that `~/.claude` is left out by design, and how to include it.
+
+**Verified:**
+- `node --test scripts/test/*.test.mjs`: 87 existing tests plus 6 new in `reach.test.mjs`. The
+  double-read test was checked by mutation: removing the per-file reset fails it.
+- Each wired tool ran on `--days 1` with exit 0.
+
+**Also fixed in the tree:** the employer's name had come back in two profile names in the passes
+below (now `org_team_5x_2`). `docs/analysis/` (skill-analysis over real transcripts) is now gitignored.
+
+## 2026-09-18 — history rewritten: file contents too, not only messages
+
+The 2026-09-15 rewrite scrubbed commit messages only. File contents in history still carried the
+employer's name (33 commits, plus 4 messages), **a client's name (3 commits) and a client product's
+name (2)**. None of these were at the tip any more.
+
+**What was done:** a pre-rewrite `git bundle` of every ref was taken first. Then
+`git filter-repo --replace-text --replace-message` ran over a fresh mirror clone from GitHub, with
+three case-insensitive rules read from the term list at run time: employer → `org`,
+client → `client-a`, product → `product-b2`. Then `master` was force-pushed with a lease on the old
+tip `18bfb6f`. **New tip: `9094e73`.**
+
+**Verified, commit by commit against the bundle:**
+- 93 commits both sides, with authorship and dates identical;
+- same path sets, and all 169 changed files equal the original with only the three replacements applied;
+- the 6 messages that differ beyond the replacements differ only in quoted commit hashes, which
+  filter-repo rewrote to the new ones;
+- **a fresh clone from GitHub scans clean against all 26 terms.**
+
+No forks, no pull requests. Author and committer emails keep the work domain, which the user
+confirmed is fine; inside file contents it now reads `org`.
+
+**Any other clone must be re-cloned or hard-reset to `origin/master`**, because a `git pull` would
+merge the two histories. That includes the other device. This checkout was moved with
+`reset --mixed`, with the uncommitted work unchanged. `fix/continuations-stale-pass-detection` was
+repointed to its rewritten commit (`a04c04b`). The stash `wip slash-goals (not mine)` still points
+into the old history; it is local only and was left alone.
 
 ## 2026-09-18 — `cache-health` covers codex and opencode too
 

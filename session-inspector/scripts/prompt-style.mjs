@@ -32,6 +32,7 @@
  */
 
 import { readFileSync, statSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { extractPrompts } from "./lib/prompts.mjs";
@@ -57,17 +58,21 @@ const prompts = [];           // { text, kind, ts, project }
 const sessionIds = new Set();
 const projectCounts = new Map();
 
+reach.begin("prompt-style", { days, project: projectQ });
 for (const s of sessions) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
   let content;
-  try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
 
   const meta = extractMeta(s.provider, content);
   const id = projectIdentity(meta.cwd || "");
   // Claude: the projects-dir folder name is a reliable project alias even w/o cwd
   const folder = s.provider === "claude" ? basename(dirname(s.path)) : "";
   const haystack = [folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase();
-  if (projectQ && !haystack.includes(projectQ)) continue;
+  if (projectQ && !haystack.includes(projectQ)) { reach.exclude("other --project"); continue; }
   const projectLabel = id.project !== "unknown" ? id.project : (folder || meta.cwd || "(unknown)");
 
   const found = extractPrompts(s.provider, content);
@@ -157,12 +162,13 @@ if (n) { const step = Math.max(1, Math.floor(n / sampleN)); for (let i = 0; i < 
 profile.samples = { shortest: shortest.map((p) => p.text), spread: spread.map((p) => p.text) };
 
 // ── output ───────────────────────────────────────────────────────────────────
-if (asJson) { console.log(JSON.stringify(profile, null, 2)); process.exit(0); }
+if (asJson) { console.log(JSON.stringify({ ...profile, reach: reach.toJSON() }, null, 2)); process.exit(0); }
 
 const clip = (t, m = 180) => { const o = t.replace(/\s+/g, " ").trim(); return full ? t.trim() : o.length > m ? o.slice(0, m - 1) + "…" : o; };
 const pad = (s, w) => String(s).padEnd(w);
 const sc = profile.scope;
 console.log(`\nPrompting-style profile — project:${sc.project}  provider:${sc.provider}  window:${sc.days}  kinds:${sc.kinds}`);
+console.log(reach.line());
 if (!n) { console.log("\nNo matching prompts found.\n"); process.exit(0); }
 console.log(`\n${n} prompts · ${profile.totals.sessions} sessions · ${profile.totals.promptsPerSession} prompts/session`);
 

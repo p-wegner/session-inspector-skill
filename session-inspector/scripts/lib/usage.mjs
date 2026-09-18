@@ -17,10 +17,12 @@
  * does — parse first, per-turn curve second) must not treat the second pass as
  * duplicates of the first. A row without a message id is counted (never dropped).
  */
+import { reach } from "./reach.mjs";
+
 export function firstRowOf(msg, seen) {
   const id = msg?.id;
   if (!id) return true;
-  if (seen.has(id)) return false;
+  if (seen.has(id)) { reach.dupUsageRow(); return false; }
   seen.add(id);
   return true;
 }

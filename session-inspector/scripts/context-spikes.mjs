@@ -45,6 +45,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { classifyHumanText, fileKey, shortPath } from "./lib/chunk-kind.mjs";
@@ -98,20 +99,23 @@ let sessionsScanned = 0, totalSpikeTok = 0, totalSpikeWtok = 0;
 const bump = (m, k, tok, wtok) => { const g = m.get(k) || { n: 0, tok: 0, wtok: 0 }; g.n++; g.tok += tok; g.wtok += wtok; m.set(k, g); };
 
 const all = discover("claude");
+reach.begin("context-spikes", { days, project: projectQ });
 for (const s of all) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
   const folder = basename(dirname(s.path));
   const cwdNorm = (meta.cwd || "").replace(/\\/g, "/").toLowerCase();
-  if (cwdOnly && cwdNorm !== HERE) continue;
-  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
-  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
+  if (cwdOnly && cwdNorm !== HERE) { reach.exclude("other --cwd"); continue; }
+  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
+  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) { reach.exclude("other --session"); continue; }
 
   const lines = content.split("\n");
   let N = 0;
-  for (const ln of lines) { if (!ln.trim()) continue; let o; try { o = JSON.parse(ln); } catch { continue; } if (o.type === "assistant") N++; }
+  for (const ln of lines) { if (!ln.trim()) continue; let o; try { o = JSON.parse(ln); } catch { reach.badLine(); continue; } if (o.type === "assistant") N++; }
   if (N < 2) continue;
   sessionsScanned++;
   const sid = s.sessionId.slice(0, 8);
@@ -164,7 +168,7 @@ const fmt = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round
 const rows = (m) => [...m.entries()].map(([k, v]) => ({ key: k, ...v })).sort((a, b) => b.wtok - a.wtok);
 
 if (asJson) {
-  console.log(JSON.stringify({
+  console.log(JSON.stringify({ reach: reach.toJSON(),
     scope: { project: projectQ || (cwdOnly ? HERE : "(all)"), days: days || "all", minTok },
     totals: { sessionsScanned, spikes: spikes.length, tok: totalSpikeTok, weightedTok: totalSpikeWtok },
     byClass: rows(byClass), byTool: rows(byTool),
@@ -175,6 +179,7 @@ if (asJson) {
 }
 
 console.log(`\nContext spikes — project:${projectQ || (cwdOnly ? "(cwd)" : "(all)")}  window:${days || "all"}d  min:${fmt(minTok)}tok  (Claude)`);
+console.log(reach.line());
 if (!sessionsScanned) { console.log("No matching Claude sessions in window.\n"); process.exit(0); }
 console.log(`${sessionsScanned} sessions (Claude only, ≥2 assistant turns, mtime in window) · ${spikes.length} spikes · raw ≈ ${fmt(totalSpikeTok)} tok · persistence-weighted ≈ ${fmt(totalSpikeWtok)} (cache-read pressure)\n`);
 

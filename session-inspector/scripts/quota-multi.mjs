@@ -19,7 +19,8 @@ import { readdirSync, statSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { walkJsonl, parseFileEvents, scanLimits, collapseLimits, detectWeeklyReset, weeklyWindows, aggregate } from "./lib/quota.mjs";
-import { authProfiles, profileShortener } from "./lib/config.mjs";
+import { authProfiles, profileShortener, claudeProjectDirs, profileOfProjectsDir } from "./lib/config.mjs";
+import { reach } from "./lib/reach.mjs";
 
 const argv = process.argv.slice(2);
 const flag = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
@@ -39,6 +40,22 @@ if (!profiles.length) {
   process.exit(1);
 }
 
+// ── reach: every profile on disk, and why any of them is not in this view ─────
+// The personal ~/.claude is left out on purpose (the view is about accounts paid
+// for separately), which used to be said nowhere: on a box where ~/.claude is a
+// paid account too, the "combined" total missed it without a word.
+reach.begin("quota-multi", { profiles: profiles.join(",") });
+for (const dir of claudeProjectDirs()) {
+  const name = profileOfProjectsDir(dir);
+  if (profiles.includes(name)) continue;
+  const n = walkJsonl(dir).length;
+  for (let i = 0; i < n; i++) reach.found("claude", name);
+  reach.exclude(`in profiles outside this view`, n);
+  reach.note(name === "default"
+    ? `~/.claude (profile "default", ${n} transcripts) is excluded by design; name it in --profiles or CLAUDE_PROFILES if it is a paid account`
+    : `profile "${name}" (${n} transcripts) is not in --profiles / CLAUDE_PROFILES`);
+}
+
 // ── build per-profile records + windows ───────────────────────────────────────
 const allRecords = []; // for combined
 const profOut = [];
@@ -48,12 +65,13 @@ for (const name of profiles) {
   const records = []; const limitEvents = [];
   let dataMin = Infinity;
   for (const f of files) {
-    let st; try { st = statSync(f); } catch { continue; }
+    reach.found("claude", name, f.split(/[\\/]/).pop().replace(/\.jsonl$/, ""));
+    let st; try { st = statSync(f); } catch { reach.exclude("unreadable"); continue; }
     const rel = f.slice(base.length + 1);
     const project = rel.split(/[\\/]/)[0];
     const isSubagent = /[\\/]subagents[\\/]/.test(f);
     const events = parseFileEvents(f);
-    if (!events || !events.length) continue;
+    if (!events || !events.length) { reach.exclude("no timestamped events"); continue; }
     const id = f.split(/[\\/]/).pop().replace(/\.jsonl$/, "");
     const rec = { id, profile: name, project, isSubagent, events };
     records.push(rec); allRecords.push(rec);
@@ -100,6 +118,7 @@ const report = {
   meta: { generatedAt: new Date(nowMs).toISOString(), tzOffset, profiles, combinedStart: new Date(combinedMin).toISOString() },
   combined: combinedStats,
   profiles: profOut,
+  reach: reach.toJSON(),
 };
 
 const CSS = `<style>
@@ -269,6 +288,7 @@ const tk = (n) => n >= 1e9 ? (n / 1e9).toFixed(2) + "B" : n >= 1e6 ? (n / 1e6).t
 console.log("═".repeat(74));
 console.log(`QUOTA MULTI — ${profiles.length} profiles · combined`);
 console.log("═".repeat(74));
+console.log(reach.line());
 const c = report.combined.totals;
 console.log(`COMBINED: ${usd(c.cost)} · ${tk(c.rawTokens)} tok · ${c.sessions} sessions · ${c.subagents} subagents · ${c.turns} turns · ${c.toolCalls} tools`);
 console.log("─".repeat(74));

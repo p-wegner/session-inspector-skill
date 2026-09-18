@@ -27,6 +27,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { classifyHumanText, shortPath } from "./lib/chunk-kind.mjs";
@@ -38,7 +39,7 @@ const projectQ = (opt("--project", "") || "").toLowerCase();
 const days = parseInt(opt("--days", "0"), 10);
 const top = parseInt(opt("--top", "15"), 10);
 const asJson = flag("--json");
-const windowStartMs = days > 0 ? Date.now() - days * 86400000 - 86400000 : 0;
+const windowStartMs = days > 0 ? Date.now() - days * 86400000 : 0; // transcript mtime; no slack day, nothing filters it back out later
 
 const TOK = (s) => Math.ceil((s || "").length / 4);
 const NODE_MODULES = /node_modules/;
@@ -49,17 +50,20 @@ const bigItems = [], readsByFile = new Map(), bashByCmd = new Map();
 let totalTok = 0, totalWtok = 0, sessions = 0, nmLeakTok = 0, nmLeakN = 0;
 
 const all = discover("claude");
+reach.begin("waste", { days, project: projectQ });
 for (const s of all) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
   const folder = basename(dirname(s.path));
-  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
+  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
 
   const lines = content.split("\n");
   let N = 0;
-  for (const ln of lines) { if (!ln.trim()) continue; let o; try { o = JSON.parse(ln); } catch { continue; } if (o.type === "assistant") N++; }
+  for (const ln of lines) { if (!ln.trim()) continue; let o; try { o = JSON.parse(ln); } catch { reach.badLine(); continue; } if (o.type === "assistant") N++; }
   if (N < 3) continue;
   sessions++;
   let turn = 0; const toolById = new Map();
@@ -118,7 +122,7 @@ const rows = [...buckets.entries()].sort((a, b) => b[1].wtok - a[1].wtok);
 bigItems.sort((a, b) => (b.wtok || b.tok) - (a.wtok || a.tok));
 
 if (asJson) {
-  console.log(JSON.stringify({
+  console.log(JSON.stringify({ reach: reach.toJSON(),
     scope: { project: projectQ || "(all)", days: days || "all" }, sessions, totalTok, totalWtok,
     byKind: rows.map(([k, b]) => ({ kind: k, tok: b.tok, weightedTok: b.wtok, n: b.n, max: b.max })),
     topChunks: bigItems.slice(0, top), dupReads: dupReads.slice(0, 15), dupBash: dupBash.slice(0, 15),
@@ -129,6 +133,7 @@ if (asJson) {
 
 if (!sessions) { console.log("\nNo matching Claude sessions.\n"); process.exit(0); }
 console.log(`\nContext-token waste — project:${projectQ || "(all)"}  window:${days || "all"}  (Claude)`);
+console.log(reach.line());
 console.log(`${sessions} sessions (Claude only, ≥3 assistant turns, transcript mtime in window) · unique content ≈ ${fmt(totalTok)} tok · persistence-weighted ≈ ${fmt(totalWtok)} (≈ cache-read pressure)\n`);
 const P = (s, w) => String(s).padStart(w);
 console.log("BY KIND (sorted by persistence-weighted = the real driver)");

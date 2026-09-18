@@ -71,6 +71,10 @@ list with every flag: [fleet-tools](references/fleet-tools.md).
   `--approve --pick`.
 - **Editing a session:** apply with `--quiet`, never re-read the transcript or the
   `edits.md` afterwards, never restate what changed.
+- **Read the `reach:` line before quoting a fleet number.** It says which agents and profiles were
+  found, how many transcripts were read and why the rest were excluded, how many unparseable lines
+  were skipped, whether a table is a `--top` slice, and whether this session is included. `--json`
+  carries the same as `reach`. Quote a number together with its population.
 - **Before fanning out subagents**, ask `fleet capacity` — not `headroomProcesses`
   (that counts whole sessions; subagents are in-process).
 - Statusline showing the current session id: [statusline](references/statusline.md).

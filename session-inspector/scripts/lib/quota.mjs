@@ -12,6 +12,7 @@ import { join } from "path";
 import { classify } from "./prompts.mjs";
 import { toolDisplayName } from "./parse.mjs";
 import { firstRowOf } from "./usage.mjs";
+import { reach } from "./reach.mjs";
 
 // ── pricing ($/1M, Anthropic list, checked 2026-09-18 against the claude-api skill's model table) ──
 // `cr` is the cache-read multiplier on the input price: 0.1x everywhere except Claude Fable 5.1
@@ -59,6 +60,7 @@ export function walkJsonl(dir, acc = []) {
 // events: {t:'a',ms,model,tok:{i,o,cw,cr}} | {t:'tc',ms,name} | {t:'te',ms,name} | {t:'p',ms,text}
 export function parseFileEvents(path) {
   let lines; try { lines = readFileSync(path, "utf-8").split("\n"); } catch { return null; }
+  reach.file(path);
   const idToName = new Map();
   for (const line of lines) {
     const s = line.trim(); if (!s) continue;
@@ -70,7 +72,7 @@ export function parseFileEvents(path) {
   const seen = new Set(); // one usage event per API call, not per content-block row
   for (const line of lines) {
     const s = line.trim(); if (!s) continue;
-    let o; try { o = JSON.parse(s); } catch { continue; }
+    let o; try { o = JSON.parse(s); } catch { reach.badLine(); continue; }
     const ms = o.timestamp ? new Date(o.timestamp).getTime() : NaN;
     if (!Number.isFinite(ms)) continue;
     if (o.type === "assistant" && o.message) {

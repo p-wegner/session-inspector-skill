@@ -31,6 +31,7 @@
  *        [--distant 60] [--edit-window 3] [--json]
  */
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { fileKey } from "./lib/chunk-kind.mjs";
@@ -56,14 +57,18 @@ let firstReads = 0, rereads = 0, editsTotal = 0, editsFollowedByRead = 0, forced
 let sessions = 0;
 const perFileDupTok = new Map(); // naive waste.mjs-style count, for comparison
 
+reach.begin("reread-causes", { days, project: projectQ });
 for (const s of discover("claude")) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
   const folder = basename(dirname(s.path));
-  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) { reach.exclude("other --session"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
-  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
+  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
 
   // pass 1: chronological event list  {turn, kind:'read'|'edit'|'compact', file, uid}
   const events = [];
@@ -71,7 +76,7 @@ for (const s of discover("claude")) {
   let turn = 0, turns = 0;
   for (const ln of content.split("\n")) {
     if (!ln) continue;
-    let o; try { o = JSON.parse(ln); } catch { continue; }
+    let o; try { o = JSON.parse(ln); } catch { reach.badLine(); continue; }
     const m = o.message;
     if (o.type === "assistant" && m) {
       if (m.usage) { turn++; turns++; }
@@ -154,7 +159,7 @@ const totalRe = CLASSES.reduce((a, c) => a + tally[c].n, 0);
 const totalTok = CLASSES.reduce((a, c) => a + tally[c].tok, 0);
 
 if (asJson) {
-  console.log(JSON.stringify({
+  console.log(JSON.stringify({ reach: reach.toJSON(),
     scope: { project: projectQ || "(all)", session: sessionQ || "(all)", days, distant: DISTANT, editWindow: EDITWIN },
     sessions, firstReads, rereads, byClass: tally,
     editsTotal, editsFollowedByRead, forcedRereadErrors,
@@ -163,6 +168,7 @@ if (asJson) {
 }
 
 console.log(`\nRe-read causes — project:${projectQ || "(all)"}  window:${days}d  (Claude; Read tool + shell read-verbs)`);
+console.log(reach.line());
 if (!sessions) { console.log("No matching Claude sessions in window.\n"); process.exit(0); }
 console.log(`${sessions} sessions · ${firstReads} first reads · ${rereads} re-reads (${pct(rereads, firstReads + rereads)} of all reads)\n`);
 const P = (s, w) => String(s).padStart(w);

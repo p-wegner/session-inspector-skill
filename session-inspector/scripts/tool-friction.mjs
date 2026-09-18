@@ -38,6 +38,7 @@
 
 import { readFileSync } from "fs";
 import { basename, dirname } from "path";
+import { reach } from "./lib/reach.mjs";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { summarize } from "./lib/parse.mjs";
 
@@ -93,23 +94,28 @@ const asJson = flag("--json");
 const windowStartMs = days > 0 ? Date.now() - days * 86400000 : 0;
 
 // ── collect ──────────────────────────────────────────────────────────────────
+reach.begin("tool-friction", { days: days || "all", provider, project: projectQ });
 const sessions = discover(provider === "all" ? "all" : provider);
+let scanned = 0;
 // chain-signature -> { count, sessions:Set, sample: raw command chain, projects:Set }
 const chains = new Map();
 
 for (const s of sessions) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude(`outside --days ${days}`); continue; }
   let content;
-  try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
 
   const meta = extractMeta(s.provider, content);
   const id = projectIdentity(meta.cwd || "");
   const folder = s.provider === "claude" ? basename(dirname(s.path)) : "";
   const haystack = [folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase();
-  if (projectQ && !haystack.includes(projectQ)) continue;
+  if (projectQ && !haystack.includes(projectQ)) { reach.exclude("other --project"); continue; }
 
   const sum = summarize(s.provider, content);
-  if (!sum) continue;
+  if (!sum) { reach.exclude("no summary"); continue; }
+  scanned++;
   const cmds = sum.commandsRun || [];
   if (cmds.length < 2) continue;
 
@@ -137,7 +143,9 @@ let rows = [...chains.values()]
 if (asJson) {
   console.log(JSON.stringify({
     scope: { provider, project: projectQ || "(all)", days: days || "all", n: ns, minSessions },
-    sessionsScanned: sessions.length,
+    contract: "session-inspector/tool-friction/1",
+    sessionsScanned: scanned,
+    reach: (reach.shown(Math.min(top, rows.length), rows.length), reach.toJSON()),
     chains: rows.slice(0, top).map((r) => ({ chain: r.chain, n: r.n, occurrences: r.count, sessions: r.nSessions, projects: [...r.projects] })),
   }, null, 2));
   process.exit(0);
@@ -146,7 +154,9 @@ if (asJson) {
 console.log("═".repeat(78));
 console.log(`REPEATED COMMAND CHAINS — last ${days || "all"}d · n=${ns.join(",")} · provider=${provider} · project=${projectQ || "(all)"}`);
 console.log("═".repeat(78));
-console.log(`Sessions scanned: ${sessions.length}   Distinct chains (≥${minSessions} sessions): ${rows.length}`);
+console.log(`Sessions scanned: ${scanned}   Distinct chains (≥${minSessions} sessions): ${rows.length}`);
+reach.shown(Math.min(top, rows.length), rows.length);
+console.log(reach.line());
 console.log("─".repeat(78));
 
 if (!rows.length) {

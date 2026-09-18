@@ -40,6 +40,7 @@
  */
 
 import { readFileSync } from "fs";
+import { reach } from "./lib/reach.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -70,16 +71,19 @@ let sessionsScanned = 0, turnsScanned = 0, coldTurns = 0;
 let totalPremium = 0, totalColdWrite = 0;
 
 const all = discover("claude");
+reach.begin("cold-cache", { days, project: projectQ });
 for (const s of all) {
-  if (windowStartMs && s.mtime.getTime() < windowStartMs) continue;
-  let content; try { content = readFileSync(s.path, "utf-8"); } catch { continue; }
+  reach.found(s.provider, s.profile, s.sessionId);
+  if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }
+  let content; try { content = readFileSync(s.path, "utf-8"); } catch { reach.exclude("unreadable"); continue; }
+  reach.file(s.path);
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
   const folder = basename(dirname(s.path));
   const cwdNorm = (meta.cwd || "").replace(/\\/g, "/").toLowerCase();
-  if (cwdOnly && cwdNorm !== HERE) continue;
-  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) continue;
-  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
+  if (cwdOnly && cwdNorm !== HERE) { reach.exclude("other --cwd"); continue; }
+  if (projectQ && ![folder, meta.cwd, id.project, id.projectKey].join(" ").toLowerCase().includes(projectQ)) { reach.exclude("other --project"); continue; }
+  if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) { reach.exclude("other --session"); continue; }
 
   let prevMs = 0, turn = 0, model = "?";
   const seen = new Set(); // one record per API call, not per content-block row
@@ -87,7 +91,7 @@ for (const s of all) {
   let scanned = false;
   for (const ln of content.split("\n")) {
     if (!ln.trim()) continue;
-    let o; try { o = JSON.parse(ln); } catch { continue; }
+    let o; try { o = JSON.parse(ln); } catch { reach.badLine(); continue; }
     if (o.type !== "assistant" || !o.message?.usage) continue;
     if (!firstRowOf(o.message, seen)) continue;
     const u = o.message.usage;
@@ -131,7 +135,7 @@ const k = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n
 const dur = (m) => m >= 1440 ? (m / 1440).toFixed(1) + "d" : m >= 60 ? (m / 60).toFixed(1) + "h" : Math.round(m) + "m";
 
 if (asJson) {
-  console.log(JSON.stringify({
+  console.log(JSON.stringify({ reach: reach.toJSON(),
     scope: { project: projectQ || (cwdOnly ? HERE : "(all)"), days: days || "all", gapMin, minPremium },
     totals: { sessionsScanned, turnsScanned, coldTurns, coldSessions: sessionRows.length,
       avoidablePremiumUsd: +totalPremium.toFixed(2), coldWriteCostUsd: +totalColdWrite.toFixed(2) },
@@ -142,6 +146,7 @@ if (asJson) {
 }
 
 console.log(`\nCold-cache tax — project:${projectQ || (cwdOnly ? "(cwd)" : "(all)")}  window:${days || "all"}d  ttl:${gapMin}m  (Claude)`);
+console.log(reach.line());
 if (!sessionsScanned) { console.log("No matching Claude sessions in window.\n"); process.exit(0); }
 console.log(`${sessionsScanned} sessions · ${turnsScanned} turns scanned · ${coldTurns} cold-refill turns across ${sessionRows.length} sessions`);
 console.log(`AVOIDABLE cold-cache premium ≈ ${usd(totalPremium)}  (of ${usd(totalColdWrite)} spent re-writing cold prefixes)\n`);
