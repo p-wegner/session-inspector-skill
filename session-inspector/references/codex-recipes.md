@@ -4,7 +4,7 @@ Primary path is `node scripts/analyze-codex-session.mjs --latest` (structured
 summary: model, duration, turns, tool usage, commands, patches, web searches,
 last 5 agent messages). These are the manual fallbacks.
 
-Codex session files are at `~/.codex/sessions/YYYY/MM/DD/`. Each file is a JSONL where every line is `{ timestamp, type, payload }`.
+Codex session files are at `~/.codex/sessions/YYYY/MM/DD/` — and under `<CODEX_HOME>/sessions/` for every other codex home (a per-key or gateway setup). The tools scan `~/.codex`, `CODEX_HOME` and each entry of `CODEX_HOMES` (`;`-separated). `session_meta.payload.model_provider` names the provider block the session ran on (`openai` for a ChatGPT login; a custom id means a gateway), and `token_count` events carry `cached_input_tokens` / `cache_write_input_tokens` beside `input_tokens`, which includes the cached part. Each file is a JSONL where every line is `{ timestamp, type, payload }`.
 
 ## Event types
 

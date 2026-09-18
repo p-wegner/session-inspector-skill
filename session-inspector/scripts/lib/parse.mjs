@@ -221,7 +221,7 @@ export function parseCodex(lines) {
     model: "", sessionId: "", cwd: "", cliVersion: "", startTime: "", endTime: "", durationSec: 0,
     turns: 0, toolCalls: 0, toolNames: {}, commands: [],
     userMessages: [], agentMessages: [], patchesApplied: [], webSearches: [],
-    inputTokens: 0, outputTokens: 0,
+    inputTokens: 0, outputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, apiCalls: 0, modelProvider: "",
   };
   const events = [];
 
@@ -234,6 +234,7 @@ export function parseCodex(lines) {
 
     if (type === "session_meta") {
       stats.sessionId = payload.id || ""; stats.cwd = payload.cwd || ""; stats.cliVersion = payload.cli_version || "";
+      stats.modelProvider = payload.model_provider || ""; // "openai" for a ChatGPT login; a custom provider id (a gateway) otherwise
     } else if (type === "turn_context") {
       if (payload.model) stats.model = payload.model;
     } else if (type === "event_msg") {
@@ -243,8 +244,12 @@ export function parseCodex(lines) {
       else if (mt === "task_started") stats.turns++;
       else if (mt === "task_complete") events.push({ type: "task_complete", message: payload.last_agent_message || "" });
       else if (mt === "token_count" && payload.info?.total_token_usage) {
+        // one token_count per API response; total_token_usage is cumulative, so the last one wins.
+        // input_tokens INCLUDES the cached part (OpenAI semantics): uncached = input - cached - cache_write.
         const t = payload.info.total_token_usage;
+        stats.apiCalls++;
         stats.inputTokens = t.input_tokens || 0; stats.outputTokens = t.output_tokens || 0;
+        stats.cachedInputTokens = t.cached_input_tokens || 0; stats.cacheWriteTokens = t.cache_write_input_tokens || 0;
       } else if (mt === "patch_apply_end") {
         const changedFiles = Object.keys(payload.changes || {});
         stats.patchesApplied.push({ files: changedFiles, success: payload.success !== false, stdout: payload.stdout || "" });

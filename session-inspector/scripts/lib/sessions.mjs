@@ -96,9 +96,26 @@ export function resolveSessionId(s, meta) {
   return (meta && meta.sessionId) || s.sessionId;
 }
 
+/**
+ * Codex homes to scan: ~/.codex, plus CODEX_HOME if set, plus CODEX_HOMES (a `;`-separated
+ * list of further CODEX_HOME directories). A gateway or per-key codex setup keeps its own
+ * home, and its rollouts are invisible from ~/.codex — the same reason CLAUDE_PROJECT_DIRS
+ * exists for Claude. Each home's `sessions/` tree has the standard YYYY/MM/DD layout.
+ */
+function codexHomes() {
+  const homes = [join(homedir(), ".codex")];
+  if (process.env.CODEX_HOME) homes.push(process.env.CODEX_HOME);
+  for (const h of (process.env.CODEX_HOMES || "").split(";")) if (h.trim()) homes.push(h.trim());
+  return [...new Set(homes.map((h) => h.replace(/[\\/]+$/, "")))];
+}
+
 function discoverCodex() {
-  const base = join(homedir(), ".codex", "sessions");
   const out = [];
+  for (const home of codexHomes()) discoverCodexTree(join(home, "sessions"), out);
+  return out;
+}
+
+function discoverCodexTree(base, out) {
   if (!existsSync(base)) return out;
   try {
     for (const year of readdirSync(base).filter((d) => /^\d{4}$/.test(d))) {

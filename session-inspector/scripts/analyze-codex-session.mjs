@@ -25,7 +25,8 @@ function printSummary({ stats }) {
   console.log(`CLI:        v${stats.cliVersion}`);
   console.log(`Duration:   ${formatDuration(stats.durationSec)}`);
   console.log(`Turns:      ${stats.turns}`);
-  console.log(`Tokens:     ${formatTokens(stats.inputTokens)} in / ${formatTokens(stats.outputTokens)} out`);
+  const cachedShare = stats.inputTokens ? ` (${Math.round(100 * stats.cachedInputTokens / stats.inputTokens)}% of input was cache reads)` : "";
+  console.log(`Tokens:     ${formatTokens(stats.inputTokens)} in / ${formatTokens(stats.outputTokens)} out${cachedShare}${stats.modelProvider && stats.modelProvider !== "openai" ? ` · provider ${stats.modelProvider}` : ""}`);
 
   if (stats.userMessages.length) {
     console.log(`\n${"─".repeat(40)}`);

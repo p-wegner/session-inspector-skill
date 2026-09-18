@@ -33,7 +33,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Are file re-reads avoidable or justified (post-edit, post-compaction, pagination)? | `reread-causes.mjs` | fleet-cost |
 | The single injections that bloated context + WHY + fix (skill-inject, compaction, huge-file, …) | `context-spikes.mjs [--by class\|tool\|file]` | fleet-cost |
 | Context growth curve, auto-compacts, >200k tax | `context-growth.mjs [--session id]` | fleet-cost |
-| **Is prompt caching working** — per-call input vs cache_read, HEALTHY / PLATEAU (proxy drops history caching) / TTL-EXPIRY (idle > 5m/1h), which backend answered (anthropic/vertex/bedrock), cost vs healthy | `cache-health.mjs --session <id\|path>` · `--days N` fleet | fleet-cost |
+| **Is prompt caching working** — per-call input vs cache_read, HEALTHY / PLATEAU (proxy drops history caching) / TTL-EXPIRY (idle > 5m/1h), which backend answered (anthropic/vertex/bedrock), cost vs healthy. Same verdict for Codex rollouts (`--agent codex`, homes via `CODEX_HOMES`) and the OpenCode store (`--agent opencode`, Node 22.5+) | `cache-health.mjs --session <id\|path>` · `--days N` fleet · `--agent claude\|codex\|opencode` | fleet-cost |
 | Cost of idle/resume (cache expired) | `cold-cache.mjs` | fleet-cost |
 | Which tools fail most | `tool-failures.mjs [--by tool\|project\|error]` | fleet-friction |
 | Which sessions are worth learning from (friction rank) | `incidents.mjs [--lens general\|visual\|image]` | fleet-friction |

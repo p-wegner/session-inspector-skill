@@ -26,7 +26,10 @@ export const PRICING = [
   { match: /sonnet/, in: 3, out: 15, cr: 0.1 },
   { match: /haiku/, in: 1, out: 5, cr: 0.1 },
 ];
-export const priceFor = (m) => PRICING.find((p) => p.match.test(m || "")) || { in: 5, out: 25, cr: 0.1 };
+/** A gateway's display name ("Claude Sonnet 5") and Claude Code's id ("claude-sonnet-5-…") price the same. */
+export const normModel = (m) => String(m || "").toLowerCase().replace(/[\s_]+/g, "-");
+export const isPriced = (m) => PRICING.some((p) => p.match.test(normModel(m)));
+export const priceFor = (m) => PRICING.find((p) => p.match.test(normModel(m))) || { in: 5, out: 25, cr: 0.1 };
 /** Compact-shape cost: t = { i, o, cw, cw1h, cr } (quota-report / quota-multi events). */
 export const costUsd = (m, t) => {
   const p = priceFor(m);

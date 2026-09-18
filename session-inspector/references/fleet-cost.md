@@ -95,16 +95,36 @@ fleet and lists sessions worst first. Verdicts:
 
 | verdict | shape | fix lives |
 |---|---|---|
-| `HEALTHY` | on calls above 100k, cache_read is 85%+ of context, input a handful | nowhere |
+| `HEALTHY` | on big calls (above 100k for Claude, 20k for codex/opencode, `--min-ctx`), cache_read is 85%+ of context, input a handful | nowhere |
 | `PLATEAU` | cache_read stops at a fixed ceiling (system prompt + tools) while input grows with the conversation | in the proxy/gateway between the client and the API, not in the TTL |
 | `TTL-EXPIRY` | caching works, but idle gaps outlive the TTL and the prefix is re-written after each pause | shorter pauses, or the 1h TTL if the session is on 5m |
-| `MIXED` / `SHORT` | partially cached / never above 100k on three calls | look at the table / nothing to judge |
+| `MIXED` / `SHORT` | partially cached / fewer than three big calls | look at the table / nothing to judge |
 
 Measured 2026-09-18: one session through a nexos.ai gateway (Sonnet 5, served by Vertex) was
 `PLATEAU` at 21% cache read on 180 big calls, $81 at list against $14 healthy. 436 sessions on
 subscription logins in the same four days: 0 `PLATEAU`, 14 `TTL-EXPIRY`, the rest healthy or
 short — including sessions routed to Bedrock with the 5m TTL, which cache the history fine. So a
 plateau is a routing problem, and a TTL problem shows up as a different verdict.
+
+**Codex and OpenCode get the same verdict.** `--agent codex` reads rollout files from
+`~/.codex/sessions`, `CODEX_HOME` and `CODEX_HOMES` (a `;`-separated list of further codex homes;
+a gateway key's home is invisible from `~/.codex`). One `token_count` event per API response;
+its `input_tokens` includes the cached part (OpenAI semantics), so the table's "uncached" column
+is input minus cached minus cache_write, and there is no TTL field (gaps are judged against 5
+minutes). `--agent opencode` reads the SQLite store (`~/.local/share/opencode/opencode.db`, or
+`OPENCODE_DB`; Node 22.5+ for `node:sqlite`), one assistant message per API call. A provider
+driven by `@ai-sdk/openai-compatible` records cache writes as 0, so a call's context is
+under-counted by that turn's delta; reads are exact and the verdict is unaffected. Both agents
+default to `--min-ctx 20000` for a "big" call (Claude: 100k), because their contexts stay
+smaller; `--min-ctx` overrides. Models without a list price (the GPT line) print cost `n/a`.
+
+Measured 2026-09-18 through the same nexos.ai gateway that plateaued Claude Code: a 38-call
+codex session (GPT 5.6 Terra) read 99% of its context from cache, and a 38-call opencode
+session (Claude Sonnet 5 over chat completions, no `cache_control` sent by the client) read 100%
+of a context that grew to 294k — the gateway adds caching itself on that path. Neither harness
+sends the trailing `role: "system"` entry Claude Code does, which is the one shape the gateway
+loses; so `cache-health` on the three agents together tells "the gateway breaks caching" from
+"one client's request shape breaks through this gateway".
 
 **Every tool here counts usage once per API call** (`lib/usage.mjs`). Claude Code writes one
 transcript row per content block, all carrying the same `message.id` and the same usage; summing

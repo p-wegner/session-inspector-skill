@@ -3,6 +3,28 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-18 — `cache-health` covers codex and opencode too
+
+**`--agent claude|codex|opencode` on `cache-health.mjs`, same verdict for three agents.** Wanted to know
+whether the gateway plateau (below) also hits the other two harnesses our gateway tooling launches.
+Codex: `discoverCodex` now scans `~/.codex`, `CODEX_HOME` and `CODEX_HOMES` (`;`-list; a gateway
+key's codex home is invisible from `~/.codex`), one `token_count` event per API response,
+`input_tokens` includes the cached part so uncached = input − cached − cache_write; `parseCodex` gained
+`cachedInputTokens`, `cacheWriteTokens`, `apiCalls`, `modelProvider` and the analyzer prints the cached
+share. OpenCode: reads the SQLite store via `node:sqlite` (Node 22.5+, dynamic import so the other
+modes still run on 18), `OPENCODE_DB` overrides the path; a provider on `@ai-sdk/openai-compatible`
+records writes as 0, the tool says so. `--min-ctx` sets the "big call" line (claude 100k, others 20k).
+`priceFor` normalises display names (`Claude Sonnet 5` prices like `claude-sonnet-5`); a model without
+a list price prints `n/a` instead of the opus fallback. Verified: 38-call codex probe through the
+gateway HEALTHY at 99% cache read; 38-call opencode probe (Sonnet 5 over chat completions) HEALTHY,
+100% of a 294k context; `--session 3bcf8e3b` unchanged; 43 codex + 8 opencode sessions of two days
+list without error. The measurements are written up in nexos-tools
+(`docs/findings/2026-09-18-gateway-cache-codex-opencode.md`).
+
+**Open:** codex sessions on a ChatGPT login land at 79–85% cache read and read as MIXED; OpenAI's
+cache is best-effort, so the 85% HEALTHY line may be a notch high for that agent. Left as is until
+someone needs the codex fleet view for a decision.
+
 ## 2026-09-18 — usage is counted once per API call; `cache-health` tells plateau from TTL expiry
 
 **Every token sum in the inspector over-counted by 1.8x to 3x, and now does not.** Claude Code writes

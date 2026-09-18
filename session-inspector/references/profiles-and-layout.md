@@ -13,7 +13,7 @@ always why.
 
 Every Claude-reading script now discovers **all** of these via
 `claudeProjectDirs()` (`scripts/lib/config.mjs`), which returns, deduped:
-1. `$CLAUDE_PROJECT_DIRS` — explicit `;`/`:`-separated list (bypasses discovery; use for a mounted/synced copy)
+1. `$CLAUDE_PROJECT_DIRS` — explicit `;`/`:`-separated list (bypasses discovery; use for a mounted/synced copy). The codex counterpart is `$CODEX_HOMES` (`;`-separated codex homes, scanned in addition to `~/.codex` and `$CODEX_HOME`); opencode has one store, `$OPENCODE_DB` overrides its path
 2. `$CLAUDE_CONFIG_DIR/projects` and `$CLAUDE_HOME/projects` — the active profile
 3. `~/.claude/projects` **plus every `~/.claude-<suffix>` / `~/.claude_<suffix>` sibling home**
 
