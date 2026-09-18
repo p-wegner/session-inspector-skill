@@ -38,6 +38,7 @@
  */
 
 import { readFileSync } from "fs";
+import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 
@@ -79,6 +80,7 @@ for (const s of sessions) {
   let compacts = 0, turns = 0, maxCtx = 0, model = "?", version = "?";
   let crTot = 0, crAbove = 0, nAbove = 0, crossIdx = -1;
   const curve = [];
+  const seen = new Set(); // one record per API call, not per content-block row
   for (const ln of content.split("\n")) {
     if (!ln.trim()) continue;
     let o; try { o = JSON.parse(ln); } catch { continue; }
@@ -87,6 +89,7 @@ for (const s of sessions) {
     if (o.type === "assistant" && o.message) {
       if (o.message.model) model = o.message.model;
       const u = o.message.usage; if (!u) continue;
+      if (!firstRowOf(o.message, seen)) continue;
       const ctx = ctxOf(u), cr = u.cache_read_input_tokens || 0;
       if (ctx <= 0) continue;
       turns++; totalTurns++; maxCtx = Math.max(maxCtx, ctx);

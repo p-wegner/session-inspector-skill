@@ -33,6 +33,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Are file re-reads avoidable or justified (post-edit, post-compaction, pagination)? | `reread-causes.mjs` | fleet-cost |
 | The single injections that bloated context + WHY + fix (skill-inject, compaction, huge-file, …) | `context-spikes.mjs [--by class\|tool\|file]` | fleet-cost |
 | Context growth curve, auto-compacts, >200k tax | `context-growth.mjs [--session id]` | fleet-cost |
+| **Is prompt caching working** — per-call input vs cache_read, HEALTHY / PLATEAU (proxy drops history caching) / TTL-EXPIRY (idle > 5m/1h), which backend answered (anthropic/vertex/bedrock), cost vs healthy | `cache-health.mjs --session <id\|path>` · `--days N` fleet | fleet-cost |
 | Cost of idle/resume (cache expired) | `cold-cache.mjs` | fleet-cost |
 | Which tools fail most | `tool-failures.mjs [--by tool\|project\|error]` | fleet-friction |
 | Which sessions are worth learning from (friction rank) | `incidents.mjs [--lens general\|visual\|image]` | fleet-friction |
@@ -47,8 +48,11 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Custom parsing the analyzers don't cover | manual recipes | [claude](references/claude-recipes.md) · [codex](references/codex-recipes.md) · [copilot](references/copilot-recipes.md) |
 | **Team questions about context & sessions** ("where did tokens go", "are re-reads avoidable", "are rules followed", "monorepo CLAUDE.md split", "dead skills", "subagent ROI", recurring friction) — prompt → tool → read-off → change | worked examples | [example-prompts](references/example-prompts.md) |
 
-**Cost-optimization loop:** `token-sinks` (what) → `context-growth` (shape) → `cold-cache`
-(timing fix) + `context-spikes`/`waste` (representation fix). Don't headline cache-read as
+**Cost-optimization loop:** `token-sinks` (what) → `context-growth` (shape) → `cache-health`
+(is the cache even hit, and why not) → `cold-cache` (timing fix) + `context-spikes`/`waste`
+(representation fix). All token sums count each API call **once** (`lib/usage.mjs`): Claude
+Code writes one row per content block with the same usage repeated, so summing rows over-counts
+2–3x — never add usage over raw rows. Don't headline cache-read as
 a finding — it is cache-dominated by construction; report what varies. Full fleet command
 list with every flag: [fleet-tools](references/fleet-tools.md).
 

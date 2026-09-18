@@ -13,6 +13,7 @@
  */
 
 import { classify } from "./prompts.mjs";
+import { firstRowOf } from "./usage.mjs";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -80,10 +81,11 @@ export function parseClaude(lines) {
   const toolNameById = new Map();
   const toolCounts = new Map(); // name -> { count, failed }
   const commands = [];
+  const seenUsage = new Set(); // token sums count each API call once; assistantTurns still counts rows
   const stats = {
     provider: "claude",
     model: "", sessionId: "", cwd: "", startTime: "", endTime: "", durationSec: 0,
-    assistantTurns: 0, toolCalls: 0, failedToolCalls: 0,
+    assistantTurns: 0, apiCalls: 0, toolCalls: 0, failedToolCalls: 0,
     inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, totalCostUsd: 0,
     stopReason: "",
     userMessages: [], assistantTexts: [],
@@ -128,7 +130,8 @@ export function parseClaude(lines) {
       if (msg.model && msg.model !== "<synthetic>") stats.model = msg.model;
       if (msg.stop_reason) stats.stopReason = msg.stop_reason;
       const u = msg.usage;
-      if (u) {
+      if (u && firstRowOf(msg, seenUsage)) {
+        stats.apiCalls++;
         stats.inputTokens += u.input_tokens || 0;
         stats.outputTokens += u.output_tokens || 0;
         stats.cacheReadTokens += u.cache_read_input_tokens || 0;

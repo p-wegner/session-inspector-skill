@@ -40,6 +40,7 @@
  */
 
 import { readFileSync } from "fs";
+import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { priceFor, modelLabel } from "./lib/quota.mjs";
@@ -81,12 +82,14 @@ for (const s of all) {
   if (sessionQ && !s.sessionId.toLowerCase().includes(sessionQ) && !folder.toLowerCase().includes(sessionQ)) continue;
 
   let prevMs = 0, turn = 0, model = "?";
+  const seen = new Set(); // one record per API call, not per content-block row
   const sid = s.sessionId.slice(0, 8);
   let scanned = false;
   for (const ln of content.split("\n")) {
     if (!ln.trim()) continue;
     let o; try { o = JSON.parse(ln); } catch { continue; }
     if (o.type !== "assistant" || !o.message?.usage) continue;
+    if (!firstRowOf(o.message, seen)) continue;
     const u = o.message.usage;
     const ms = o.timestamp ? new Date(o.timestamp).getTime() : NaN;
     if (!Number.isFinite(ms)) continue;

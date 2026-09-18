@@ -83,3 +83,32 @@ names the exact files/commands to target (e.g. a big shared doc read whole in 10
 sessions). Companion to `waste.mjs` (buckets ALL content by kind) — this one is
 spike-first: it names the few concrete sources whose representation you can change.
 Claude only; chars/4 estimate.
+
+## cache-health — is the prompt cache being hit at all, and if not, why not
+
+`node scripts/cache-health.mjs --session <id|path>` prints one session's per-call
+input / cache_read / cache_write, the TTL in use (5m or 1h, read from
+`usage.cache_creation.ephemeral_*`), every call that followed a gap longer than the TTL, which
+backend answered (`anthropic`, `vertex`, `bedrock`, from the message-id prefix), the list-price
+cost, and the cost the same context would have had with healthy caching. `--days N` runs the
+fleet and lists sessions worst first. Verdicts:
+
+| verdict | shape | fix lives |
+|---|---|---|
+| `HEALTHY` | on calls above 100k, cache_read is 85%+ of context, input a handful | nowhere |
+| `PLATEAU` | cache_read stops at a fixed ceiling (system prompt + tools) while input grows with the conversation | in the proxy/gateway between the client and the API, not in the TTL |
+| `TTL-EXPIRY` | caching works, but idle gaps outlive the TTL and the prefix is re-written after each pause | shorter pauses, or the 1h TTL if the session is on 5m |
+| `MIXED` / `SHORT` | partially cached / never above 100k on three calls | look at the table / nothing to judge |
+
+Measured 2026-09-18: one session through a nexos.ai gateway (Sonnet 5, served by Vertex) was
+`PLATEAU` at 21% cache read on 180 big calls, $81 at list against $14 healthy. 436 sessions on
+subscription logins in the same four days: 0 `PLATEAU`, 14 `TTL-EXPIRY`, the rest healthy or
+short — including sessions routed to Bedrock with the 5m TTL, which cache the history fine. So a
+plateau is a routing problem, and a TTL problem shows up as a different verdict.
+
+**Every tool here counts usage once per API call** (`lib/usage.mjs`). Claude Code writes one
+transcript row per content block, all carrying the same `message.id` and the same usage; summing
+over rows over-counted by 1.8x to 3x (measured: 344 rows / 188 calls, 196 / 64, 153 / 65). Verified
+that input, cache_read, cache_creation and output_tokens are identical across the rows of one id,
+so first-row-wins is exact. `fleet-stats` and `parseClaude` still report `assistantTurns` as rows
+(that is the loop length people mean by "turns"); token sums and the new `apiCalls` are per call.

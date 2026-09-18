@@ -3,6 +3,32 @@
 Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspector/`,
 `token-budget/`, `spawn-session/`.
 
+## 2026-09-18 — usage is counted once per API call; `cache-health` tells plateau from TTL expiry
+
+**Every token sum in the inspector over-counted by 1.8x to 3x, and now does not.** Claude Code writes
+one `assistant` row per content block of a streamed response, each repeating the same `message.id`
+and the same `usage`. Seven loops summed over rows (parse, fleet-stats' second pass, token-sinks,
+context-growth, cold-cache, quota lib, quota-report). Measured: 344 rows / 188 calls, 196 / 64,
+153 / 65; and input, cache_read, cache_creation and output_tokens are identical across the rows of
+one id, so first-row-wins is exact. `lib/usage.mjs` (`firstRowOf(msg, seen)`, one Set per pass, a
+row without an id is counted) is wired into all seven. `parseClaude` gained `apiCalls`; its
+`assistantTurns` still counts rows because every consumer means the loop length by it. Verified:
+`quota-report --profile org_team_5x_2` fell from $519.68 / 4812 turns to $232.26 / 2513, all
+six patched tools run clean, and 3bcf8e3b costs $14.64 against Claude Code's own `cost-state`
+record of $14.72 for the same session.
+
+**New `scripts/cache-health.mjs`.** One session (`--session <id|path>`, a path reaches transcripts
+outside `~/.claude*`) or the fleet (`--days N`): per-call input / cache_read / cache_write, the TTL
+in use, every call after a gap longer than the TTL, the backend from the message-id prefix
+(`msg_vrtx_` Vertex, `msg_bdrk_` Bedrock), list cost against a healthy-caching counterfactual, and a
+verdict: HEALTHY / PLATEAU / TTL-EXPIRY / MIXED / SHORT. Run on 436 subscription sessions of four
+days: 0 PLATEAU, 14 TTL-EXPIRY, 293 HEALTHY. The one gateway session is PLATEAU at 21% cache read.
+Documented in `SKILL.md` and `references/fleet-cost.md`.
+
+**Open:** the scratch helpers that found this (`cache-split.mjs`, `session-cost.mjs`) are superseded
+by `cache-health` and need nothing. The `costHealthy` counterfactual is a flat 97/3 read/write
+model; good enough to rank, not to quote.
+
 ## 2026-09-18 — one price table, with current list prices
 
 **`session-inspector/scripts/lib/quota.mjs` is the only pricing table now.** `token-sinks.mjs` and

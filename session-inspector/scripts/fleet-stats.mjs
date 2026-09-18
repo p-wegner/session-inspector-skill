@@ -35,6 +35,7 @@
  */
 
 import { readFileSync } from "fs";
+import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { parseClaude } from "./lib/parse.mjs";
@@ -74,10 +75,11 @@ for (const s of discover("claude")) {
   // Second light pass: per-turn context curve (for the biggest single-turn jump)
   // and cache-creation total (parseClaude doesn't track creation, needed for cost).
   let prevCtx = 0, jump = 0, jumpAt = 0, turnIdx = 0, cw = 0, maxCtx = 0;
+  const seen2 = new Set(); // second pass over the same rows: its own set
   for (const ln of lines) {
     if (!ln.trim()) continue;
     let o; try { o = JSON.parse(ln); } catch { continue; }
-    if (o.type === "assistant" && o.message?.usage) {
+    if (o.type === "assistant" && o.message?.usage && firstRowOf(o.message, seen2)) {
       const u = o.message.usage;
       const ctx = ctxOf(u);
       if (ctx <= 0) continue;

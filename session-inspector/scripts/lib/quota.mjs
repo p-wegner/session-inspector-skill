@@ -11,6 +11,7 @@ import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { classify } from "./prompts.mjs";
 import { toolDisplayName } from "./parse.mjs";
+import { firstRowOf } from "./usage.mjs";
 
 // ── pricing ($/1M, Anthropic list, checked 2026-09-18 against the claude-api skill's model table) ──
 // `cr` is the cache-read multiplier on the input price: 0.1x everywhere except Claude Fable 5.1
@@ -63,6 +64,7 @@ export function parseFileEvents(path) {
       for (const c of o.message.content) if (c.type === "tool_use") idToName.set(c.id, toolDisplayName(c.name, c.input));
   }
   const events = [];
+  const seen = new Set(); // one usage event per API call, not per content-block row
   for (const line of lines) {
     const s = line.trim(); if (!s) continue;
     let o; try { o = JSON.parse(s); } catch { continue; }
@@ -70,7 +72,7 @@ export function parseFileEvents(path) {
     if (!Number.isFinite(ms)) continue;
     if (o.type === "assistant" && o.message) {
       const m = o.message, u = m.usage;
-      if (u) events.push({ t: "a", ms, model: m.model || "", tok: {
+      if (u && firstRowOf(m, seen)) events.push({ t: "a", ms, model: m.model || "", tok: {
         i: u.input_tokens || 0, o: u.output_tokens || 0,
         cw: u.cache_creation_input_tokens || 0, cw1h: u.cache_creation?.ephemeral_1h_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } });
       if (Array.isArray(m.content)) for (const c of m.content)

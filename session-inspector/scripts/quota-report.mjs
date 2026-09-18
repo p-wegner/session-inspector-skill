@@ -31,6 +31,7 @@ import { homedir } from "os";
 import { classify } from "./lib/prompts.mjs";
 import { toolDisplayName } from "./lib/parse.mjs";
 import { costUsdTotals } from "./lib/quota.mjs";
+import { firstRowOf } from "./lib/usage.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -186,6 +187,7 @@ function parseFile(path, project, isSubagent) {
   let model = "";
   let firstTs = "", lastTs = "";
   let turns = 0, toolCalls = 0, toolErrors = 0, cost = 0;
+  const seen = new Set(); // one usage record per API call, not per content-block row
   const toolCounts = new Map();      // name -> {calls, errors}
   const idToName = new Map();        // tool_use_id -> name (for error attribution)
   const byDay = new Map();           // day -> {tokens, cost, turns, toolCalls}
@@ -226,7 +228,7 @@ function parseFile(path, project, isSubagent) {
       const m = o.message;
       if (m.model && m.model !== "<synthetic>") model = m.model;
       const u = m.usage;
-      if (u) {
+      if (u && firstRowOf(m, seen)) {
         turns++;
         const tt = { input: u.input_tokens || 0, output: u.output_tokens || 0,
           cacheCreation: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0 };
