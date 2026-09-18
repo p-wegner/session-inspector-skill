@@ -43,15 +43,6 @@ feature when its sessions exist and a question needs it**, not for symmetry. Tod
 (224 rollouts in 30 days on the work box, gateway runs included); Copilot has no recent sessions,
 so nothing is built for it. The concrete Codex candidates and the description fix are in the matrix.
 
-## 6. Tier-0 and SKILL.md fixes from the 2026-09-18 analysis
-
-- Declare `for-tier` in the frontmatter; without it the capability pass may propose nothing.
-- Trim the 725-char description toward ~600, then run a trigger drill before keeping the cut.
-  The description names Copilot, which the matrix shows as mostly unsupported in fleet views.
-- Move the dead-skill availability caveat (`references/fleet-skills-and-prompts.md:20`) into
-  the `skill-usage` row of SKILL.md; agents skip links, and that list is the most quoted output.
-**Size:** small. No dependencies.
-
 ## 7. Codex cache-health threshold
 
 Codex on a ChatGPT login lands at 79–85% cache read and reads MIXED; OpenAI's cache is
@@ -74,6 +65,28 @@ is `agent-pick`. Prefer `fleet` on PATH with the path as fallback. **Size:** tri
 its "subscription value" total and window detection; the reach line made it visible (2026-09-18).
 Detect it (settings carry `apiKeyHelper`) and list it apart, or exclude it with a note. **Size:** small.
 
+## 11. Read-off discipline for a fleet report — the two delivery findings still open
+
+**Why.** The 2026-09-18 blind delivery run judged 17 of 18 spot-checks sound; the failures it did
+find were in how the numbers were *read off*, not in the tools. Four of those findings landed with
+the reach work (a `--top` slice, this session's own row, tool-friction's scope line, quota-multi's
+discovery). Two did not:
+- **Ratios may not cross tools, and one turn definition per table.** The six fleet tools report six
+  different in-window session counts (722 / 501 / 551 / 574 / 577 / 860) under different filters,
+  and the run's own summary mixed `fleet-stats` turn counts with `context-growth` turn indices, so
+  "turn 134" read as 6% where the tool meant 15%.
+- **A report's ordered summary must separate cost findings from correctness findings**, with the tax
+  next to each. The run ranked a broken hook beside a context problem affecting 47% of turns with
+  nothing to tell a reader which was worth a day.
+**Shape.** Two rules in SKILL.md's "Rules that are easy to get wrong" (tier 1, where a report writer
+is already looking), not a reference page. Possibly a `reach`-style denominator name in each fleet
+tool's `--json` so a ratio across tools is refusable rather than merely discouraged.
+**Size:** small. **Depends on:** nothing. The receipt is
+`docs/analysis/session-inspector-2026-09-18/tune.json` (gitignored).
+
 ## Landed
 
-Pointer only: see `docs/archive/BACKLOG-landed.md` once it exists.
+Pointer only, newest first — the struck sections live verbatim in
+[`docs/archive/BACKLOG-landed.md`](docs/archive/BACKLOG-landed.md).
+
+- ~~6. Tier-0 and SKILL.md fixes from the 2026-09-18 analysis~~ — **DONE** (2026-09-18)

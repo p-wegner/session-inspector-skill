@@ -1,6 +1,7 @@
 ---
 name: session-inspector
-description: Inspect, aggregate and edit coding-agent session transcripts — Claude (~/.claude*/projects), Codex (~/.codex/sessions), Copilot (~/.copilot). One session (why it stopped, what it did, friction moments, machine state to hand off, stranded subagent results), a whole fleet (token sinks, context waste/spikes, tool failures, dead skills, hook latency, quota), and the present (which sessions run now, how many subagents are feasible, which repo to pick up next → human-gated spawn plan). ALWAYS use this instead of hand-reading/grepping/patching .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what was said in a session" question.
+for-tier: B
+description: Inspect, aggregate and edit coding-agent session transcripts: Claude and Codex fleet-wide, Copilot per session. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.
 argument-hint: [session-id | keyword | --codex <path> | --copilot | edit]
 ---
 
@@ -38,7 +39,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Which tools fail most | `tool-failures.mjs [--by tool\|project\|error]` | fleet-friction |
 | Which sessions are worth learning from (friction rank) | `incidents.mjs [--lens general\|visual\|image]` | fleet-friction |
 | Recurring command chains → tooling to build | `tool-friction.mjs` | fleet-friction, [tooling-improvement](references/tooling-improvement.md) |
-| Which skills never fire (+ their always-on token tax) | `skill-usage.mjs [--project x] [--repo-only] [--cost]` | [fleet-skills-and-prompts](references/fleet-skills-and-prompts.md) |
+| Which skills never fire (+ their always-on token tax). **"Dead" = never invoked *while available*** — `avail` is the sessions that ran after the skill's first commit, and `too-new` / `loaded-only` are separate buckets. Quote the dead list only with that denominator. | `skill-usage.mjs [--project x] [--repo-only] [--cost]` | [fleet-skills-and-prompts](references/fleet-skills-and-prompts.md) |
 | How skills got created/improved | `skill-genesis.mjs` | fleet-skills-and-prompts |
 | How agents read files; does nested CLAUDE.md ever load | `read-patterns.mjs` | fleet-skills-and-prompts |
 | What humans typed / how they prompt / slash & skill usage | `user-prompts.mjs`, `prompt-style.mjs`, `slash-goals.mjs` | fleet-skills-and-prompts |

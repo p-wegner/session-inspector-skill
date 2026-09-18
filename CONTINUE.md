@@ -4,6 +4,45 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-18 — tier 0: a declared floor, a 598-char description, the dead-skill denominator (BACKLOG item 6, landed)
+
+**Why.** The skill-design analysis of 2026-09-18 (`docs/analysis/session-inspector-2026-09-18/`,
+gitignored) returned **keep with changes** and three tier-0/tier-1 fixes. Tier 0 is the name and
+description, paid on every turn of every session in six profiles.
+
+**What changed in `session-inspector/SKILL.md`:**
+- **`for-tier: B` declared.** Without a floor the capability lens can only publish `undeclared`
+  and may propose nothing; it measured fit A=100 B=63 C=59 over 597 units. The floor is picked
+  from the audience, not the contents: the weakest reader that realistically runs 35 Node tools
+  over transcripts is a Sonnet/Haiku-class agent, here and in the public repo. At floor B the 37%
+  classed `scaffolding` becomes proposable — that is a finding for the next pass, not a cut made
+  here.
+- **Description 725 → 598 chars** (~177 → ~150 tokens, paid six times a turn). It also stops
+  promising three agents evenly: it now says *Claude and Codex fleet-wide, Copilot per session*,
+  which is what `docs/agent-feature-matrix.md` actually shows.
+- **The dead-skill denominator moved up into the `skill-usage` row.** "Dead" means never invoked
+  *while available*; `avail` counts sessions that ran after the skill's first commit, and
+  `too-new` / `loaded-only` are separate buckets. It was one link away in
+  `references/fleet-skills-and-prompts.md:20`, and that list is the most quoted thing the skill
+  produces.
+
+**Verified — Trigger Drill, not a desk read.** Four cheap subagents, blind to which arm they held,
+two per arm, 15 deliberately vague prompts (9 that must fire the skill, 6 that must not, competing
+against token-budget, spawn-session, skill-design and code-metrics as the real menu):
+
+| Arm | Fires on the 9 positives | False fires on the 6 negatives |
+|---|---|---|
+| old description (725 chars) | 13/18 | 0/12 |
+| new description (598 chars) | **16/18** | 0/12 |
+
+So the cut bought reach rather than costing it. The two residual misses are the boundary worth
+knowing: *"what is eating all my context"* goes to token-budget in half the runs, and
+*"how much quota have I got left this week"* reads as no skill at all. Widening for either would
+steal token-budget's prompts, so both are left as they are.
+
+- `node --test --test-concurrency=4 scripts/test/*.test.mjs`: 93 pass, 0 fail.
+- The running session's skill list picked up the new description, so the frontmatter still parses.
+
 ## 2026-09-18 — published reach on the fleet tools (BACKLOG item 1, in progress)
 
 **Why.** A skill-design shape pass classified `session-inspector` as an Instrument whose numbers
