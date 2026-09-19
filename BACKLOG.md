@@ -132,6 +132,14 @@ human approved reads as a bypass). **Shape.** Read shell redirections and `cp`/`
 outside the repo; drop a bypass whose flag the human named in a prompt before it ran. **Size:**
 small. **Depends on:** nothing.
 
+## 17. Run the integrated lab on a second target
+
+**Why.** `session-inspector/references/lab.md` claims the round machine is general over targets,
+but only the handoff target has run. Its catalogue rows for cost, skill triggers and session
+review are defaults, not measured. **Shape.** Pick one (skill triggers is the cheapest key: label
+the human prompts of a few sessions), fill its card, and run 3–5 rounds. Afterwards, correct the
+catalogue row from what the run showed. **Size:** one sitting, ~15 agents. **Depends on:** nothing.
+
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in

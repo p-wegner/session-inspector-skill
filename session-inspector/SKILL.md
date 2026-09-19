@@ -47,6 +47,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Subscription quota this week / all profiles / a calendar month | `quota-report.mjs --profile p [--html f]`, `quota-multi.mjs`, `quota-month.mjs --month YYYY-MM` | [fleet-quota](references/fleet-quota.md) |
 | Sessions from other machines / pooled corpora | `sync-server.mjs`, `sync-push.mjs`, `sync-query.mjs`, `session-bundle.mjs`, `hub-service.mjs` | [sync-and-bundles](references/sync-and-bundles.md), [session-sync](references/session-sync.md), [hub-service](references/hub-service.md) |
 | Custom parsing the analyzers don't cover | manual recipes | [claude](references/claude-recipes.md) · [codex](references/codex-recipes.md) · [copilot](references/copilot-recipes.md) |
+| **Tune a tool here** for a use case (handoff briefs, cost, skill triggers, session review): frozen keys, blind consumers, a judge, rounds | the integrated lab | [lab](references/lab.md) |
 | **Team questions about context & sessions** ("where did tokens go", "are re-reads avoidable", "are rules followed", "monorepo CLAUDE.md split", "dead skills", "subagent ROI", recurring friction) — prompt → tool → read-off → change | worked examples | [example-prompts](references/example-prompts.md) |
 
 **Cost-optimization loop:** `token-sinks` (what) → `context-growth` (shape) → `cache-health`

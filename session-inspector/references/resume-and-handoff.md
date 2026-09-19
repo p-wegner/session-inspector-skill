@@ -128,7 +128,8 @@ Measured on 2026-09-19 against frozen answer keys (blind Sonnet receivers, a
 separate judge): on the two tuning sessions the share of key facts the brief alone
 carried went 0.26 → 0.85 and 0.02 → 0.29 over five rounds, wrong answers from 1 and 6
 to 0 and 0; on a held-out session never tuned on, 0.04 → 0.39. The per-round table is
-in the repo's `CONTINUE.md` pass of that date.
+in the repo's `CONTINUE.md` pass of that date, and the method, repeatable for any tool
+here, is the skill's integrated lab: [lab](lab.md).
 
 **The hotkey.** `claude-pick/herdr-handoff.ps1` is this wired to a gesture:
 Ctrl+Alt+X (or `prefix+shift+o` inside Herdr) reads the focused Herdr pane, works

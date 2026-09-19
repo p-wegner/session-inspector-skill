@@ -4,6 +4,15 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-19 — the lab is part of the skill: `references/lab.md`
+
+The eval loop both labs below ran is now the skill's **integrated lab**, a reference doc
+reached from one row in `SKILL.md`. It holds the target card, a catalogue of targets (handoff,
+run twice; cost, skill triggers and session review, not yet run), the roles and what each may
+read, one round, prompt templates, the guards and the runs so far. It is documentation and
+has no code of its own, so nothing verifies it beyond a read. Only the handoff target has
+run, and a second target is BACKLOG 17.
+
 ## 2026-09-19 — operator-session lab: `brief.mjs` on a 15-hour `/loop` board session
 
 **Why.** Same Lab route as the pass below, on a lengthy operator session: a `/loop` driving a
