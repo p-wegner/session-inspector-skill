@@ -57,7 +57,9 @@ export function staleCounts(docText, tests) {
   }
   if (!passed.length) return [];
   const out = [];
-  for (const m of String(docText).matchAll(/\b(\d{1,4})\s+(?:[a-z-]+\s+){0,2}(?:tests?|checks?)\b/gi)) {
+  for (const m of String(docText).matchAll(/\b(\d{1,4})\s+((?:[a-z-]+\s+){0,2})(?:tests?|checks?)\b/gi)) {
+    // "4 ms of test time" is a duration, not a count.
+    if (/\b(?:ms|s|sec|secs|seconds?|min|minutes?|hours?|of|kb|mb|gb|percent)\b/i.test(m[2])) continue;
     const n = Number(m[1]);
     if (!passed.includes(n) && passed.every((p) => Math.abs(p - n) <= Math.max(3, p * 0.2))) {
       out.push({ docSays: m[0], lastRun: passed.join(" + "), command: last.command });
@@ -83,11 +85,28 @@ export function docGaps(facts, docText, extra = {}) {
   for (const p of (facts.humanPrompts || []).slice(1)) if (p.text.length > 30) add("human instruction", p.text);
   // A URL whose every fetch failed was not relied on.
   for (const s of facts.sources || []) if (s.kind === "url" && (s.ok || !s.failedFetches)) add("source relied on", s.value);
-  for (const c of extra.commits || []) if (c.body && /fix|defect|bug|broke|failed|silently|wrong|ran nothing/i.test(`${c.subject} ${c.body}`)) add("defect fixed", `${c.subject}: ${c.body}`);
-  // Shell-quoting accidents are the session's tooling, not the project's: measured
-  // as the commonest false hit in the list.
-  const TRIVIA = /unexpected EOF|here-?doc|syntax error near|Expected unicode escape|command not found|No such file or directory/i;
-  for (const x of (facts.failures || []).filter((f) => f.error && !TRIVIA.test(f.error))) add("trap hit", `${x.tool}: ${x.error}${x.diagnosis ? ` — ${x.diagnosis}` : ""}`);
+  // Its OWN commits only: in a repo where agents commit concurrently, the window holds
+  // theirs too (measured: 10 "defect fixed" lines, 8 of them other agents' work).
+  for (const c of (extra.commits || []).filter((x) => x.mine !== false)) if (c.body && /fix|defect|bug|broke|failed|silently|wrong|ran nothing/i.test(`${c.subject} ${c.body}`)) add("defect fixed", `${c.subject}: ${c.body}`);
+  // Shell-quoting accidents and the session's own tool limits are its tooling, not
+  // the project's: measured as the commonest false hits in the list.
+  const TRIVIA = /unexpected EOF|here-?doc|syntax error near|Expected unicode escape|command not found|No such file or directory|Traceback \(most recent call last\)|exceeds maximum allowed size|Ripgrep search timed out|Invoke-Expression|In Zeile|Validate command safety|Path does not exist/i;
+  const seenErr = new Map();
+  for (const x of (facts.failures || []).filter((f) => f.error && !TRIVIA.test(f.error))) {
+    const k = `${x.tool}|${x.error.slice(0, 60)}`;
+    if (seenErr.has(k)) { seenErr.get(k).n++; continue; }
+    seenErr.set(k, { x, n: 1 });
+  }
+  for (const { x, n } of seenErr.values()) add("trap hit", `${x.tool}${n > 1 ? ` (×${n})` : ""}: ${x.error}`, x.error);
+  for (const [flag, b] of Object.entries(facts.bypasses || {})) add("guard bypassed", `\`${flag}\` on ${b.n} command(s), ${String(b.first).slice(11, 16)}–${String(b.last).slice(11, 16)}`, `${flag} bypass override`);
+  // A file outside every repo it edited: no history anywhere else.
+  for (const [file, e] of Object.entries(facts.edits || {})) {
+    if (extra.isOutside && extra.isOutside(file)) add("changed outside the repo", `\`${file}\`: \`${e.old}\` → \`${e.new}\``, `${file.split(/[\\/]/).pop()} ${e.new}`);
+  }
+  for (const line of String((facts.lastCompaction && facts.lastCompaction.sections["pending tasks"]) || "").split("\n")) {
+    const t = line.replace(/^\s*[-*]\s*/, "").trim();
+    if (t.length > 30 && /^\s*[-*]/.test(line)) add("pending at its last compaction", t);
+  }
   for (const t of (facts.tests || []).filter((r) => r.diagnosis)) add("defect found by a failing run", `${t.firstError ? `${t.firstError} — ` : ""}${t.diagnosis}`, t.diagnosis);
   for (const d of facts.closingChecklist?.done || []) add("claimed done", d);
   // Its own "Verified:" statements from chat; one it already wrote into the file matches itself.

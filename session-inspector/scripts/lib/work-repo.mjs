@@ -90,7 +90,7 @@ export function docsDirFor(startDir, root) {
  * shared checkout other sessions commit in the same window, so an unmarked commit
  * inside the window is reported as "in the window", never as this session's.
  */
-export function history(root, startedAt, endedAt, transcript = "", commitCommands = 0) {
+export function history(root, startedAt, endedAt, transcript = "", commitCommands = 0, ownShas = []) {
   if (!root || !startedAt) return { during: [], after: [] };
   let raw = "";
   // The body travels too: a fix commit's body is usually the only place the defect
@@ -108,7 +108,15 @@ export function history(root, startedAt, endedAt, transcript = "", commitCommand
   // The session printed no sha for a commit it made with `-q`, or in the same call
   // as the push. If it ran at least as many `git commit`s as the window holds, the
   // window is its own.
-  if (commitCommands >= during.length) for (const c of during) c.mine = true;
+  // The count fallback is for a session that never printed a sha. Once any commit is
+  // confirmed by its sha, the rest are someone else's: measured on a board repo where
+  // agents commit concurrently, five of theirs were listed as the session's own.
+  // Strongest: the shas its own `git commit` printed. A session that reads `git log`
+  // prints other agents' shas too, so "the sha appears in the transcript" over-claims.
+  if (ownShas.length) {
+    const own = (sha) => ownShas.some((o) => o.startsWith(sha) || sha.startsWith(o));
+    for (const c of during) c.mine = own(c.sha);
+  } else if (!during.some((c) => c.mine) && commitCommands >= during.length) for (const c of during) c.mine = true;
   return { during, after };
 }
 
@@ -153,8 +161,39 @@ export function editLanding(root, files, startedAt, endedAt) {
   }
   // Is each landing commit on a remote branch? "Committed" and "pushed" are two
   // different answers to "is my work safe", and the last ask is often both.
-  const pushed = (sha) => { try { return Boolean(git(root, "branch", "-r", "--contains", sha)); } catch { return false; } };
-  const withPush = (list) => list.map((c) => ({ ...c, pushed: pushed(c.sha) }));
+  // "On SOME remote branch" is the wrong test in a repo where agents push feature
+  // branches cut from a local master: measured, a session's two commits sat on eight
+  // pushed `feature/ak-…` branches while `origin/master` was six days behind, and the
+  // brief said "pushed". Pushed means: on the upstream of the default branch.
+  let upstream = "";
+  for (const ref of ["@{upstream}", "origin/HEAD", "origin/main", "origin/master"]) {
+    try { upstream = git(root, "rev-parse", "--abbrev-ref", ref); if (upstream && upstream !== "origin/HEAD") break; } catch { /* next */ }
+  }
+  const pushed = (sha) => {
+    try { if (upstream) { git(root, "merge-base", "--is-ancestor", sha, upstream); return true; } } catch { /* not on it */ }
+    return false;
+  };
+  const elsewhere = (sha) => { try { return git(root, "branch", "-r", "--contains", sha).split("\n").map((s) => s.trim()).filter(Boolean); } catch { return []; } };
+  // Reported only when it differs from the GLOBAL identity: a repo-local .git/config
+  // (a test fixture's `E2ETest`) is exactly the case worth saying out loud.
+  let globalEmail = "";
+  try { globalEmail = execFileSync("git", ["config", "--global", "user.email"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim().toLowerCase(); } catch { /* none */ }
+  const author = (sha) => {
+    try {
+      const a = git(root, "log", "-1", "--format=%an <%ae>", sha);
+      return globalEmail && a.toLowerCase().includes(`<${globalEmail}>`) ? "" : a;
+    } catch { return ""; }
+  };
+  // And on the LOCAL branch: "not on origin/master" read alone as "not in master" to a
+  // reader, when both commits were ancestors of the local master.
+  let head = "";
+  try { head = git(root, "rev-parse", "--abbrev-ref", "HEAD"); } catch { /* detached */ }
+  const onHead = (sha) => { try { git(root, "merge-base", "--is-ancestor", sha, "HEAD"); return true; } catch { return false; } };
+  const withPush = (list) => list.map((c) => {
+    const on = pushed(c.sha);
+    const refs = on ? [] : elsewhere(c.sha);
+    return { ...c, pushed: on, upstream, otherRemoteRefs: refs.length, otherRemoteRef: refs[0] || "", author: author(c.sha), onLocal: onHead(c.sha) ? head : "" };
+  });
   return {
     during: withPush([...out.during.values()]), after: withPush([...out.after.values()]),
     dirty: out.dirty, none: out.none,
@@ -224,4 +263,19 @@ export function laterTouches(root, endedAt, files) {
     const [sha, when, subject] = head.split("\t");
     return { sha, when, subject, files: rest.map((f) => f.trim()).filter(Boolean) };
   }).filter((c) => Date.parse(c.when) > end).reverse();
+}
+
+/**
+ * Tags created after the session ended — a deploy, a promotion, a release. An open
+ * item that waits on one ("#1141 needs a promotion") is stale once a later tag exists:
+ * measured, three `stable-*` promotions landed after a session that listed a promotion
+ * as its blocker, and the brief still passed the blocker on.
+ */
+export function tagsSince(root, endedAt) {
+  if (!root || !endedAt) return [];
+  let raw = "";
+  try { raw = git(root, "for-each-ref", "refs/tags", "--sort=creatordate", "--format=%(refname:short)%09%(creatordate:iso-strict)%09%(objectname:short)"); } catch { return []; }
+  const end = Date.parse(endedAt);
+  return raw.split("\n").filter(Boolean).map((l) => { const [name, when, sha] = l.split("\t"); return { name, when, sha }; })
+    .filter((t) => Date.parse(t.when) > end);
 }

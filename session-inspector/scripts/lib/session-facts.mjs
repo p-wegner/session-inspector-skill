@@ -33,7 +33,7 @@ const RUN_RE = new RegExp(String.raw`(?:timeout\s+\d+\s+)?(?:[A-Z_]+=\S+\s+)*` +
 const TALLY_RE = /^.*(?:\b(?:pass|passed|passing|fail|failed|failing|tests?)\b[ \t]*[:=]?[ \t]*\d+|\d+[ \t]+(?:\w+[ \t]+){0,2}(?:passed|failed|passing|failing|tests?)\b|✔|✖|Tests:[ \t]).*$/gim;
 // The summary shapes runners themselves print (node:test, pytest/jest-style counts,
 // a project runner's "N checks passed"). The CLI under test prints "failed: 1" too.
-const RUNNER_TALLY = /^\s*(?:ℹ[ \t]+(?:tests|suites|pass|fail|skipped|todo|cancelled)[ \t]+\d+|\d+[ \t]+(?:\w+[ \t]+){0,2}(?:passed|failed|passing|failing)\b.*|Tests?:[ \t].*\d.*|=+[ \t].*\b(?:passed|failed)\b.*=+)\s*$/i;
+const RUNNER_TALLY = /^\s*(?:(?:Test Files|Tests)[ \t]+\d+[ \t]+(?:passed|failed)\b.*|ℹ[ \t]+(?:tests|suites|pass|fail|skipped|todo|cancelled)[ \t]+\d+|\d+[ \t]+(?:\w+[ \t]+){0,2}(?:passed|failed|passing|failing)\b.*|Tests?:[ \t].*\d.*|=+[ \t].*\b(?:passed|failed)\b.*=+)\s*$/i;
 const TALLY_KEY = /\b(tests?|pass(?:ed|ing)?|fail(?:ed|ing)?)\b/i;
 
 /**
@@ -47,7 +47,10 @@ export function tallyRuns(lines) {
   const runs = [];
   let cur = [], keys = new Set();
   for (const l of lines) {
-    const k = (l.match(TALLY_KEY) || [])[1];
+    // vitest prints "Duration 76s (… tests 6ms …)" under its tally: a timing line,
+    // not a second run. And "Test Files 1 passed" is its own key, not a repeat of "Tests".
+    if (/^\s*(?:Duration|Start at|Time:)\b/i.test(l)) continue;
+    const k = /^\s*Test Files\b/i.test(l) ? "files" : (l.match(TALLY_KEY) || [])[1];
     const key = k ? k.toLowerCase().replace(/(?:ed|ing|s)$/, "") : "";
     if (key && keys.has(key)) { runs.push(cur); cur = []; keys = new Set(); }
     cur.push(l); if (key) keys.add(key);
@@ -75,6 +78,54 @@ const KEYISH = /api[_-]?key|token|secret|bearer|password|credential/i;
 // actually ran. A session's cwd says where it STARTED; these say where it worked.
 const CD_RE = /(?:^|&&|;|\n)\s*(?:cd|Set-Location|pushd)\s+(?:-LiteralPath\s+)?["']?([A-Za-z]:[\\/][^"'\s;&|]*|\/[a-z]\/[^"'\s;&|]*)["']?/gi;
 const GITC_RE = /\bgit\s+-C\s+["']?([A-Za-z]:[\\/][^"'\s;&|]*|\/[a-z]\/[^"'\s;&|]*)/gi;
+
+/**
+ * Mutating HTTP calls to a LOCAL service in one shell command: `curl -X POST … http://127.0.0.1:3001/api/…`,
+ * `Invoke-RestMethod -Method Post -Uri …`. An operator session's work is mostly these —
+ * measured: 315 of 505 shell calls in a 15-hour board session hit the board's API, and
+ * its brief said nothing about any of them, because git records none. GETs are reads.
+ */
+export function httpActions(cmd) {
+  const out = [];
+  // A literal local host, or a shell variable holding one (`"$B/api/…"`, `${BOARD}/api/…`):
+  // the merge triggers of a measured session all went through `$B`.
+  const LOCAL_RE = /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d+)(\/[^\s"'`)\\]*)/;
+  const VARHOST_RE = /["'\s]\$\{?(?!HOME\b|TEMP\b|TMP\b|PWD\b)[A-Za-z_]\w*\}?(\/api\/[^\s"'`)\\]*)/;
+  // A `\` at the end of a line continues the command; the URL is often on the next line.
+  const joined = String(cmd || "").replace(/\\\r?\n/g, " ").replace(/`\r?\n/g, " ");
+  for (const raw of joined.split(/(?=\bcurl(?:\.exe)?\s)|(?=\bInvoke-(?:RestMethod|WebRequest)\b)/i)) {
+    if (!/^(?:curl|Invoke-)/i.test(raw)) continue;
+    // One invocation ends at the first pipe, separator or newline outside quotes;
+    // otherwise the next command's `-d` (a `date`, a `python -c`) reads as a body.
+    let seg = "", q = "";
+    for (const ch of raw) {
+      if (q) { if (ch === q) q = ""; } else if (ch === "'" || ch === '"') q = ch; else if (/[|;\n&]/.test(ch)) break;
+      seg += ch;
+    }
+    const lit = seg.match(LOCAL_RE), vh = lit ? null : seg.match(VARHOST_RE);
+    if (!lit && !vh) continue;
+    const u = lit ? { port: lit[1], path: lit[2] } : { port: "var", path: vh[1] };
+    let method = (seg.match(/(?:-X|--request)\s*["']?([A-Z]+)/) || seg.match(/-Method\s+["']?(\w+)/i) || [])[1];
+    if (!method) method = /\s(?:-d|--data(?:-raw|-binary)?|-Body)\s/i.test(seg) ? "POST" : "GET";
+    method = method.toUpperCase();
+    if (method === "GET" || method === "HEAD") continue;
+    const body = (seg.match(/(?:-d|--data(?:-raw)?|-Body)\s+(?:'([^']*)'|"((?:[^"\\]|\\.)*)")/) || []).slice(1).find(Boolean) || "";
+    out.push({ method, port: u.port, path: u.path.replace(/[,;]+$/, ""), body: clip(body, 120) });
+  }
+  return out;
+}
+
+/** "/api/workspaces/eac303b0-…/setup" → "/api/workspaces/:id/setup" */
+/** A `/loop` wakeup marker, which arrives as a user entry but is no human's instruction. */
+export const isLoopWakeup = (text) =>
+  /^\[\d+ prior \/loop wakeups? found nothing actionable/i.test(String(text || "")) || /^<<autonomous-loop/.test(String(text || ""));
+
+export function routeOf(path) {
+  return String(path).split("?")[0]
+    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")
+    .replace(/\/\d+(?=\/|$)/g, "/:n")
+    .replace(/\$\{?\(?[\w.]+\)?\}?/g, ":id"); // a variable in a path is an id too
+}
 
 /** "/c/projects/x" → "C:\projects\x"; Windows paths pass through with / → \. */
 export function normalizeDir(p) {
@@ -124,7 +175,22 @@ export function sessionFacts(lines) {
     lastGitStatus: null,// {ts, entries:[porcelain lines]} — the tree as the session last saw it
     links: [],          // {ts, command} — junctions/symlinks it created
     verified: [],       // {ts, text, negative, where} — its own "Verified:" statements
+    http: [],           // {ts, method, port, path, body, status, reply} — mutating calls to local services
   };
+  // A `/loop` wakeup arrives as a user entry ("[3 prior /loop wakeups found nothing
+  // actionable; loop is healthy.]"). Measured on a 15-hour operator session: 40 of its
+  // 44 "human prompts" were these, and they pushed the three real instructions out of
+  // the brief's list. Counted, not listed.
+  f.loop = { wakeups: 0, first: "", last: "" };
+  const addHuman = (ts, text) => {
+    if (isLoopWakeup(text)) {
+      f.loop.wakeups++; f.loop.first = f.loop.first || ts; f.loop.last = ts;
+      return;
+    }
+    f.humanPrompts.push({ ts, text });
+  };
+  const tickets = new Map();  // "#1172" → {n, mentions, first, last, context}
+  let lastText = "";          // the latest thing it said, whatever its length
   const pending = new Map(); // tool_use_id -> {name, input, ts}
   let awaitingDiagnosis = null; // the last failure (tool error or failing run) still waiting for the session's words
   const homeState = new Map();  // ~/.something -> {cmd, out, commands, files, keyish}
@@ -177,9 +243,27 @@ export function sessionFacts(lines) {
 
     if (o.type === "assistant") {
       for (const b of msg.content || []) {
+        if (b.type === "text" && b.text && b.text.trim()) lastText = b.text;
         if (b.type === "text" && b.text && !limitKind(b.text) && b.text.trim().length > 20) {
           f.lastReal = b.text; f.lastRealAt = ts;
           addVerified(ts, b.text, "message");
+          // Ticket numbers it talks about. An operator session's unit of work is the
+          // ticket, not the file: the brief ties each to what later commits say about it.
+          for (const m of b.text.matchAll(/(?<![\w/&])#(\d{2,6})\b/g)) {
+            const e = tickets.get(m[1]) || { n: m[1], mentions: 0, first: ts, last: ts, context: "" };
+            e.mentions++; e.last = ts;
+            if (!e.context) {
+              const s = b.text.slice(Math.max(0, m.index - 60), m.index + 140).split("\n").find((l) => l.includes(`#${m[1]}`)) || "";
+              e.context = clip(s.replace(/[*_`]/g, ""), 160);
+            }
+            tickets.set(m[1], e);
+          }
+          // "tickets are filed — #1165, #1166, #1167", "the defect is filed as #1172".
+          for (const m of b.text.matchAll(/\b(?:filed|opened)\b[^.\n#]{0,30}((?:#\d{2,6}\b(?:\s*(?:,|and|&)\s*)?)+)/gi)) {
+            for (const n of m[1].matchAll(/#(\d+)/g)) {
+              if (!(f.created2 = f.created2 || []).some((x) => x.n === n[1])) f.created2.push({ ts, n: n[1], title: "", said: true });
+            }
+          }
           // The first thing the session SAID after a failure is its diagnosis —
           // "the total left out the skipped components; node --test needs a glob".
           // That sentence is the defect record; the error output is only the symptom.
@@ -190,6 +274,15 @@ export function sessionFacts(lines) {
           const fp = input.file_path || input.notebook_path;
           if (fp && /^(Write|Edit|MultiEdit|NotebookEdit)$/.test(b.name)) bump(fp.replace(/[\\/][^\\/]*$/, ""), "writes");
           if (fp && b.name === "Write" && !created.includes(fp)) created.push(fp);
+          // What an edit changed, kept per file so the brief can show it for a file git
+          // does not track (`~/.npmrc`: store-dir moved to a second store). Credential
+          // values are redacted here, before anything else sees them.
+          if (fp && b.name === "Edit") {
+            const red = (s) => clip(String(s || "").replace(/((?:_?auth(?:token)?|token|password|passwd|secret|api[_-]?key)\s*[=:]\s*)\S+/gi, "$1<redacted>"), 140);
+            // With the reason it gave just before: a later summary can contradict the
+            // premise of a change that is still in effect, and both need to be visible.
+            (f.edits = f.edits || {})[fp] = { ts, old: red(input.old_string), new: red(input.new_string), reason: red(lastText).slice(0, 260) };
+          }
           // The session's own record of the work, as it wrote it. Read later, the
           // file may carry passes other sessions added on top; this is this one's.
           if (fp && TRACKING_FILE.test(fp) && (b.name === "Write" || b.name === "Edit")) {
@@ -222,6 +315,19 @@ export function sessionFacts(lines) {
               .filter((x) => !/~~/.test(x) && !cmd.includes(`~~${x.replace(/^#+\s+/, "")}~~`));
             if (file && heads.length) f.trackingWrites.push({ ts, file: file.replace(/^.*['"(=]/, ""), text: heads.join("\n"), scripted: true });
           }
+          // Guards it switched off. A session's own later summaries can deny this —
+          // measured: every compaction summary said an override "was never used" while
+          // eight commands had set it. The commands are the record.
+          if (cmd) {
+            for (const m of cmd.matchAll(/\b((?:ALLOW|SKIP|FORCE|BYPASS|DISABLE|NO)_[A-Z0-9_]+)=(?:1|true|yes)\b|(--no-verify|--force-with-lease|--force(?:-[a-z]+)?|\bpush\s+-f\b)/g)) {
+              const k = m[1] || m[2];
+              const e = (f.bypasses = f.bypasses || {})[k] || { n: 0, first: ts, last: ts, example: clip(cmd, 120) };
+              e.n++; e.last = ts; f.bypasses[k] = e;
+            }
+          }
+          if (cmd && /\b(?:curl|Invoke-RestMethod|Invoke-WebRequest)\b/i.test(cmd)) {
+            for (const a of httpActions(cmd)) f.http.push({ ts, id: b.id, ...a, status: "", reply: "" });
+          }
           if (cmd) {
             for (const m of cmd.matchAll(CD_RE)) bump(m[1], "commands");
             for (const m of cmd.matchAll(GITC_RE)) bump(m[1], "commands");
@@ -229,6 +335,10 @@ export function sessionFacts(lines) {
           if (b.name === "WebFetch" && input.url) addSource("url", input.url);
           if (b.name === "WebSearch" && input.query) addSource("search", input.query);
           if (b.name === "Agent" || b.name === "Task") f.subagents++;
+          // The last scheduling call says whether a loop was left ARMED: a wakeup
+          // that fires into a successor's session is machine state like a process.
+          if (b.name === "ScheduleWakeup") { f.loop.schedules = (f.loop.schedules || 0) + 1; f.loop.lastSchedule = { ts, stop: Boolean(input.stop), delay: input.delaySeconds || 0, reason: clip(input.reason || "", 140) }; }
+          if (b.name === "CronCreate" || b.name === "CronDelete") (f.loop.crons = f.loop.crons || []).push({ ts, tool: b.name, what: clip(input.schedule || input.cron || input.id || input.prompt || "", 100) });
         }
       }
       continue;
@@ -236,16 +346,38 @@ export function sessionFacts(lines) {
 
     if (o.type !== "user") continue;
     const content = msg.content;
+    // The harness's own compaction summary: the session's settled account of
+    // errors, fixes and pending work at that point. Measured on a 12-compaction
+    // session: readers quoted a mid-session guess ("the store may be fine now")
+    // that the summaries had long since corrected. Kept whole-section, labelled
+    // as the session's assertion, because a summary can also be wrong.
+    {
+      const t = typeof content === "string" ? content : Array.isArray(content) ? content.map((x) => (x && x.text) || "").join("\n") : "";
+      if (o.isCompactSummary || /^This session is being continued from a previous conversation/.test(t)) {
+        f.compactions = (f.compactions || 0) + 1;
+        const sections = {};
+        let cur = null;
+        for (const line of t.split("\n")) {
+          // A section heading has its colon INSIDE the bold ("**Pending Tasks:**");
+          // a numbered item in a section does not ("**Verification that …**:").
+          const h = line.match(/^\d+\.\s+\*\*([^*]+?):\*\*\s*(.*)$/);
+          if (h) { cur = h[1].trim().toLowerCase(); sections[cur] = h[2] ? `${h[2]}\n` : ""; continue; }
+          if (cur) sections[cur] += `${line}\n`;
+        }
+        f.lastCompaction = { ts, sections };
+        continue;
+      }
+    }
     if (typeof content === "string") {
       if (/^<local-command-caveat>/.test(content)) continue;
       const c = classify(content);
-      if (c && c.kind === "human") f.humanPrompts.push({ ts, text: c.text });
+      if (c && c.kind === "human") addHuman(ts, c.text);
       continue;
     }
     for (const b of content || []) {
       if (b.type === "text" && b.text) {
         const c = classify(b.text);
-        if (c && c.kind === "human") f.humanPrompts.push({ ts, text: c.text });
+        if (c && c.kind === "human") addHuman(ts, c.text);
         continue;
       }
       if (b.type !== "tool_result") continue;
@@ -265,6 +397,23 @@ export function sessionFacts(lines) {
           const ls = o2.lastIndexOf("\n", m.index) + 1, le = o2.indexOf("\n", m.index);
           bumpHome(m[1], "out", m[2], o2.slice(ls, le < 0 ? undefined : le));
         }
+      }
+      // Records it CREATED in a service (a ticket, an issue, a merge request): the
+      // reply of a mutating call carries a number and a title. Read off the reply
+      // because the call takes many shapes (curl, a node fetch, a python script).
+      if (cmd && /\bPOST\b|-d\s+@|--data|method:\s*["']post/i.test(cmd) && !b.is_error) {
+        for (const m of out.slice(0, 40000).matchAll(/"(?:issueNumber|number|iid)"\s*:\s*(\d+)\s*,\s*"title"\s*:\s*"((?:[^"\\]|\\.){3,200})"/g)) {
+          if (!(f.created2 = f.created2 || []).some((x) => x.n === m[1])) f.created2.push({ ts, n: m[1], title: clip(m[2].replace(/\\"/g, '"'), 140) });
+        }
+        // …or the script printed it itself: "CREATED #1172 id=…", "created # 1174 <uuid> | title".
+        for (const m of out.slice(0, 40000).matchAll(/\bcreated\s*#\s*(\d+)\b[^\n|]*(?:\|\s*([^\n]{3,160}))?/gi)) {
+          if (!(f.created2 = f.created2 || []).some((x) => x.n === m[1])) f.created2.push({ ts, n: m[1], title: clip(m[2] || "", 140) });
+        }
+      }
+      const acts = f.http.filter((a) => a.id === b.tool_use_id);
+      if (acts.length) {
+        const st = (out.match(/\[HTTP (\d{3})\]|HTTP\/\d(?:\.\d)? (\d{3})|StatusCode\s*:\s*(\d{3})/) || []).slice(1).find(Boolean) || (b.is_error ? "error" : "");
+        for (const a of acts) { a.status = st; a.reply = clip(out.replace(/\[HTTP \d{3}\]/g, ""), 160); }
       }
       const link = f.links.find((k) => k.id === b.tool_use_id);
       if (link) link.result = clip(out, 220);
@@ -337,5 +486,9 @@ export function sessionFacts(lines) {
       .map(([dir, v]) => ({ dir: `~/${dir}`, mentions: v.cmd + v.out, commands: v.commands.slice(-5), files: v.files.slice(0, 8), keyish: v.keyish.slice(0, 4) }))
       .sort((a, b) => b.mentions - a.mentions),
     created,
+    createdRecords: f.created2 || [],
+    // Talked about at least twice, or created by it: once is a passing reference.
+    tickets: [...tickets.values()].filter((t) => t.mentions >= 2 || (f.created2 || []).some((c) => c.n === t.n))
+      .sort((a, b) => b.mentions - a.mentions),
   };
 }

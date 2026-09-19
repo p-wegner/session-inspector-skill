@@ -84,11 +84,12 @@ tool's `--json` so a ratio across tools is refusable rather than merely discoura
 **Size:** small. **Depends on:** nothing. The receipt is
 `docs/analysis/session-inspector-2026-09-18/tune.json` (gitignored).
 
-## 12. Handoff lab round 6: score the two post-lab brief changes, with more than one receiver
+## 12. Handoff lab round 6: score the post-lab brief changes, with more than one receiver
 
-**Why.** Two `brief.mjs` changes landed after round 5 on its judge's findings (later commits that
-changed the session's files; word matches on docs-only commits dropped) and no receiver has read
-them. One receiver per target gave ±0.1 swings that masked real movement twice.
+**Why.** Five `brief.mjs` changes landed after a round-5 judge and no receiver has read them:
+from the first lab, later commits that changed the session's files and word matches on
+docs-only commits dropped; from the operator lab, a ticket merge counted only on HEAD, and
+`/loop` wakeups and skill bodies never taken as the Goal. One receiver per target gave ±0.1 swings that masked real movement twice.
 **Shape.** Same questionnaire, keys and judge (the lab dir is session scratch, so re-create it from
 the CONTINUE 2026-09-19 pass or keep a copy outside the repo, never in it), three receivers per
 target, and a fourth session as a new held-out. **Size:** one sitting, ~8 agents. **Depends on:**
@@ -111,6 +112,25 @@ now, not as the session left it. **Shape.** Compare against the file at the sess
 (`git show <sha>:CONTINUE.md`) and read "prose" CONTINUE files by their bold lead-ins
 (`**Next.**`), which the brief also prints as "Nothing itemised" today. A model pass to judge
 paraphrase belongs outside the tool, as the caller's step. **Size:** small to medium.
+
+## 15. Operator sessions: the session's own closing step loses to a later CONTINUE item
+
+**Why.** Operator lab round 5, weakest area: on the tuning session the "start here instead" line
+quoted a later session's CONTINUE item over the session's own last step ("ask before restarting
+the stopped board"), and on the held-out the Next step was empty. **Shape.** Keep the session's
+own closing step first whenever its last human instruction was a stop or a question, and show the
+newer pass below it as context rather than as a replacement. **Size:** small. **Depends on:** 12 to
+score it.
+
+## 16. Operator sessions: three ledgers that did nothing on the held-out
+
+**Why.** The round-5 judge found no effect on the held-out session from the outside-edit ledger
+(scratch files the session created by shell under a per-user temp dir were missed; only
+`Edit`/`Write` are read), the compaction and do-not-re-chase sections (it had no compaction
+summary, so this is expected, not a defect), and the guard-bypass list (a `--force-*` flag the
+human approved reads as a bypass). **Shape.** Read shell redirections and `cp`/`mv` targets
+outside the repo; drop a bypass whose flag the human named in a prompt before it ran. **Size:**
+small. **Depends on:** nothing.
 
 ## Landed
 

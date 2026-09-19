@@ -4,6 +4,44 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-19 — operator-session lab: `brief.mjs` on a 15-hour `/loop` board session
+
+**Why.** Same Lab route as the pass below, on a lengthy operator session: a `/loop` driving a
+local board server over HTTP, merge trains, other agents committing in the same repo, one
+compaction. Frozen keys from independent agents, two blind Sonnet receivers per round (mean),
+one separate judge; a second operator session held out and never tuned on.
+
+| Round | tuning (brief-only / total / wrong, mean of 2) | gaps recall / precision |
+|---|---|---|
+| r1 | 0.12 / 0.26 / 2.5 | |
+| r2 | 0.28 / 0.43 / 0 | |
+| r3 | 0.33 / 0.48 / 0.5 | 0.41 / 0.83 |
+| r4 | 0.31 / 0.47 / 1.5 | 0.41 / 0.83 |
+| r5 | 0.31 / 0.46 / 1.0 | 0.41 / 0.83 |
+| **held-out**, committed tool before → r5 | 0.03 / 0.24 / 1 → **0.24 / 0.43 / 0** | – / 0.20 / 0.73 |
+
+The tuning session plateaued from r3: its key leans on facts only a transcript reader gets. The
+held-out gain came from the wakeup count, "pushed" meaning on the upstream, and the ticket ledger.
+
+**What changed** (sections listed in `session-inspector/references/resume-and-handoff.md`):
+`/loop` wakeups counted, not listed; vitest tallies (a duration is not a count); write calls to
+local services grouped by route, timeouts flagged; tickets filed/named and whether a commit
+merged each during or after the session; pushed = ancestor of the upstream, with the local branch
+and a differing commit author named; own commits from its own `git commit` output; outside-repo
+edits with before → after, reason and secret redaction; guard bypasses; the compaction summary
+picked by kind; "do not re-chase" refutations with a disputed check; open items annotated with
+their ticket's fate and tags since; the newest CONTINUE pass quoted by its open lead-ins; a
+budget that grows with tool calls (4500 → 6500) and drops machine state last.
+
+**Verified:** `node --test test/*.test.mjs` → 127 pass, 0 fail (10 new in
+`test/operator-session.test.mjs`); the round table above. **Not verified by a round:** two fixes
+made after the r5 judge. A merge now counts only when it is on HEAD (r5 had called a merge into a
+train branch "merged", its one new wrong answer). And a `/loop` marker or an injected skill body is
+never the Goal. Both were checked by re-rendering the two briefs: the false merges are gone and
+the held-out Goal reads as the human's prompt. No receiver has read them (BACKLOG 12).
+**Weakest area left:** the Goal / Next-step block on operator sessions (BACKLOG 15), then three
+ledgers with no effect on the held-out (BACKLOG 16).
+
 ## 2026-09-19 — handoff lab: `brief.mjs` carries what the tracking files drop, plus `--gaps`
 
 **Why.** Handoff briefs and CONTINUE passes were missing facts a successor needed: the human's

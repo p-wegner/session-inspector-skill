@@ -13,7 +13,7 @@
  *   node scripts/brief.mjs <locator> --for codex         # translate the vocabulary
  *   node scripts/brief.mjs <locator> --out brief.md --seed-out seed.txt
  *   node scripts/brief.mjs <locator> --json              # the same content, structured
- *   node scripts/brief.mjs <locator> --budget 3000       # trim harder (default 4500)
+ *   node scripts/brief.mjs <locator> --budget 3000       # trim harder (default 4500, grows with tool calls)
  *   node scripts/brief.mjs <locator> --no-repo           # skip git + tracking files
  *   node scripts/brief.mjs <locator> --gaps              # what CONTINUE/BACKLOG do not record
  *
@@ -24,18 +24,19 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
+import { execFileSync } from "child_process";
 import { basename, dirname, resolve as resolvePath } from "path";
 import { summarize } from "./lib/parse.mjs";
 import { handoffExtract, scratchpadInfo } from "./lib/handoff.mjs";
 import { gitState, readRepoDocs } from "./lib/repo.mjs";
 import { discover } from "./lib/sessions.mjs";
 import { sessionFacts } from "./lib/session-facts.mjs";
-import { rankRepos, docsDirFor, history as gitHistory, remoteOf, editLanding, toplevel, touchesCode, landedArchivePath, struckIn, laterTouches } from "./lib/work-repo.mjs";
+import { rankRepos, docsDirFor, history as gitHistory, remoteOf, editLanding, toplevel, touchesCode, landedArchivePath, struckIn, laterTouches, tagsSince } from "./lib/work-repo.mjs";
 import { findSuccessors } from "./lib/successor.mjs";
 import { docGaps, renderGaps, staleCounts } from "./lib/doc-gaps.mjs";
 import {
   HARNESSES, buildModel, renderBrief, estimateTokens, codexHumanPrompts,
-  sectionBullets, seedPrompt, TRIED_REJECTED_RE, repoRelativeFiles, matchOpenToLater, matchLanded,
+  sectionBullets, seedPrompt, TRIED_REJECTED_RE, repoRelativeFiles, matchOpenToLater, matchLanded, ticketLedger,
 } from "./lib/brief.mjs";
 
 const argv = process.argv.slice(2);
@@ -44,7 +45,10 @@ const val = (f, d = null) => { const i = argv.indexOf(f); return i >= 0 && argv[
 const FLAGS_WITH_VALUE = ["--for", "--out", "--seed-out", "--budget", "--provider"];
 
 const TARGET = (val("--for", "any") || "any").toLowerCase();
-const BUDGET = parseInt(val("--budget", "4500"), 10) || 4500;
+// A 15-hour, 800-call operator session carries more state than a 40-call one; at a
+// flat 4500 its machine state and closing checklist were the sections cut. The default
+// grows with the session, to 6500 at most. `--budget` still wins.
+const BUDGET_ARG = parseInt(val("--budget", "0"), 10) || 0;
 if (!HARNESSES.includes(TARGET)) {
   console.error(`--for must be one of ${HARNESSES.join(", ")} (got "${TARGET}")`);
   process.exit(2);
@@ -103,7 +107,8 @@ const work = skipRepo ? null : {
   remote: remoteOf(cwd),
   others: ranked.slice(1).filter((r) => r.writes > 0),
 };
-const hist = skipRepo ? null : gitHistory(cwd, summary.startTime, summary.endTime, content, facts ? facts.commitCommands : 0);
+const hist = skipRepo ? null : gitHistory(cwd, summary.startTime, summary.endTime, content, facts ? facts.commitCommands : 0, facts ? facts.commits.map((c) => c.sha) : []);
+const tags = skipRepo ? [] : tagsSince(cwd, summary.endTime);
 const written = repoRelativeFiles([...(summary.filesEdited || []), ...(summary.filesWritten || [])], cwd);
 const landing = skipRepo ? null : editLanding(cwd, written, summary.startTime, summary.endTime);
 // Has another session already picked this one up? Same evidence ladder the
@@ -143,6 +148,25 @@ const openItems = facts ? [
     .flatMap((w) => [...w.text.matchAll(/^#{2,3}\s+(.+)$/gm)].map((x) => x[1])),
 ] : [];
 const openUnique = [...new Set(openItems)];
+// Which later commits are on the checked-out branch. `history()` reads --all, and in a
+// repo where agents push feature branches most of them are not: measured, 194 "later
+// commits" of which 61 were on master, and a reader who spot-checked the list
+// concluded master had not moved at all.
+if (hist && (hist.after.length || hist.during.length) && summary.endTime) {
+  let onHead = null;   // null = unknown (git failed): nothing is marked off-branch
+  try {
+    onHead = new Set(execFileSync("git", ["-C", cwd, "rev-list", "--abbrev-commit", "--abbrev=10", `--since=${summary.startTime || summary.endTime}`, "HEAD"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"], timeout: 15000 })
+      .split("\n").map((s) => s.trim()).filter(Boolean));
+  } catch { /* unknown */ }
+  if (onHead) {
+    const has = (sha) => [...onHead].some((h) => h.startsWith(sha) || sha.startsWith(h));
+    for (const c of hist.after) c.onHead = has(c.sha);
+    for (const c of hist.during) c.onHead = has(c.sha);
+    hist.onHeadCount = hist.after.filter((c) => c.onHead).length;
+  }
+}
+const tickets = facts && (facts.tickets.length || facts.createdRecords.length)
+  ? ticketLedger(facts.tickets, facts.createdRecords, hist ? hist.during : [], hist ? hist.after : [], { max: 200 }) : [];
 // Later commits that changed its files, beyond the ones that committed its own edits.
 const touchedLater = hist && hist.after.length
   ? laterTouches(cwd, summary.endTime, written).filter((c) => !(landing ? landing.after : []).some((a) => a.sha === c.sha))
@@ -169,7 +193,7 @@ const model = buildModel({
   scratch: target.provider === "claude" ? scratchpadInfo(target.path, summary.sessionId) : null,
   humanPrompts: target.provider === "codex" ? codexHumanPrompts(content) : [],
   triedRejected: sectionBullets(continuePath, TRIED_REJECTED_RE),
-  facts, work, history: hist, landing, successors, outside, countWarnings, built, openMatches, landedMatches, touchedLater,
+  facts, work, history: hist, landing, successors, outside, countWarnings, built, openMatches, landedMatches, touchedLater, tickets, tags,
 });
 
 // ── --gaps: what the tracking files do not record ────────────────────────────
@@ -182,6 +206,7 @@ if (has("--gaps")) {
   const paths = docPaths;
   const g = docGaps(facts, docText, {
     commits: hist ? hist.during : [], remote: work ? work.remote : null,
+    isOutside: (f) => outside.includes(f),
     scratchSecrets: model.machine?.scratchpad?.secrets || [],
   });
   const text = renderGaps(g, { docPaths: paths, sessionId: summary.sessionId || target.sessionId });
@@ -190,6 +215,7 @@ if (has("--gaps")) {
   process.exit(0);
 }
 
+const BUDGET = BUDGET_ARG || Math.min(6500, 4500 + Math.floor(Math.max(0, (summary.toolCalls || 0) - 200) * 3.5));
 const out = renderBrief(model, { budget: BUDGET });
 const est = estimateTokens(out);
 const outPath = val("--out");

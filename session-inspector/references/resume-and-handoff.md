@@ -54,7 +54,7 @@ node scripts/brief.mjs --latest --provider codex   # newest codex session
 node scripts/brief.mjs <locator> --for claude      # target harness: vocabulary + instructions
 node scripts/brief.mjs <locator> --for codex --out b.md --seed-out s.txt
 node scripts/brief.mjs <locator> --json            # the same content, structured
-node scripts/brief.mjs <locator> --budget 3000     # trim harder (default 4500 tokens)
+node scripts/brief.mjs <locator> --budget 3000     # trim harder (default 4500, grows with tool calls)
 ```
 
 `--out` prints the path alone on stdout, so a launcher can capture it; the token
@@ -93,7 +93,26 @@ prove, each worded at its evidence level (all from `lib/session-facts.mjs` and
 | **Checks it ran**: last passing run first, a ⚠ when the tracking file quotes a different count, a stashed revert run labelled as an expected failure, the session's diagnosis after a failing run | runner tallies in tool results |
 | **What it says it verified**: its own `**Verified:**` lines, e.g. live calls no runner tallied | assistant text and tracking-file edits, quoted |
 | **What it wrote into the tracking files itself**, quoted | its own `Write`/`Edit`/script writes, so later passes on top do not pass as its own |
-| **Machine state**: scratchpad files (⚠ on credential-looking ones, value never shown), links it created with their resolved target, per-user stores it changed with the commands and files (⚠ on a file named next to a key) | tool calls and their output |
+| **Machine state**: scratchpad files (⚠ on credential-looking ones, value never shown), links it created with their resolved target, per-user stores it changed with the commands that set something (⚠ on a file named next to a key), files outside the repo with before → after and the reason given for the edit (secret-looking values redacted), a `/loop` wakeup loop left armed or stopped | tool calls and their output |
+
+**Long operator sessions** (a `/loop` driving a board, a server, a merge queue) add
+sections of their own, each shown only when there is something in it:
+
+| Section | Source |
+|---|---|
+| **Pushed** means an ancestor of the upstream; a commit that is only inside other pushed branches says so, and says which local branch has it. The commit author is named when it differs from the global identity (a repo-local test identity, say) | `git merge-base --is-ancestor`, `git config` |
+| **Its own commits** come from its own `git commit` output; commits made by others in the same window are summarised as a count | tool results |
+| **Tickets**: `#N` / `ak-N` it filed or named twice or more, and whether a commit subject merged each one during the session or after it | reply JSON, assistant text, `git log` |
+| **Write calls to local services** (curl / `Invoke-*` POST, PATCH, PUT, DELETE to localhost or a `$VAR/api/...` host), grouped by route with statuses; a timeout (000) is flagged in Problems | Bash / PowerShell calls and their results |
+| **Guard bypasses** (`SKIP_*=1`, `--no-verify`, `--force`) with counts | commands |
+| **Compaction summary** picked by kind: constraints, refuted hypotheses, errors that mattered, pending tasks, current work | the latest compaction summary |
+| **Do not re-chase**: refuted hypotheses, with a ⚠ when an outside-repo edit touches the same words | compaction summary × outside edits |
+| **Open items annotated** with the ticket's later merge, tags since the end, and a timeout note on retry items; when at least half are overtaken and a newer CONTINUE pass exists, a "start here instead" line quotes that pass's open lead-ins | git + `CONTINUE.md` |
+
+The budget defaults to 4500 tokens and grows by 3.5 per tool call past 200, capped at 6500.
+Drop order when over: anchors, sources, older tracking writes, the quoted last message (its
+checklist kept), its next words and first mentions, compaction "current work", commit bodies, older itemised
+steps, and machine state last.
 
 `--gaps` turns the same facts around: instead of what a successor needs, it lists
 what the session established that its `CONTINUE.md` / `BACKLOG.md` do not record,
