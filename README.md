@@ -164,6 +164,7 @@ session-inspector/                  # SKILL 1 — junctioned as `session-inspect
     analyze-copilot-session.mjs     # single Copilot session → structured summary
     continuations.mjs               # WHICH WORK to pick up next → ranked candidates → human-gated spawn plan
     session-edit.mjs                # extract → edit → apply: rewrite a Claude session's messages (WRITES)
+    session-compact.mjs             # a fork copy with its tool calls compressed, conversation kept (WRITES a copy); --mode llm|summary use a model on a profile of your choosing
     token-sinks.mjs                 # rank token/cost sinks across MANY sessions
     tool-failures.mjs               # rank failed tool calls across MANY sessions
     user-prompts.mjs                # extract real human-typed prompts across MANY sessions
@@ -234,10 +235,15 @@ node session-inspector/scripts/sync-query.mjs search "<text>" --deep
 # Edit a finished Claude session's messages (two-phase, in your own editor)
 node session-inspector/scripts/session-edit.mjs extract --latest -o edits.md
 node session-inspector/scripts/session-edit.mjs apply edits.md --dry-run
+
+# A fork with its tool traffic compressed: prompts and replies kept, tool inputs/outputs cut
+node session-inspector/scripts/session-compact.mjs <id> --dry-run          # the numbers
+node session-inspector/scripts/session-compact.mjs <id> --fork             # a copy under a new id; then claude --resume <copy>
 ```
 
-Every tool except `session-edit.mjs` is read-only: it reads from the standard agent
-home dirs and writes only to stdout. `session-edit.mjs apply` is the one writer — it
+Every tool except `session-edit.mjs` and `session-compact.mjs` is read-only: it reads from the
+standard agent home dirs and writes only to stdout. `session-compact.mjs` writes a NEW transcript
+(a copy under a new session id, never the source). `session-edit.mjs apply` is the one in-place writer — it
 rewrites message text in a transcript in place, guarded by per-block conflict
 detection (it refuses only when a block *you edited* changed underneath you, not
 merely because the session appended a turn), a live-session check, and a

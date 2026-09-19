@@ -40,6 +40,15 @@ trusting a $0.00 estimate.
 rather than the cut-off one. `-p auto` picks the account with the most headroom,
 which is the whole point — a handoff can go anywhere, a resume cannot.
 
+## Between the two: a compact fork
+
+A fork carries everything; a brief carries a summary and opens a new session. When the
+conversation itself is worth keeping but the files it read and the outputs it saw are not,
+`session-compact.mjs <id> --fork` writes a copy under a new id with the tool traffic cut and
+the prompts and replies intact, and `claude --resume <copy>` continues it. Same account, same
+cwd — it is still a resume, so the two reasons above still apply; it only makes the resume
+smaller. [session-compact](session-compact.md) has the modes and the measured table.
+
 ## Across harnesses: `brief.mjs` (claude ↔ codex)
 
 **A session id cannot cross harnesses, so neither can a resume.**

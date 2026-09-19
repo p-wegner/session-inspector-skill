@@ -49,6 +49,61 @@ reached the author mid-lab; no change was made from it, but the held-out was not
 **Weakest area left:** sizing the prose prefix (A's CLAUDE.md stack still ~26% under its key,
 BACKLOG 20); whether subagents were *justified* needs judgement and stays out of reach.
 
+## 2026-09-19 — `session-compact.mjs`: a fork with its tool traffic cut, the conversation kept
+
+**Why.** A fork carries everything at full price; a handoff brief carries a summary and drops the
+conversation. The agent-pick branch wizard wanted the form between: fork the transcript and
+**modify its history** rather than open a new session with a prompt. `lib/compact.mjs` (pure,
+lines in / lines out) keeps every line, uuid and parentUuid, every prompt and assistant text, and
+rewrites only `tool_use.input` and `tool_result.content` before the cut-off — `pairs` (head + tail,
+shape-preserving, is_error keeps double) or `narrate` (one line each way: `Read src/a.ts`,
+`Bash: … — desc`, `200 lines`, `ERROR: … (+30 lines)`); the sidecar `toolUseResult` /
+`wireToolInputs` shrink type-preservingly. Calls after the last `--recent` prompts (1) stay
+verbatim; a compaction summary is not a prompt. `session-compact.mjs <locator> --fork` writes the
+copy beside the source under a new id (`SESSION_ID:` / `PATH:` on stdout, `--json` carries the
+rendered `report`); `--out`, `--in-place` (refuses a live file), `--dry-run`. Reference:
+`session-inspector/references/session-compact.md`; a row in `SKILL.md`; a pointer in
+`resume-and-handoff.md`.
+
+**Measured** (Claude Code 2.1.278, `claude -p --resume --model haiku`, first turn, cold cache, same
+cwd) on an uncompacted 34-call, 3-prompt session: fresh session 59.6k tokens, plain copy 99.5k,
+`pairs --recent 0` 83.7k, `narrate --recent 0` 78.7k — the history 39.8k to 24.1k / 19.0k, all
+three resumed and answered. Two findings on the way: a session that was **already compacted**
+gains nothing (the resume starts at the summary; the first fixture was one and showed identical
+context for every copy); and Claude Code's own time-based microcompact (`[Old tool result content
+cleared]`, in the binary) did not fire at 99.5k with timestamps a month old or two minutes old.
+The chars/4 estimate the tool prints (58 % smaller) overstates the context saving (40 %): JSON
+tokenises worse and the resume re-injects reminders — the reference says to quote the table.
+
+**Second half, same day — two depths that use a model, on a profile of their own.** `--mode llm`
+batches the calls (~20 / 24k chars) and has a model write `did` / `got` per call through a
+headless `claude -p` under `--llm-settings` / `--llm-config-dir` / `--llm-model`
+(`lib/narrator.mjs`; floor 3.4k tokens a call with `--system-prompt`, `--tools ""`,
+`--setting-sources ""`, `--no-session-persistence`; a skipped call falls back to the string
+cut). `--mode summary` writes the copy whole and runs Claude Code's own `/compact` on it
+headlessly (`lib/summarize.mjs`; the copy's account is fixed by its path, the cost is the
+running total minus the copy's `cost-state`). The point of both: compact on the cheap profile,
+resume on the strong one — agent-pick's wizard and cfork carry the profile and model rows.
+**Measured** on the same fixture, first resumed turn: llm 77.8k (history 18.2k, $0.11 for 34 of
+34 calls narrated by haiku in 3 batches, 36k in / 7.8k out), summary 62.3k (history 2.6k, $0.03).
+The llm lines carry the facts the string cut drops (`39 node.exe total, 17 vitest workers;
+parents: …`). **The provider round trip works:** both depths through the zai settings profile
+(GLM via api.z.ai), then `claude -p --resume` of each copy on the default Anthropic account
+(opus) answered a content question correctly; `/compact` took the Anthropic-signed transcript
+without complaint. The first zai run landed on `glm-4.5-air` because the tool defaulted
+`--llm-model` to `haiku` and zai maps haiku there — with a profile named, no `--model` is passed
+now and the profile's `ANTHROPIC_MODEL` runs (re-run confirmed). Provider `$` figures are
+Claude Code's estimate at Anthropic prices, not the provider's bill. Two probes on the way: `/compact` typed through Git Bash became a PATH
+(`C:/…/git/2.55.0.2/compact`) and the haiku run continued the fixture's old work instead — a
+slash command reaches `-p` only through `execFileSync` or PowerShell; and `total_cost_usd` of a
+resumed `-p` call is the session's running total, not the call's.
+
+**Verified:** `node --test test/*.test.mjs` → 150 pass, 0 fail (8 in `test/compact.test.mjs`, 7 in
+`test/narrator.test.mjs` with the runner injected,
+one of them pinning the bug that compacted everything when `--recent` exceeded the prompt count —
+the first measurement compared two compacted copies and called them equal). The wizard's use of
+it was driven in a real Herdr pane from the agent-pick side; the experiment copies were deleted.
+
 ## 2026-09-19 — lab scaffold from a blind LAB-mode run: three forms, a skill-triggers card
 
 skill-design's new LAB mode ran blind on this skill ("lab the session inspector skill"). It found the

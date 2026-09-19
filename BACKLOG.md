@@ -172,6 +172,32 @@ was 2x off until the lens added the write. **Shape.** Decide one definition for 
 to its `session-dashboard --lens cost` page, and `--md` beside it. Tune with the fleet row of the
 lab catalogue. **Size:** medium. **Depends on:** nothing now (18 landed).
 
+## 23. The compact fork, next three rungs
+
+**Why.** `session-compact.mjs` (2026-09-19) cuts the history of a resumed fork by 40–52 %; what
+is left is inputs, replies, and reminders the tool does not touch, and its report still quotes a
+chars/4 estimate that overstates the saving. Three separable pieces, in value order:
+- **Seed the copy with the brief's evidence.** Append `brief.mjs`'s "what the tracking files
+  record / do not redo" block as a final assistant text line (new uuid, parent = the last leaf),
+  so the fork carries the part of a handoff a resume forgets. Unverified whether Claude Code
+  resumes a transcript whose last two turns are both assistant (the API merges same-role turns).
+  One `claude -p --resume` probe answers it. **Size:** small.
+- **Narrate from facts, not from the raw call.** `describeCall` / `describeResult` are string
+  cuts; `session-facts.mjs` already tallies runner output per run, answers, sources. A narrated
+  test run should read `pass 6 · fail 0`, not `first: …; last: …`. `--mode llm` (landed the same
+  day) gets there with a model for $0.11; this item is the free version. **Size:** small.
+- **`summary` on a pairs-cut copy.** Claude Code's `/compact` read 104k tokens of the whole copy;
+  cutting the tool traffic first (pairs) would feed it 84k for a summary that loses little, since
+  the compaction prompt keeps facts, not outputs. One flag, one measurement. **Size:** trivial.
+- **The narrator through a settings profile was dry-run only.** The zai argv is right; no batch
+  has run on a non-Anthropic provider, whose JSON discipline may differ (the parser tolerates a
+  fence or a sentence, not prose without an object). **Size:** one run.
+- **Report the measured ratio.** Print the estimate as a range calibrated on the table in
+  `references/session-compact.md` (about 1.4x the chars/4 figure on the resumed context), or drop
+  the token line and keep the char counts. Ties to item 20. **Size:** trivial.
+Also untested: where Claude Code's time-based microcompact fires (it did not at 99.5k), which
+would make the tool redundant past that point. **Depends on:** nothing.
+
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in
