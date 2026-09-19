@@ -1,7 +1,7 @@
 ---
 name: session-inspector
 for-tier: B
-description: Inspect, aggregate and edit coding-agent session transcripts: Claude and Codex fleet-wide, Copilot per session. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.
+description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude and Codex fleet-wide, Copilot per session. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
 argument-hint: [session-id | keyword | --codex <path> | --copilot | edit]
 ---
 
@@ -47,7 +47,7 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | Subscription quota this week / all profiles / a calendar month | `quota-report.mjs --profile p [--html f]`, `quota-multi.mjs`, `quota-month.mjs --month YYYY-MM` | [fleet-quota](references/fleet-quota.md) |
 | Sessions from other machines / pooled corpora | `sync-server.mjs`, `sync-push.mjs`, `sync-query.mjs`, `session-bundle.mjs`, `hub-service.mjs` | [sync-and-bundles](references/sync-and-bundles.md), [session-sync](references/session-sync.md), [hub-service](references/hub-service.md) |
 | Custom parsing the analyzers don't cover | manual recipes | [claude](references/claude-recipes.md) · [codex](references/codex-recipes.md) · [copilot](references/copilot-recipes.md) |
-| **Tune a tool here** for a use case (handoff briefs, cost, skill triggers, session review): frozen keys, blind consumers, a judge, rounds | the integrated lab | [lab](references/lab.md) |
+| **Tune a tool here** for a use case (handoff briefs, cost, skill triggers, session review), or **pin a wrong number** as a fixture | the integrated lab | [lab](references/lab.md) |
 | **Team questions about context & sessions** ("where did tokens go", "are re-reads avoidable", "are rules followed", "monorepo CLAUDE.md split", "dead skills", "subagent ROI", recurring friction) — prompt → tool → read-off → change | worked examples | [example-prompts](references/example-prompts.md) |
 
 **Cost-optimization loop:** `token-sinks` (what) → `context-growth` (shape) → `cache-health`

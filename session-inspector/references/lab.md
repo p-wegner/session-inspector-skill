@@ -13,6 +13,21 @@ against the tool as it was before the lab.
 It is general over targets. Only the target card (below) changes from one use case to the next.
 The round machinery, the roles and the guards stay the same.
 
+## 0. Three forms, one per half of the skill
+
+The skill is a question → tool table (the part an agent picks from) over deterministic scripts
+(the part that computes every number). Each half is tuned differently, and a finding goes to the
+form that can settle it.
+
+| Form | Settles | Section |
+|---|---|---|
+| **Eval rounds** | does a consumer get what it needs from a tool's output | §1–§5 below |
+| **Fixture bench** | is a computed number right, and is its `reach:` line honest | §5a |
+| **Trigger drill** | does the description fire on its positives and stay silent on its negatives | §5b |
+
+A wrong number seen in an eval round (a judge's X that traces to arithmetic, not to wording)
+leaves the round and becomes a fixture. A consumer who never reached the skill is a drill case.
+
 ## 1. Fill the target card first
 
 Write it into the lab directory before any agent runs. It is frozen for the whole lab.
@@ -36,16 +51,17 @@ different day or repo, and build its key before round 1.
 
 ## 2. Target catalogue
 
-The handoff target has been run twice. The others are cards waiting for a first run: the
-rows say what the key and the metric would be, and are defaults, not measured.
+The handoff target has been run twice. The others wait for a first run: their rows say what
+the key and the metric would be, and are defaults, not measured.
 
 | Target | Tools | Consumer's questions | Key built from | Metric |
 |---|---|---|---|---|
 | **Handoff** (run 2×) | `brief.mjs`, `--gaps` | the 10-question successor questionnaire | full transcript + git, one key agent per session | weighted share of key facts carried by the output alone; wrong answers; gap recall/precision |
 | **Cost / token sinks** | `token-sinks`, `waste`, `context-growth`, `cold-cache`, `reread-causes` | what cost most, why, which ONE change saves most, how sure | a key agent recomputes cost from the raw usage rows with its own script, and names the causes with evidence | numbers within a tolerance; cause recall; recommendations that would not save anything counted as wrong |
-| **Skill triggers** | `skill-usage`, `skill-genesis`, `slash-goals`, `user-prompts` | which skills should have fired and did not, which fired wrongly, which are dead | a key agent labels each human prompt of N sessions with the skill that should have fired, from the skill descriptions | missed-trigger recall/precision; dead-skill verdicts that are wrong |
+| **Skill triggers** ([card](lab-cards/skill-triggers.md), not run) | `skill-usage`, `skill-genesis`, `slash-goals`, `user-prompts` | which skills should have fired and did not, which fired wrongly, which are dead | a key agent labels each human prompt of N sessions with the skill that should have fired, from the skill descriptions | missed-trigger recall/precision; dead-skill verdicts that are wrong |
 | **Session review** | `analyze-claude-session`, `tool-friction`, `tool-failures`, `incidents` | how the session went, where it stalled, what to change in the setup | an independent reviewer grades the transcript with quoted evidence | finding recall/precision against the review; wrong claims |
 
+A target with a card in `lab-cards/` is ready to run; a row without one is a default.
 A new target is a new row plus a card. When a consumer is a person, not an agent, a Sonnet agent
 plays the person. Give it the person's role and the decision to make, and nothing else.
 
@@ -136,6 +152,31 @@ the signal, and the smallest GENERAL change to the tool. You may read the transc
 findings only. Never copy a credential value. Write ROUND/judge.json and ROUND/judge.md.
 ```
 
+## 5a. Fixture bench: the numbers
+
+`scripts/test/fixtures/` holds hand-written `.jsonl` transcripts, each modelling one way a count
+goes wrong: usage repeated per content block, a malformed line, a gateway cache plateau, a TTL gap,
+a subagent sidechain, a session in the main profile, a Codex rollout. Each has its expected
+numbers written by hand **before** the tool is run on it, and one test per fleet tool asserts the
+totals and the `reach` block.
+
+One round: a wrong number (from a judge, a delivery run, or a user) → the smallest synthetic
+fixture that reproduces it, with the expected value written first → the test fails → fix → the
+whole bench stays green. A fixture is never cut from a real transcript; it uses placeholder ids and
+a fake secret such as `npm_SECRET123`. Report the bench's reach: which tools have at least one
+fixture, which have none.
+
+Default, not yet run (BACKLOG 2). The case for it: the per-row usage over-count (1.8–3x) lived
+for months, and one fixture would have caught it.
+
+## 5b. Trigger drill: the description
+
+Run after any change to the frontmatter `description`. Four cheap blind agents, two per arm (old and
+new description), 15 vague prompts, 9 that must fire this skill and 6 that must not, with the
+neighbouring skills (`token-budget`, `spawn-session`, `skill-design`, `code-metrics`) on the
+menu. Keep a cut only if positives do not fall and false fires stay at zero. The prompt set lives
+in the lab directory; the numbers go into §8.
+
 ## 6. Guards
 
 - **The lab directory lives in the session scratchpad, never in the repo.** Keys and answers
@@ -176,10 +217,11 @@ Record it in the same commit as the code:
 
 ## 8. Runs so far
 
-| Date | Target | Sessions | Brief-only share, first round → last | Held-out, baseline → last |
+| Date | Target | Sessions | First → last | Held-out or control |
 |---|---|---|---|---|
 | 2026-09-19 | handoff | a build session; a long interview session | 0.26 → 0.85; 0.02 → 0.29 | 0.04 → 0.39 |
 | 2026-09-19 | handoff, operator sessions | a 15-hour `/loop` board session | 0.12 → 0.31 (flat from r3) | 0.03 → 0.24 |
+| 2026-09-18 | trigger drill, description 725 → 598 chars | 15 prompts, 4 blind agents | positives 13/18 → 16/18 | false fires 0/12 → 0/12 |
 
 What the two runs taught, beyond their tool changes:
 

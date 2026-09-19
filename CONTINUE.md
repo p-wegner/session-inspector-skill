@@ -4,6 +4,26 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-19 — lab scaffold from a blind LAB-mode run: three forms, a skill-triggers card
+
+skill-design's new LAB mode ran blind on this skill ("lab the session inspector skill"). It found the
+existing lab and extended it rather than rebuilding it. Its patches are applied:
+
+- `references/lab.md` §0 names three forms, one per half of the skill:
+  - eval rounds for what a consumer gets from an output (run twice);
+  - a fixture bench for computed numbers (§5a, **not run**, BACKLOG 2);
+  - a trigger drill for the description (§5b, run once on 2026-09-18 and now in the runs table).
+- `references/lab-cards/skill-triggers.md` is the first filled card beyond handoff (**not run**).
+
+It also found that the `SKILL.md` frontmatter did not parse as strict YAML (PyYAML: `mapping values
+are not allowed here`) since `5771dc2`. The cause is four colon-space sequences in the description.
+The value is now single-quoted, and PyYAML reads back the identical 599-char string. Claude Code
+reads it unchanged. BACKLOG 1 carried a pointer into a pass that had been archived, so it now holds
+its own "not yet" list.
+
+**Verified:** all three skills' frontmatter parse with `yaml.safe_load`. Nothing else here has code;
+the rest was verified by a read only.
+
 ## 2026-09-19 — the lab is part of the skill: `references/lab.md`
 
 The eval loop both labs below ran is now the skill's **integrated lab**, a reference doc

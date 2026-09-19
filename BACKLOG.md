@@ -13,7 +13,14 @@ reach and planted-defect fixtures. The outputs are consumed as data (`spawn-plan
 **No real transcript content goes into this repo.** It is public on GitHub. Fixtures are synthetic,
 and analysis runs over real sessions stay in `docs/analysis/` (gitignored).
 
-## 1. Published reach on every fleet tool — IN PROGRESS, see CONTINUE.md
+## 1. Published reach on every fleet tool — IN PROGRESS
+
+**Wired (12):** token-sinks, tool-friction, quota-multi, fleet-stats, waste, context-growth,
+cold-cache, context-spikes, reread-causes, slash-goals, incidents, prompt-style.
+**Not yet (9):** tool-failures, user-prompts, read-patterns, hook-cost, skill-usage, skill-genesis,
+cache-health, quota-report, quota-month. Same pattern: `found → exclude → file → badLine` via
+`lib/reach.mjs`. The 2026-09-18 pass that wired the first 12 is in
+[`docs/archive/CONTINUE-archive.md`](docs/archive/CONTINUE-archive.md).
 
 ## 2. A synthetic fixture corpus with expected numbers per tool
 
@@ -24,6 +31,8 @@ months and one fixture would have caught it.
 a malformed line, a gateway plateau, a TTL gap, a subagent sidechain, a main-profile session, a
 codex rollout. One test per fleet tool asserting totals and the reach counts from item 1. Grows
 by one case per bug found. **Size:** medium. **Depends on:** item 1, so the tests assert reach too.
+This is the lab's fixture bench (`session-inspector/references/lab.md` §5a); the first fixture
+comes from the next wrong number, not from a sweep.
 
 ## 3. Versioned `--json` contracts for outputs with a consumer
 
@@ -136,9 +145,10 @@ small. **Depends on:** nothing.
 
 **Why.** `session-inspector/references/lab.md` claims the round machine is general over targets,
 but only the handoff target has run. Its catalogue rows for cost, skill triggers and session
-review are defaults, not measured. **Shape.** Pick one (skill triggers is the cheapest key: label
-the human prompts of a few sessions), fill its card, and run 3–5 rounds. Afterwards, correct the
-catalogue row from what the run showed. **Size:** one sitting, ~15 agents. **Depends on:** nothing.
+review are defaults, not measured. **Shape.** The skill-triggers card is filled
+(`session-inspector/references/lab-cards/skill-triggers.md`); run 3 rounds from it, then correct the
+catalogue row and the card from what the run showed. Round 6 of the handoff lab (item 12) goes
+first: it scores five live changes. **Size:** one sitting, ~15 agents. **Depends on:** nothing.
 
 ## Landed
 
