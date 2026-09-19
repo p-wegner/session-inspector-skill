@@ -31,7 +31,7 @@ import { homedir } from "os";
 import { classify } from "./lib/prompts.mjs";
 import { toolDisplayName } from "./lib/parse.mjs";
 import { costUsdTotals } from "./lib/quota.mjs";
-import { firstRowOf } from "./lib/usage.mjs";
+import { firstRowOf, lateOutput } from "./lib/usage.mjs";
 
 // ── args ─────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
@@ -228,21 +228,28 @@ function parseFile(path, project, isSubagent) {
       const m = o.message;
       if (m.model && m.model !== "<synthetic>") model = m.model;
       const u = m.usage;
-      if (u && firstRowOf(m, seen)) {
-        turns++;
-        const tt = { input: u.input_tokens || 0, output: u.output_tokens || 0,
-          cacheCreation: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0 };
+      // first row of a call: its usage; a repeat row: only the output it added (a subagent's
+      // rows are streaming snapshots whose output_tokens grows, see lib/usage.mjs)
+      const first = u ? firstRowOf(m, seen) : false;
+      const late = u && !first ? lateOutput(m, seen) : 0;
+      if (first || late) {
+        const tt = first
+          ? { input: u.input_tokens || 0, output: u.output_tokens || 0,
+              cacheCreation: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0 }
+          : { input: 0, output: late, cacheCreation: 0, cacheRead: 0 };
+        const n = first ? 1 : 0;
+        turns += n;
         addT(tokens, tt);
         const c = costUsd(m.model, tt);
         cost += c;
         // per day
         let dg = byDay.get(day); if (!dg) { dg = { tokens: zt(), cost: 0, turns: 0, toolCalls: 0 }; byDay.set(day, dg); }
-        addT(dg.tokens, tt); dg.cost += c; dg.turns++;
+        addT(dg.tokens, tt); dg.cost += c; dg.turns += n;
         // per hour
-        byHour[hourLocal].turns++; byHour[hourLocal].cost += c;
+        byHour[hourLocal].turns += n; byHour[hourLocal].cost += c;
         // per model
         let mg = models.get(m.model); if (!mg) { mg = { tokens: zt(), turns: 0, cost: 0 }; models.set(m.model, mg); }
-        addT(mg.tokens, tt); mg.turns++; mg.cost += c;
+        addT(mg.tokens, tt); mg.turns += n; mg.cost += c;
       }
       if (Array.isArray(m.content)) {
         for (const c of m.content) if (c.type === "tool_use") {

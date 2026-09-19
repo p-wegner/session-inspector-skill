@@ -141,14 +141,6 @@ human approved reads as a bypass). **Shape.** Read shell redirections and `cp`/`
 outside the repo; drop a bypass whose flag the human named in a prompt before it ran. **Size:**
 small. **Depends on:** nothing.
 
-## 18. `lateOutput` in the six tools that still count output from the first row
-
-**Why.** A subagent's rows are streaming snapshots whose `output_tokens` grows; first-row-wins
-under-counted output about 6x on one delegating session. `token-sinks`, `lib/quota.mjs` and
-`lib/turns.mjs` are fixed. **Shape.** `cache-health`, `cold-cache`, `context-growth`, `fleet-stats`,
-`quota-report`, `lib/parse.mjs`: on a repeat row add `lateOutput(msg, seen)` to the record already
-counted. One fixture (bench §5a) with growing output pins all of them. **Size:** small.
-
 ## 19. Cost lab round 6: score the post-lab fixes on a fresh held-out
 
 **Why.** Five fixes landed after the held-out judge and no consumer has read them (see the
@@ -178,12 +170,13 @@ was 2x off until the lens added the write. **Shape.** Decide one definition for 
 **Why.** The cost lens answers for one session; "what cost most this fortnight, and why" is still
 `token-sinks` text. **Shape.** The same lens pattern over a window: the sessions ranked, each linking
 to its `session-dashboard --lens cost` page, and `--md` beside it. Tune with the fleet row of the
-lab catalogue. **Size:** medium. **Depends on:** 18.
+lab catalogue. **Size:** medium. **Depends on:** nothing now (18 landed).
 
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in
 [`docs/archive/BACKLOG-landed.md`](docs/archive/BACKLOG-landed.md).
 
+- ~~18. `lateOutput` in the six tools that still count output from the first row~~ — **DONE** (2026-09-19)
 - ~~17. Run the integrated lab on a second target~~ — **DONE** (2026-09-19, the cost target)
 - ~~6. Tier-0 and SKILL.md fixes from the 2026-09-18 analysis~~ — **DONE** (2026-09-18)

@@ -24,6 +24,14 @@ test("a subagent's repeat rows grow output_tokens — the last row's count wins,
   assert.equal(apiCalls[0].cacheRead, 100_000);
 });
 
+test("parseClaude (fleet-stats, session analysis) adds a subagent's growing output too", async () => {
+  const { parseClaude } = await import("../lib/parse.mjs");
+  const lines = [row("m1", "2026-01-01T00:00:00Z", u(5)), row("m1", "2026-01-01T00:00:01Z", u(40)), row("m1", "2026-01-01T00:00:02Z", u(300))];
+  const st = parseClaude(lines);
+  assert.equal(st.apiCalls, 1);
+  assert.equal(st.outputTokens, 300);
+});
+
 test("identical repeat rows (a main transcript) still count once", () => {
   const lines = [row("m1", "2026-01-01T00:00:00Z", u(50)), row("m1", "2026-01-01T00:00:00Z", u(50))];
   const { apiCalls } = claudeTurns(lines);

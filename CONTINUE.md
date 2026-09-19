@@ -29,13 +29,16 @@ the fixed prefix incl. nested CLAUDE.md, subagents by wave and role, Claude Code
 beside the transcript total) and `lib/lenses/render-md.mjs` (`session-dashboard --md`, the same
 lens object as Markdown). **Counting fix found by a key builder:** a subagent's `output_tokens`
 grows across the rows of one call; `lib/usage.mjs lateOutput()` adds it, wired into `token-sinks`,
-`lib/quota.mjs`, `lib/turns.mjs` (six tools still use first-row only, BACKLOG 18). Stop-hook and
+`lib/quota.mjs`, `lib/turns.mjs`, and (same day, BACKLOG 18) `cache-health`, `quota-report` and
+`lib/parse.mjs`; `cold-cache` and `context-growth` do not read output. One subagent transcript
+moved $12.97 → $14.29 in `cache-health`. Stop-hook and
 goal check-in text is no longer counted as a human prompt (`lib/prompts.mjs`). This commit also
 carries the Spec Kit dashboard work (`session-dashboard`, `verify-runs`, `message-stats`,
 `lib/turns|metrics|locate`, the speckit lens) that sat uncommitted since 2026-09-18, which the lens
 builds on.
 
-**Verified:** `node --test test/*.test.mjs` → 134 pass, 0 fail (7 new in `test/cost-lens.test.mjs`);
+**Verified:** `node --test test/*.test.mjs` → 135 pass, 0 fail (8 new in `test/cost-lens.test.mjs`);
+`quota-report` smoke-run on a real profile with subagents;
 the round table above; the page checked with playwright-cli at 1280 px and 390 px (no horizontal
 scroll after wrapping tables). **Unscored:** five fixes made after the held-out judge (nested
 CLAUDE.md, skill-listing deltas, the prefix floor incl. the first call's cache write, a re-write

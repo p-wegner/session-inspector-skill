@@ -13,7 +13,7 @@
  */
 
 import { classify } from "./prompts.mjs";
-import { firstRowOf } from "./usage.mjs";
+import { firstRowOf, lateOutput } from "./usage.mjs";
 import { reach } from "./reach.mjs";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -131,7 +131,8 @@ export function parseClaude(lines) {
       if (msg.model && msg.model !== "<synthetic>") stats.model = msg.model;
       if (msg.stop_reason) stats.stopReason = msg.stop_reason;
       const u = msg.usage;
-      if (u && firstRowOf(msg, seenUsage)) {
+      if (u && !firstRowOf(msg, seenUsage)) stats.outputTokens += lateOutput(msg, seenUsage);
+      else if (u) {
         stats.apiCalls++;
         stats.inputTokens += u.input_tokens || 0;
         stats.outputTokens += u.output_tokens || 0;

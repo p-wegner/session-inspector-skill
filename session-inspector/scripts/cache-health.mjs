@@ -46,7 +46,7 @@ import { readFileSync, existsSync } from "fs";
 import { basename, dirname, join } from "path";
 import { homedir } from "os";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
-import { firstRowOf, apiProvider } from "./lib/usage.mjs";
+import { firstRowOf, lateOutput, apiProvider } from "./lib/usage.mjs";
 import { priceFor, isPriced } from "./lib/quota.mjs";
 
 const argv = process.argv.slice(2);
@@ -74,6 +74,7 @@ function readClaude(path) {
   const meta = extractMeta("claude", content);
   const id = projectIdentity(meta.cwd || "");
   const seen = new Set();
+  const byId = new Map(); // message id -> call, so a repeat row can add the output it grew by
   const calls = [];
   let sessionId = "", version = "";
   const ctxOf = (u) => (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
@@ -83,7 +84,12 @@ function readClaude(path) {
     if (o.sessionId && !sessionId) sessionId = o.sessionId;
     if (o.version) version = o.version;
     if (o.type !== "assistant" || !o.message?.usage) continue;
-    if (!firstRowOf(o.message, seen)) continue;
+    if (!firstRowOf(o.message, seen)) {
+      // a repeat row: only a subagent's growing output_tokens can differ (lib/usage.mjs)
+      const rec = byId.get(o.message.id);
+      if (rec) rec.o += lateOutput(o.message, seen);
+      continue;
+    }
     const u = o.message.usage;
     if (ctxOf(u) <= 0) continue;
     calls.push({
@@ -93,6 +99,7 @@ function readClaude(path) {
       cw1h: u.cache_creation?.ephemeral_1h_input_tokens || 0, cw5m: u.cache_creation?.ephemeral_5m_input_tokens || 0,
       ctx: ctxOf(u),
     });
+    if (o.message.id) byId.set(o.message.id, calls[calls.length - 1]);
   }
   return { meta: { id: (sessionId || basename(path, ".jsonl")).slice(0, 8), path, project: id.project || basename(dirname(path)), version, client: "Claude Code" }, calls };
 }

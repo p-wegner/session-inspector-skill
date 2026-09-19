@@ -4,6 +4,22 @@ Struck items moved out of [`../../BACKLOG.md`](../../BACKLOG.md) once they lande
 newest first.** Nothing here was re-verified on the way in; what a landed item actually changed is
 in `CONTINUE.md` (or its archive) on the day it landed.
 
+## ~~18. `lateOutput` in the six tools that still count output from the first row~~ — **DONE** (2026-09-19)
+
+Landed in `cache-health`, `quota-report` and `lib/parse.mjs`; `cold-cache` and `context-growth`
+turned out not to read output at all, so they needed no change. Test in `test/cost-lens.test.mjs`.
+
+### The item as it stood
+
+#### 18. `lateOutput` in the six tools that still count output from the first row
+
+**Why.** A subagent's rows are streaming snapshots whose `output_tokens` grows; first-row-wins
+under-counted output about 6x on one delegating session. `token-sinks`, `lib/quota.mjs` and
+`lib/turns.mjs` are fixed. **Shape.** `cache-health`, `cold-cache`, `context-growth`, `fleet-stats`,
+`quota-report`, `lib/parse.mjs`: on a repeat row add `lateOutput(msg, seen)` to the record already
+counted. One fixture (bench §5a) with growing output pins all of them. **Size:** small.
+
+
 ## ~~17. Run the integrated lab on a second target~~ — **DONE** (2026-09-19)
 
 Landed as the cost target (`session-inspector/references/lab-cards/cost.md`), five rounds plus a

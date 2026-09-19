@@ -133,7 +133,8 @@ that input, cache_read, cache_creation and output_tokens are identical across th
 so first-row-wins is exact **for a main transcript**. A subagent transcript is different: its
 rows are streaming snapshots and `output_tokens` grows row by row (measured 2026-09-19: 109k
 output tokens from first rows against 647k from last rows over nine subagents), so
-`lateOutput()` in `lib/usage.mjs` adds the growth. `token-sinks`, `lib/quota.mjs` and
-`lib/turns.mjs` use it; `cache-health`, `cold-cache`, `context-growth`, `fleet-stats`,
-`quota-report` and `parse.mjs` do not yet (BACKLOG). `fleet-stats` and `parseClaude` still report `assistantTurns` as rows
+`lateOutput()` in `lib/usage.mjs` adds the growth. Every tool that counts output uses it:
+`token-sinks`, `quota-report`, `cache-health`, `lib/quota.mjs`, `lib/turns.mjs` and
+`lib/parse.mjs` (so `fleet-stats` too). `cold-cache` and `context-growth` read only input and
+cache fields, which are identical across the rows, so first-row-wins is exact there. `fleet-stats` and `parseClaude` still report `assistantTurns` as rows
 (that is the loop length people mean by "turns"); token sums and the new `apiCalls` are per call.
