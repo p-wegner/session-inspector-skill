@@ -79,6 +79,38 @@ running (claude only — a codex session has no background tools, and the brief 
 that rather than implying nothing is running) · how to continue · what the brief
 does not contain.
 
+**Read later than it was written.** A brief is usually read after other work has
+happened, so for a Claude session it also carries what git and the transcript can
+prove, each worded at its evidence level (all from `lib/session-facts.mjs` and
+`lib/work-repo.mjs`, no model calls):
+
+| Section | Source |
+|---|---|
+| **Where the work is**, when not the start directory | where the session wrote and `cd`'d, ranked by repo |
+| **State in one line**: its edits committed during / after it / still dirty, pushed or not | `git log` split at the session's end, `git branch -r --contains` |
+| **Since the session ended**: later commits, a successor session, open items the repo struck in `BACKLOG-landed.md` (with the commit that wrote the strike, via `git log -S`), other later commits that *may* have closed one (rare shared words, code commits ranked over docs-only ones) | git + `lib/successor.mjs` (ledger, brief, seed prompt, mention) |
+| **What the human decided and asked** | `AskUserQuestion` answers and the human prompts |
+| **Checks it ran**: last passing run first, a ⚠ when the tracking file quotes a different count, a stashed revert run labelled as an expected failure, the session's diagnosis after a failing run | runner tallies in tool results |
+| **What it says it verified**: its own `**Verified:**` lines, e.g. live calls no runner tallied | assistant text and tracking-file edits, quoted |
+| **What it wrote into the tracking files itself**, quoted | its own `Write`/`Edit`/script writes, so later passes on top do not pass as its own |
+| **Machine state**: scratchpad files (⚠ on credential-looking ones, value never shown), links it created with their resolved target, per-user stores it changed with the commands and files (⚠ on a file named next to a key) | tool calls and their output |
+
+`--gaps` turns the same facts around: instead of what a successor needs, it lists
+what the session established that its `CONTINUE.md` / `BACKLOG.md` do not record,
+plus any count in them that the last test run contradicts. It is a token match, so
+a fact recorded in other words shows as missing; run it before writing a closing
+pass and treat each line as a candidate.
+
+```bash
+node scripts/brief.mjs <locator> --gaps [--out gaps.md] [--json]
+```
+
+Measured on 2026-09-19 against frozen answer keys (blind Sonnet receivers, a
+separate judge): on the two tuning sessions the share of key facts the brief alone
+carried went 0.26 → 0.85 and 0.02 → 0.29 over five rounds, wrong answers from 1 and 6
+to 0 and 0; on a held-out session never tuned on, 0.04 → 0.39. The per-round table is
+in the repo's `CONTINUE.md` pass of that date.
+
 **The hotkey.** `claude-pick/herdr-handoff.ps1` is this wired to a gesture:
 Ctrl+Alt+X (or `prefix+shift+o` inside Herdr) reads the focused Herdr pane, works
 out which harness it is and which session, writes the brief, and opens the other

@@ -5,7 +5,7 @@
  * recommendation for two days after another session had committed its stranded
  * work and pushed.
  *
- * Three evidence sources, strongest first. Each link carries `via` so a caller
+ * Four evidence sources, strongest first. Each link carries `via` so a caller
  * can trust them differently — the weak one is a heuristic and says so.
  *
  *   ledger   `~/.spawn-session/ledger.jsonl` — written at spawn time by
@@ -13,6 +13,10 @@
  *   brief    `~/.spawn-session/handoffs/*.md` carries `**from session**: <uuid>`;
  *            a later transcript whose opening prompt names that brief path is
  *            its other half. Strong: both ends are machine-written.
+ *   seed     a later session whose opening prompt says "handoff brief at <path>"
+ *            and that brief names the candidate (short id in the path, full id in
+ *            the text). Any launcher's brief, not only spawn-session's: measured
+ *            on one written by agent-pick into Temp. Strong for the same reason.
  *   mention  a later session in the same project dir whose text names the
  *            candidate's short id. Weak — it is how a human finds this by hand,
  *            and it can equally mean "was discussed", not "was continued".
@@ -99,6 +103,20 @@ export function readBriefs() {
 const sid8 = (id) => String(id || "").replace(/-/g, "").slice(0, 8);
 const projectDirOf = (p) => basename(dirname(String(p || "")));
 
+// The seed prompt every brief launcher uses (lib/brief.mjs `seedPrompt`, and
+// spawn-session's "Resume prior work. Read the handoff brief at …"). Matched in
+// the raw JSONL, where a Windows path carries doubled backslashes.
+const SEED_RE = /handoff brief at ((?:[A-Za-z]:|\/)[^"\s]*?\.md)/;
+function readHead(path, n) {
+  let fd;
+  try { fd = openSync(path, "r"); } catch { return ""; }
+  try {
+    const buf = Buffer.allocUnsafe(n);
+    const got = readSync(fd, buf, 0, n, 0);
+    return buf.toString("utf-8", 0, got);
+  } catch { return ""; } finally { closeSync(fd); }
+}
+
 /**
  * Annotate candidates with the sessions that appear to have continued them.
  *
@@ -168,15 +186,42 @@ export function findSuccessors(candidates, records, opts = {}) {
   // Newest-first: a successor is almost always one of the next sessions in that
   // repo. With a file budget, spending it on the nearest candidates is strictly
   // better than on whatever the directory order happened to be.
+  // `nearest` (one candidate, e.g. a handoff brief): the sessions that ended
+  // soonest AFTER it, since that is where a successor is. On a busy box the newest
+  // 60 transcripts can all postdate a two-day-old cut-off by a day.
   const pool = records
     .filter((rec) => (rec.kind || "main") === "main")
     .filter((rec) => !candIds.has(rec.sessionId))
     .filter((rec) => !rec.mtime || rec.mtime.getTime() >= oldest)
-    .filter((rec) => candDirs.has(projectDirOf(rec.path)) || anyBriefs)
-    .sort((a, b) => (b.mtime?.getTime() || 0) - (a.mtime?.getTime() || 0))
+    .filter((rec) => candDirs.has(projectDirOf(rec.path)) || anyBriefs || opts.order === "nearest")
+    .sort((a, b) => (opts.order === "nearest" ? -1 : 1) * ((b.mtime?.getTime() || 0) - (a.mtime?.getTime() || 0)))
     .slice(0, maxFiles);
 
   const truncated = { files: 0 };
+  // ── seed: a later session whose opening prompt points at a handoff brief that
+  // names a candidate. Every launcher that seeds from a brief uses this skill's
+  // `seedPrompt()` wording, but only spawn-session writes a ledger; agent-pick's
+  // Herdr handoff keeps its briefs in its own temp folder and starts the successor
+  // in whatever checkout the pane is in. Measured 2026-09-19: a cut-off session's
+  // work was committed four minutes later by exactly such a successor, and the
+  // ledger and brief routes both came back empty. Both ends are machine-written,
+  // so it is as strong as the brief route.
+  const byS8 = new Map(watch.map((w) => [w.s8, w.id]));
+  for (const rec of pool) {
+    const head = readHead(rec.path, 64 * 1024);
+    const m = head.match(SEED_RE);
+    if (!m) continue;
+    const briefPath = m[1].replace(/\\\\/g, "\\");
+    let target = "";
+    for (const [s8, id] of byS8) if (briefPath.includes(s8)) { target = id; break; }
+    if (!target) {
+      let body = "";
+      try { body = readFileSync(briefPath, "utf-8"); } catch { /* cleared temp */ }
+      for (const w of watch) if (body.includes(w.id)) { target = w.id; break; }
+    }
+    if (target) add(target, { sessionId: rec.sessionId, via: "seed", when: rec.mtime ? new Date(rec.mtime).toISOString() : "", path: rec.path, confidence: 2 });
+  }
+
   for (const rec of pool) {
     const inCandDir = candDirs.has(projectDirOf(rec.path));
     const when = rec.mtime ? new Date(rec.mtime).toISOString() : "";
@@ -252,7 +297,7 @@ export function successorLabel(links) {
   if (!links || !links.length) return "";
   const top = links[0];
   const who = String(top.sessionId).slice(0, 8);
-  const note = { ledger: "handed off to", brief: "brief read by", mention: "possibly continued by" }[top.via] || "continued by";
+  const note = { ledger: "handed off to", brief: "brief read by", seed: "brief read by", mention: "possibly continued by" }[top.via] || "continued by";
   const more = links.length > 1 ? ` (+${links.length - 1} more)` : "";
   return `${note} ${who}${top.via === "mention" ? " — heuristic" : ""}${more}`;
 }

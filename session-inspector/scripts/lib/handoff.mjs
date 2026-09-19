@@ -12,9 +12,15 @@
  * Claude transcripts only (the other providers have no background tools).
  */
 
-import { existsSync, readdirSync, statSync } from "fs";
+import { existsSync, readdirSync, statSync, readFileSync } from "fs";
 import { join, basename, dirname } from "path";
 import { limitKind, parseClaude, fmtDuration } from "./parse.mjs";
+
+// A credential-shaped assignment or a well-known key prefix. Only the FILE NAME is
+// ever reported: a scratchpad is where sessions stage real config (a gateway key
+// copied into a throwaway home), and a successor needs to know to delete it, not
+// to read it.
+const SECRET_RE = /(?:api[_-]?key|secret|token|password|passcode|bearer)["']?\s*[:=]\s*["']?[A-Za-z0-9_\-.+/]{20,}|\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,}|xox[bp]-[A-Za-z0-9-]{20,})/i;
 
 // Detached-process patterns in shell commands: things that outlive the tool call.
 const DETACH_RE = /Start-Process|nohup\s|start\s+\/b|-WindowStyle\s+Hidden|setsid\s|schtasks\s|pm2\s+start|&\s*disown/i;
@@ -114,17 +120,26 @@ export function scratchpadInfo(transcriptPath, sessionId) {
   for (const dir of candidates) {
     if (!existsSync(dir)) continue;
     let files = 0, bytes = 0, newest = 0;
+    const names = [], secrets = [];
     const walk = (d, depth) => {
       if (depth > 3) return;
       let entries; try { entries = readdirSync(d, { withFileTypes: true }); } catch { return; }
       for (const e of entries) {
         const p = join(d, e.name);
         if (e.isDirectory()) walk(p, depth + 1);
-        else { files++; try { const st = statSync(p); bytes += st.size; if (st.mtimeMs > newest) newest = st.mtimeMs; } catch { /* ignore */ } }
+        else {
+          files++;
+          const rel = p.slice(dir.length + 1).replace(/\\/g, "/");
+          if (names.length < 40) names.push(rel);
+          try {
+            const st = statSync(p); bytes += st.size; if (st.mtimeMs > newest) newest = st.mtimeMs;
+            if (st.size < 512 * 1024 && SECRET_RE.test(readFileSync(p, "utf-8"))) secrets.push(rel);
+          } catch { /* ignore */ }
+        }
       }
     };
     walk(dir, 0);
-    return { dir, files, bytes, newest: newest ? new Date(newest).toISOString() : "" };
+    return { dir, files, bytes, names, secrets, newest: newest ? new Date(newest).toISOString() : "" };
   }
   return null;
 }

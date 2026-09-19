@@ -15,6 +15,7 @@
  *   node scripts/brief.mjs <locator> --json              # the same content, structured
  *   node scripts/brief.mjs <locator> --budget 3000       # trim harder (default 4500)
  *   node scripts/brief.mjs <locator> --no-repo           # skip git + tracking files
+ *   node scripts/brief.mjs <locator> --gaps              # what CONTINUE/BACKLOG do not record
  *
  * `--for` is the TARGET harness. It changes the vocabulary of the prose and the
  * "how to continue" block, nothing else; `--for any` (the default) stays neutral.
@@ -23,14 +24,18 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { basename, resolve as resolvePath } from "path";
+import { basename, dirname, resolve as resolvePath } from "path";
 import { summarize } from "./lib/parse.mjs";
 import { handoffExtract, scratchpadInfo } from "./lib/handoff.mjs";
 import { gitState, readRepoDocs } from "./lib/repo.mjs";
 import { discover } from "./lib/sessions.mjs";
+import { sessionFacts } from "./lib/session-facts.mjs";
+import { rankRepos, docsDirFor, history as gitHistory, remoteOf, editLanding, toplevel, touchesCode, landedArchivePath, struckIn, laterTouches } from "./lib/work-repo.mjs";
+import { findSuccessors } from "./lib/successor.mjs";
+import { docGaps, renderGaps, staleCounts } from "./lib/doc-gaps.mjs";
 import {
   HARNESSES, buildModel, renderBrief, estimateTokens, codexHumanPrompts,
-  sectionBullets, seedPrompt, TRIED_REJECTED_RE,
+  sectionBullets, seedPrompt, TRIED_REJECTED_RE, repoRelativeFiles, matchOpenToLater, matchLanded,
 } from "./lib/brief.mjs";
 
 const argv = process.argv.slice(2);
@@ -79,11 +84,79 @@ const content = readFileSync(target.path, "utf-8");
 const summary = summarize(target.provider, content);
 if (!summary) { console.error(`cannot summarize a "${target.provider}" transcript`); process.exit(1); }
 
-const cwd = summary.cwd || "";
-const skipRepo = has("--no-repo") || !cwd;
+const sessionCwd = summary.cwd || "";
+const lines = content.split("\n");
+const facts = target.provider === "claude" ? sessionFacts(lines) : null;
+const skipRepo = has("--no-repo") || !sessionCwd;
+
+// The work repo is where the session WROTE, which is not always where it started.
+const ranked = skipRepo ? [] : rankRepos(facts ? facts.dirs : [], sessionCwd);
+const workRoot = ranked.length ? ranked[0].root : "";
+const cwd = workRoot || sessionCwd;
+const topWriteDir = facts && facts.dirs.find((d) => d.writes && workRoot && d.dir.toLowerCase().startsWith(workRoot.toLowerCase()));
+const docsDir = skipRepo ? "" : docsDirFor(topWriteDir ? topWriteDir.dir : sessionCwd, cwd);
 const git = skipRepo ? null : gitState(cwd);
-const docs = skipRepo ? null : readRepoDocs(cwd);
+const docs = skipRepo ? null : readRepoDocs(docsDir || cwd);
+const work = skipRepo ? null : {
+  root: cwd, sessionCwd,
+  differsFromCwd: Boolean(workRoot && !ranked[0].isCwd),
+  remote: remoteOf(cwd),
+  others: ranked.slice(1).filter((r) => r.writes > 0),
+};
+const hist = skipRepo ? null : gitHistory(cwd, summary.startTime, summary.endTime, content, facts ? facts.commitCommands : 0);
+const written = repoRelativeFiles([...(summary.filesEdited || []), ...(summary.filesWritten || [])], cwd);
+const landing = skipRepo ? null : editLanding(cwd, written, summary.startTime, summary.endTime);
+// Has another session already picked this one up? Same evidence ladder the
+// resume tools use: ledger and brief are proof, a mention is a hint.
+const successors = target.provider === "claude"
+  ? (findSuccessors([{ sessionId: summary.sessionId || target.sessionId, path: target.path, endTime: summary.endTime }], discover("claude"), { order: "nearest" })
+    .get(summary.sessionId || target.sessionId) || [])
+  : [];
+// Files written where git sees nothing: profile config, a skill junction's target
+// outside the tree, a settings file. Scratch space is excluded — it has its own line.
+const outside = skipRepo ? [] : [...new Set([...(summary.filesEdited || []), ...(summary.filesWritten || [])])]
+  .filter((f) => !/(?:[\\/]|^)(?:Temp|tmp|scratchpad)(?:[\\/]|$)/i.test(f))
+  .filter((f) => !toplevel(dirname(f)));
 const continuePath = docs?.continueDoc?.exists ? docs.continueDoc.path : null;
+const docPaths = [docs?.continueDoc, docs?.backlogDoc, docs?.local?.continueDoc, docs?.local?.backlogDoc]
+  .filter((d) => d && d.exists).map((d) => d.path);
+const docText = docPaths.map((p) => readFileSync(p, "utf-8")).join("\n\n");
+// A count quoted in the tracking file or a commit body that the last run no longer
+// matches: the successor measured on this trusted the prose over the tally.
+const countWarnings = facts ? [
+  ...staleCounts(docText, facts.tests).map((w) => ({ ...w, where: "the tracking file" })),
+  ...(hist ? hist.during : []).flatMap((c) => staleCounts(`${c.subject} ${c.body || ""}`, facts.tests).map((w) => ({ ...w, where: `commit \`${c.sha}\`` }))),
+] : [];
+
+// What exists because of it, and the later commit that absorbed it if it did not
+// commit itself.
+const createdRel = facts ? repoRelativeFiles(facts.created || [], cwd) : [];
+const bodyOf = new Map([...(hist ? [...hist.during, ...hist.after] : [])].map((c) => [c.sha, c]));
+const built = {
+  created: createdRel.slice(0, 14), createdMore: Math.max(0, createdRel.length - 14),
+  absorbedBy: (landing ? landing.after : []).map((c) => ({ sha: c.sha, subject: c.subject, body: (bodyOf.get(c.sha) || {}).body || "" })),
+};
+// What it left open: its unchecked closing items and the BACKLOG entries it added.
+const openItems = facts ? [
+  ...(facts.closingChecklist?.open || []),
+  ...(facts.trackingWrites || []).filter((w) => /BACKLOG/i.test(w.file))
+    .flatMap((w) => [...w.text.matchAll(/^#{2,3}\s+(.+)$/gm)].map((x) => x[1])),
+] : [];
+const openUnique = [...new Set(openItems)];
+// Later commits that changed its files, beyond the ones that committed its own edits.
+const touchedLater = hist && hist.after.length
+  ? laterTouches(cwd, summary.endTime, written).filter((c) => !(landing ? landing.after : []).some((a) => a.sha === c.sha))
+  : [];
+const landedPath = skipRepo ? "" : landedArchivePath(cwd);
+// Struck in the repo's own archive, with the commit that wrote the strike. A strike
+// written before the session ended is the session's own closure, not later work.
+const endMs = summary.endTime ? Date.parse(summary.endTime) : Infinity;
+const landedMatches = (landedPath && hist && hist.after.length ? matchLanded(openUnique, readFileSync(landedPath, "utf-8")) : [])
+  .map((x) => ({ ...x, by: struckIn(cwd, (x.landed.match(/~~.+?~~/) || [x.landed])[0]) }))
+  .filter((x) => !x.by || Date.parse(x.by.when) > endMs);
+const landedSet = new Set(landedMatches.map((x) => x.item));
+const openMatches = hist && hist.after.length
+  ? matchOpenToLater(openUnique.filter((i) => !landedSet.has(i)), hist.after, { touchesCode: (sha) => touchesCode(cwd, sha) }) : [];
 
 const model = buildModel({
   provider: target.provider, target: TARGET,
@@ -96,7 +169,26 @@ const model = buildModel({
   scratch: target.provider === "claude" ? scratchpadInfo(target.path, summary.sessionId) : null,
   humanPrompts: target.provider === "codex" ? codexHumanPrompts(content) : [],
   triedRejected: sectionBullets(continuePath, TRIED_REJECTED_RE),
+  facts, work, history: hist, landing, successors, outside, countWarnings, built, openMatches, landedMatches, touchedLater,
 });
+
+// ── --gaps: what the tracking files do not record ────────────────────────────
+// The same facts, turned around: not "what does a successor need" but "what did
+// this session learn that its CONTINUE.md / BACKLOG.md never got". Run it before
+// writing the closing pass, or on someone else's session to see what exists only
+// in the transcript.
+if (has("--gaps")) {
+  if (!facts) { console.error("--gaps reads a Claude transcript; this session is " + target.provider); process.exit(2); }
+  const paths = docPaths;
+  const g = docGaps(facts, docText, {
+    commits: hist ? hist.during : [], remote: work ? work.remote : null,
+    scratchSecrets: model.machine?.scratchpad?.secrets || [],
+  });
+  const text = renderGaps(g, { docPaths: paths, sessionId: summary.sessionId || target.sessionId });
+  if (val("--out")) writeFileSync(val("--out"), text, "utf-8");
+  console.log(has("--json") ? JSON.stringify({ docs: paths, ...g }, null, 2) : (val("--out") || text));
+  process.exit(0);
+}
 
 const out = renderBrief(model, { budget: BUDGET });
 const est = estimateTokens(out);

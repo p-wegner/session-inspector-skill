@@ -84,6 +84,34 @@ tool's `--json` so a ratio across tools is refusable rather than merely discoura
 **Size:** small. **Depends on:** nothing. The receipt is
 `docs/analysis/session-inspector-2026-09-18/tune.json` (gitignored).
 
+## 12. Handoff lab round 6: score the two post-lab brief changes, with more than one receiver
+
+**Why.** Two `brief.mjs` changes landed after round 5 on its judge's findings (later commits that
+changed the session's files; word matches on docs-only commits dropped) and no receiver has read
+them. One receiver per target gave ±0.1 swings that masked real movement twice.
+**Shape.** Same questionnaire, keys and judge (the lab dir is session scratch, so re-create it from
+the CONTINUE 2026-09-19 pass or keep a copy outside the repo, never in it), three receivers per
+target, and a fourth session as a new held-out. **Size:** one sitting, ~8 agents. **Depends on:**
+nothing.
+
+## 13. Numbered questions answered in prose
+
+**Why.** On the held-out session the user answered the agent's numbered interview questions with
+"1 a+b, 2 …" and never answered four others. `AskUserQuestion` answers are paired and shown; these
+are not, so the decisions (and the unanswered questions) were missing from the brief and `--gaps`.
+**Shape.** In `session-facts`: an assistant message with a numbered question list followed by a
+human prompt that starts with numbers → pair them; the numbers never answered become "left open".
+**Size:** small. **Depends on:** nothing.
+
+## 14. `--gaps` recall is low where the file paraphrases
+
+**Why.** Recall 0.57 / 0.07 / 0.15 on the three lab targets, precision ~0.7–0.9. The token match
+cannot tell "recorded in other words" from "missing", and it compares against the file as it is
+now, not as the session left it. **Shape.** Compare against the file at the session's end commit
+(`git show <sha>:CONTINUE.md`) and read "prose" CONTINUE files by their bold lead-ins
+(`**Next.**`), which the brief also prints as "Nothing itemised" today. A model pass to judge
+paraphrase belongs outside the tool, as the caller's step. **Size:** small to medium.
+
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in

@@ -4,6 +4,50 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-19 — handoff lab: `brief.mjs` carries what the tracking files drop, plus `--gaps`
+
+**Why.** Handoff briefs and CONTINUE passes were missing facts a successor needed: the human's
+answers, the sources, live checks, whether the work landed, what happened after the session.
+Five tune rounds (skill-design Lab route), each with 2–3 blind Sonnet receivers answering a fixed
+10-question questionnaire from the brief plus at most 8 read-only commands, and a separate judge
+grading them against frozen answer keys built by independent agents from the full transcripts.
+The keys and transcripts stay out of this repo (real session content); only the numbers are here.
+
+| Round | tuning session A (brief-only / total / wrong) | tuning session B | held-out C |
+|---|---|---|---|
+| v0 (HEAD before) | 0.26 / 0.58 / 1 | 0.02 / 0.17 / 6 | 0.04 / 0.23 / 0 |
+| v1 | 0.48 / 0.70 / 2 | 0.22 / 0.44 / 0 | |
+| v2 | 0.53 / 0.68 / 1 | 0.38 / 0.57 / 0 | |
+| v3 | 0.67 / 0.80 / 0 | 0.27 / 0.52 / 0 | |
+| v4 | 0.67 / 0.81 / 0 | 0.33 / 0.52 / 1 | |
+| v5 | **0.85 / 0.90 / 0** | 0.29 / 0.49 / 0 | **0.39 / 0.56 / 2** |
+
+One receiver per target and round, so a ±0.1 swing is variance (B's v3 and v5 drops were judged
+as receiver and grading variance, not a worse brief). C was never tuned on: its key was built
+after v4 froze, and nothing in v5 was changed after looking at its brief.
+
+**What changed.** New `lib/session-facts.mjs` (one pass over a Claude transcript: prompts,
+`AskUserQuestion` answers, sources with failed fetches dropped, runner tallies split per run,
+the diagnosis after a failure, its own tracking-file writes incl. scripted ones, "Verified"
+lines, links with resolved targets, per-user stores with commands and key-bearing files),
+`lib/work-repo.mjs` (the work repo ≠ start dir, git history split at the session's end, where
+its edits landed and whether pushed, commits that later changed its files, strikes in
+`BACKLOG-landed.md` via `git log -S`), `lib/doc-gaps.mjs` + `brief.mjs --gaps`. `successor.mjs`
+gained a fourth route (`seed`: a later session seeded with any launcher's brief).
+`parseContinueDoc` keeps wrapped items whole. Sections are listed in
+`session-inspector/references/resume-and-handoff.md`.
+
+**Verified:** `node --test test/*.test.mjs` → 117 pass, 0 fail (13 new in
+`test/handoff-facts.test.mjs`); the round table above. **Not verified by a round:** the two
+changes made after round 5 on its judge's findings (later commits that changed its files;
+word matches landing only on docs-only commits dropped). Both removed the held-out's two wrong
+answers when the brief was re-rendered and read by hand. No receiver or judge has seen them.
+
+**Weakest areas left** (judge, round 5): B's key is dominated by facts only a transcript reader
+gets (design reasoning, a scratch probe's result); `--gaps` recall is 0.57 / 0.07 / 0.15, since
+a token match misses paraphrase; numbered questions answered in prose ("1 a+b, 2 …") are not
+paired like `AskUserQuestion` answers. See BACKLOG 12–14.
+
 ## 2026-09-18 — published reach on the fleet tools (BACKLOG item 1, in progress)
 
 **Why.** A skill-design shape pass classified `session-inspector` as an Instrument whose numbers

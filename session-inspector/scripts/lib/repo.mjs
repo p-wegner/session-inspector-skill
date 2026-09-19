@@ -86,9 +86,22 @@ export function parseContinueDoc(path) {
   let pass = null;
   let inFence = false;
 
+  // The item the next indented line continues. The convention wraps long items
+  // at ~100 columns, so a first-line-only read cut every one of them mid-sentence:
+  // "`agent-pick`: the adapter that launches an opencode home (`EnvMap` shape,".
+  let last = null;
+  const track = (item, raw) => { last = { item, raw }; };
+
   for (const line of lines) {
-    if (/^\s*```/.test(line)) { inFence = !inFence; continue; }
+    if (/^\s*```/.test(line)) { inFence = !inFence; last = null; continue; }
     if (inFence) continue;
+    if (!line.trim()) { last = null; continue; }
+    if (last && /^\s{2,}\S/.test(line) && !/^\s*(?:[-*]\s|\d+\.\s)/.test(line)) {
+      last.raw += ` ${line.trim()}`;
+      last.item.text = clip(last.raw, 200);
+      continue;
+    }
+    last = null;
 
     const head = line.match(/^(#{2,4})\s+(.*)$/);
     if (head) {
@@ -111,11 +124,10 @@ export function parseContinueDoc(path) {
     if (box) {
       const text = clip(box[2], 200);
       if (!text) continue;
-      if (box[1] === " ") {
-        (SECTION_BLOCKED.test(section) ? blocked : open).push({ text, section, kind: "checkbox", ...stamp() });
-      } else {
-        done.push({ text, section, kind: "checkbox", ...stamp() });
-      }
+      const item = { text, section, kind: "checkbox", ...stamp() };
+      if (box[1] === " ") (SECTION_BLOCKED.test(section) ? blocked : open).push(item);
+      else done.push(item);
+      track(item, box[2]);
       continue;
     }
 
@@ -124,8 +136,9 @@ export function parseContinueDoc(path) {
     if (step && SECTION_NEXT.test(section)) {
       const text = clip(step[2], 200);
       if (!text) continue;
-      if (isDone(text)) done.push({ text, section, kind: "step", ...stamp() });
-      else open.push({ text, section, kind: "step", ...stamp() });
+      const item = { text, section, kind: "step", ...stamp() };
+      (isDone(text) ? done : open).push(item);
+      track(item, step[2]);
       continue;
     }
 
@@ -133,7 +146,7 @@ export function parseContinueDoc(path) {
     const bullet = line.match(/^\s*[-*]\s+(.+)$/);
     if (bullet && SECTION_BLOCKED.test(section)) {
       const text = clip(bullet[1], 200);
-      if (text && !isDone(text)) blocked.push({ text, section, kind: "bullet", ...stamp() });
+      if (text && !isDone(text)) { const item = { text, section, kind: "bullet", ...stamp() }; blocked.push(item); track(item, bullet[1]); }
     }
   }
 
