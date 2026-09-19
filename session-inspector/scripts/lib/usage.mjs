@@ -24,7 +24,29 @@ export function firstRowOf(msg, seen) {
   if (!id) return true;
   if (seen.has(id)) { reach.dupUsageRow(); return false; }
   seen.add(id);
+  (seen.outMax ||= new Map()).set(id, msg.usage?.output_tokens || 0);
   return true;
+}
+
+/**
+ * Output tokens a REPEAT row adds over the rows of its id seen so far — call it on
+ * the rows firstRowOf rejected, and add the result to the output already counted.
+ *
+ * The identical-usage rule above holds for a main transcript, not for a subagent's:
+ * there the rows of one id are streaming snapshots and `output_tokens` grows row by
+ * row while input and cache fields stay fixed. Measured 2026-09-19 on one session's
+ * 9 subagent transcripts: 847 repeat rows with a larger output, 109k output tokens
+ * from the first rows against 647k from the last. First-row-wins alone under-counted
+ * a delegating session's output about 6x. Main transcripts of the same sessions: 0.
+ */
+export function lateOutput(msg, seen) {
+  const id = msg?.id;
+  const out = msg?.usage?.output_tokens || 0;
+  if (!id || !seen.outMax?.has(id)) return 0;
+  const prev = seen.outMax.get(id);
+  if (out <= prev) return 0;
+  seen.outMax.set(id, out);
+  return out - prev;
 }
 
 /**

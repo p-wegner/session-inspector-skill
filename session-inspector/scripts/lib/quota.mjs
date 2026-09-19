@@ -11,7 +11,7 @@ import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { classify } from "./prompts.mjs";
 import { toolDisplayName } from "./parse.mjs";
-import { firstRowOf } from "./usage.mjs";
+import { firstRowOf, lateOutput } from "./usage.mjs";
 import { reach } from "./reach.mjs";
 
 // ── pricing ($/1M, Anthropic list, checked 2026-09-18 against the claude-api skill's model table) ──
@@ -77,9 +77,16 @@ export function parseFileEvents(path) {
     if (!Number.isFinite(ms)) continue;
     if (o.type === "assistant" && o.message) {
       const m = o.message, u = m.usage;
-      if (u && firstRowOf(m, seen)) events.push({ t: "a", ms, model: m.model || "", tok: {
-        i: u.input_tokens || 0, o: u.output_tokens || 0,
-        cw: u.cache_creation_input_tokens || 0, cw1h: u.cache_creation?.ephemeral_1h_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } });
+      if (u && firstRowOf(m, seen)) {
+        const ev = { t: "a", ms, model: m.model || "", tok: {
+          i: u.input_tokens || 0, o: u.output_tokens || 0,
+          cw: u.cache_creation_input_tokens || 0, cw1h: u.cache_creation?.ephemeral_1h_input_tokens || 0, cr: u.cache_read_input_tokens || 0 } };
+        events.push(ev);
+        if (m.id) (seen.evById ||= new Map()).set(m.id, ev);
+      } else if (u) {
+        const ev = seen.evById?.get(m.id);
+        if (ev) ev.tok.o += lateOutput(m, seen);
+      }
       if (Array.isArray(m.content)) for (const c of m.content)
         if (c.type === "tool_use") events.push({ t: "tc", ms, name: toolDisplayName(c.name, c.input) });
     }

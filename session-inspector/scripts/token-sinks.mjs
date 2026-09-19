@@ -35,7 +35,7 @@ import { basename, dirname } from "path";
 import { discover } from "./lib/sessions.mjs";
 import { reach } from "./lib/reach.mjs";
 import { costUsdTotals } from "./lib/quota.mjs";
-import { firstRowOf } from "./lib/usage.mjs";
+import { firstRowOf, lateOutput } from "./lib/usage.mjs";
 import { padTail } from "./lib/chunk-kind.mjs";
 
 // ── pricing ────────────────────────────────────────────────────────────────
@@ -74,7 +74,8 @@ function parseClaude(path) {
     if (!msg) continue;
     if (msg.model && msg.model !== "<synthetic>") model = msg.model;
     const u = msg.usage;
-    if (u && firstRowOf(msg, seen)) {
+    if (u && !firstRowOf(msg, seen)) { tokens.output += lateOutput(msg, seen); continue; }
+    if (u) {
       assistantTurns++;
       tokens.input += u.input_tokens || 0;
       tokens.output += u.output_tokens || 0;

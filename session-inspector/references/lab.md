@@ -51,13 +51,14 @@ different day or repo, and build its key before round 1.
 
 ## 2. Target catalogue
 
-The handoff target has been run twice. The others wait for a first run: their rows say what
+The handoff target has been run twice and the one-session cost target once. The others wait for a first run: their rows say what
 the key and the metric would be, and are defaults, not measured.
 
 | Target | Tools | Consumer's questions | Key built from | Metric |
 |---|---|---|---|---|
 | **Handoff** (run 2×) | `brief.mjs`, `--gaps` | the 10-question successor questionnaire | full transcript + git, one key agent per session | weighted share of key facts carried by the output alone; wrong answers; gap recall/precision |
-| **Cost / token sinks** | `token-sinks`, `waste`, `context-growth`, `cold-cache`, `reread-causes` | what cost most, why, which ONE change saves most, how sure | a key agent recomputes cost from the raw usage rows with its own script, and names the causes with evidence | numbers within a tolerance; cause recall; recommendations that would not save anything counted as wrong |
+| **Cost of one session** ([card](lab-cards/cost.md), run 1×) | `session-dashboard --lens cost` (`-o f.html` and `--md`) | the 10-question cost questionnaire: total and split, shape, idle, bloat, waste, where, subagents, the one change, limits | a key agent recomputes cost from the raw usage rows (and subagent transcripts) with its own script, and names the causes with evidence | weighted share of key facts read off the output (numbers ±10%); wrong answers, incl. a recommendation the key contradicts |
+| **Cost / token sinks, fleet-wide** | `token-sinks`, `waste`, `context-growth`, `cold-cache`, `reread-causes` | what cost most across many sessions, why, which ONE change saves most | as above, over a window | as above; not yet run |
 | **Skill triggers** ([card](lab-cards/skill-triggers.md), not run) | `skill-usage`, `skill-genesis`, `slash-goals`, `user-prompts` | which skills should have fired and did not, which fired wrongly, which are dead | a key agent labels each human prompt of N sessions with the skill that should have fired, from the skill descriptions | missed-trigger recall/precision; dead-skill verdicts that are wrong |
 | **Session review** | `analyze-claude-session`, `tool-friction`, `tool-failures`, `incidents` | how the session went, where it stalled, what to change in the setup | an independent reviewer grades the transcript with quoted evidence | finding recall/precision against the review; wrong claims |
 
@@ -221,6 +222,7 @@ Record it in the same commit as the code:
 |---|---|---|---|---|
 | 2026-09-19 | handoff | a build session; a long interview session | 0.26 → 0.85; 0.02 → 0.29 | 0.04 → 0.39 |
 | 2026-09-19 | handoff, operator sessions | a 15-hour `/loop` board session | 0.12 → 0.31 (flat from r3) | 0.03 → 0.24 |
+| 2026-09-19 | cost of one session ([card](lab-cards/cost.md)) | a 15.5 h `/goal` session; a session 79% subagents | 0.09 → 0.75 (wrong 2.5 → 0.75 per consumer) | 0.07 → 0.58, wrong 2 → 0; `--md` = HTML |
 | 2026-09-18 | trigger drill, description 725 → 598 chars | 15 prompts, 4 blind agents | positives 13/18 → 16/18 | false fires 0/12 → 0/12 |
 
 What the two runs taught, beyond their tool changes:
@@ -230,6 +232,12 @@ What the two runs taught, beyond their tool changes:
   operator run flattened at round 3 for this reason, and the judge's findings turned to "judgement".
 - **The held-out is where overfitting shows.** The first run's tuning session reached 0.85,
   while the held-out reached 0.39.
+- **Build the key from the raw rows, and a key builder can find a counting bug.** The cost lab's
+  key agents, forbidden to use this skill, found that a subagent's `output_tokens` grows across
+  the rows of one call, which every tool here had deduplicated away (fixed in `lib/usage.mjs`).
+- **A held-out key must not reach the author, even as a summary.** In the cost lab the held-out
+  key builder's completion message (its five-line summary) landed in the author's context. Brief
+  the held-out key builder to reply with the path only.
 - **Read the consumers' one-line complaints before the judge's report.** They cost nothing and
   say what the output was worst at in the consumer's own terms ("what is still true right now").
   They are not graded, so treat them as leads.

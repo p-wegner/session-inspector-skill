@@ -21,6 +21,10 @@ Every tool takes `--json`; fleet tools take `--days N` and `--project <substring
 | …the most painful moments, ranked | `… --friction` | same |
 | …what it left RUNNING on the machine (bg jobs, monitors, scratchpad) | `… --handoff` — **run first when continuing a cut-off session** | same |
 | …its subagents' results (act on / re-inject, don't re-run) | `subagent-results.mjs <locator> [--unresolved] [--brief -o f.md]` | same |
+| …did it ever RUN the tests, when, and what did the output cost | `verify-runs.mjs <locator> [--all]` | [shape-and-dashboard](references/shape-and-dashboard.md) |
+| …how long were its messages; did it talk to itself; where did output tokens come from | `message-stats.mjs <locator>` | same |
+| …**one HTML dashboard** — generic session half + a workflow lens (cost, Spec Kit) | `session-dashboard.mjs <locator> [--lens cost\|speckit] [--repo <dir>] -o f.html` | same |
+| …**what did THIS session cost, where, what to change** (main + subagents, levers in $) | `session-dashboard.mjs <locator> --lens cost --md` (agent) · `-o f.html` (person) | same |
 | **Edit** what a session says (redact, fix a prompt) | `session-edit.mjs extract … → edit → apply --quiet` | [session-edit](references/session-edit.md) — **read the confidentiality rules first** |
 | **Cut off by a limit — continue it** | `resumable.mjs` → recommends **handoff**, not resume | [resume-and-handoff](references/resume-and-handoff.md) |
 | **Hand it to the OTHER agent** (claude → codex, codex → claude) | `brief.mjs <locator> --for codex --out b.md --seed-out s.txt` | [resume-and-handoff](references/resume-and-handoff.md) |

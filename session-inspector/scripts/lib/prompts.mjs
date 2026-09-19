@@ -49,6 +49,18 @@ export function classify(raw) {
   if (/^Resume prior work\. Read the handoff brief at /.test(text)) return { kind: "automated", text };
   if (/^You are the autonomous BOARD MONITOR/.test(text)) return { kind: "automated", text };
   if (/^Base directory for this skill:/.test(text)) return { kind: "automated", text };
+  // Harness notices emitted when a skill is re-invoked in the same session. They
+  // sit in a user entry with no marker tag and read like a typed aside, so they
+  // were counted as human prompts — measured on a 5-feature Spec Kit run, where 7
+  // of the 8 "human" turns were these. A repeat-heavy session inflates every
+  // human-driven measure by one per re-invocation.
+  if (/^\(Re-invocation of \/?\S+/.test(text)) return { kind: "automated", text };
+  if (/^Skill \/?\S+ is already loaded above/.test(text)) return { kind: "automated", text };
+  // Stop-hook and /goal feedback re-enter as user entries. A goal-driven session
+  // gets one per turn, so a 15-hour run showed dozens of "human" prompts that were
+  // the hook talking — and a cost report named them as what the person asked for.
+  if (/^Stop hook feedback:/.test(text)) return { kind: "automated", text };
+  if (/^Goal check-in:/.test(text)) return { kind: "automated", text };
   // injected continuation summary (context compaction handoff)
   if (/^This session is being continued from a previous conversation/.test(text)) return { kind: "automated", text };
   // internal LLM utility calls (file prediction, voice-note → ticket, etc.)

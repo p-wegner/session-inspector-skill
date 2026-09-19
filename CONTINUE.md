@@ -4,6 +4,48 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-19 — cost lab: a `cost` lens on `session-dashboard`, as a page and as `--md`
+
+**Why.** Asked for: tune session-inspector for the token / cost use case in five rounds, and build
+a dashboard for it; the CLI must answer the same questions for an agent. The lab ran on the
+target card `session-inspector/references/lab-cards/cost.md`: one session's cost, 10 questions,
+keys built by agents forbidden to use this skill, Sonnet consumers reading one render only, an Opus
+judge per round, one held-out session never tuned on.
+
+| Round | dash score (mean) | wrong per consumer |
+|---|---|---|
+| r0, the pre-lab page | 0.09 | 2.5 |
+| r1 | 0.56 | 1.25 |
+| r2 | 0.59 | 0.5 |
+| r3 | 0.65 | 2.5 |
+| r4 | 0.69 | 2.0 |
+| r5 (HTML and `--md`, equal at 0.752) | 0.75 | 0.75 |
+| **held-out**, pre-lab page → r5 | 0.07 → 0.58 | 2 → 0; `--md` = HTML |
+
+**What changed.** New `scripts/lib/lenses/cost.mjs` (main thread + every subagent transcript, in $:
+split, context bands, per-thread TTL and cold re-writes, phases cut at prompts and compactions,
+loop-steered share, 60-min stretches, levers with a basis, carry cost of what filled the context,
+the fixed prefix incl. nested CLAUDE.md, subagents by wave and role, Claude Code's `cost-state`
+beside the transcript total) and `lib/lenses/render-md.mjs` (`session-dashboard --md`, the same
+lens object as Markdown). **Counting fix found by a key builder:** a subagent's `output_tokens`
+grows across the rows of one call; `lib/usage.mjs lateOutput()` adds it, wired into `token-sinks`,
+`lib/quota.mjs`, `lib/turns.mjs` (six tools still use first-row only, BACKLOG 18). Stop-hook and
+goal check-in text is no longer counted as a human prompt (`lib/prompts.mjs`). This commit also
+carries the Spec Kit dashboard work (`session-dashboard`, `verify-runs`, `message-stats`,
+`lib/turns|metrics|locate`, the speckit lens) that sat uncommitted since 2026-09-18, which the lens
+builds on.
+
+**Verified:** `node --test test/*.test.mjs` → 134 pass, 0 fail (7 new in `test/cost-lens.test.mjs`);
+the round table above; the page checked with playwright-cli at 1280 px and 390 px (no horizontal
+scroll after wrapping tables). **Unscored:** five fixes made after the held-out judge (nested
+CLAUDE.md, skill-listing deltas, the prefix floor incl. the first call's cache write, a re-write
+after a compaction not charged to idle, the headline lever excluding price swaps) and the
+`cost-state`-per-process wording; each checked by re-rendering and by a test, no consumer has read
+them (BACKLOG 19). **Caveat on the held-out number:** the held-out key builder's five-line summary
+reached the author mid-lab; no change was made from it, but the held-out was not blind to the author.
+**Weakest area left:** sizing the prose prefix (A's CLAUDE.md stack still ~26% under its key,
+BACKLOG 20); whether subagents were *justified* needs judgement and stays out of reach.
+
 ## 2026-09-19 — lab scaffold from a blind LAB-mode run: three forms, a skill-triggers card
 
 skill-design's new LAB mode ran blind on this skill ("lab the session inspector skill"). It found the

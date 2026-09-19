@@ -130,5 +130,10 @@ loses; so `cache-health` on the three agents together tells "the gateway breaks 
 transcript row per content block, all carrying the same `message.id` and the same usage; summing
 over rows over-counted by 1.8x to 3x (measured: 344 rows / 188 calls, 196 / 64, 153 / 65). Verified
 that input, cache_read, cache_creation and output_tokens are identical across the rows of one id,
-so first-row-wins is exact. `fleet-stats` and `parseClaude` still report `assistantTurns` as rows
+so first-row-wins is exact **for a main transcript**. A subagent transcript is different: its
+rows are streaming snapshots and `output_tokens` grows row by row (measured 2026-09-19: 109k
+output tokens from first rows against 647k from last rows over nine subagents), so
+`lateOutput()` in `lib/usage.mjs` adds the growth. `token-sinks`, `lib/quota.mjs` and
+`lib/turns.mjs` use it; `cache-health`, `cold-cache`, `context-growth`, `fleet-stats`,
+`quota-report` and `parse.mjs` do not yet (BACKLOG). `fleet-stats` and `parseClaude` still report `assistantTurns` as rows
 (that is the loop length people mean by "turns"); token sums and the new `apiCalls` are per call.

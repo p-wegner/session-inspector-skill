@@ -141,18 +141,49 @@ human approved reads as a bypass). **Shape.** Read shell redirections and `cp`/`
 outside the repo; drop a bypass whose flag the human named in a prompt before it ran. **Size:**
 small. **Depends on:** nothing.
 
-## 17. Run the integrated lab on a second target
+## 18. `lateOutput` in the six tools that still count output from the first row
 
-**Why.** `session-inspector/references/lab.md` claims the round machine is general over targets,
-but only the handoff target has run. Its catalogue rows for cost, skill triggers and session
-review are defaults, not measured. **Shape.** The skill-triggers card is filled
-(`session-inspector/references/lab-cards/skill-triggers.md`); run 3 rounds from it, then correct the
-catalogue row and the card from what the run showed. Round 6 of the handoff lab (item 12) goes
-first: it scores five live changes. **Size:** one sitting, ~15 agents. **Depends on:** nothing.
+**Why.** A subagent's rows are streaming snapshots whose `output_tokens` grows; first-row-wins
+under-counted output about 6x on one delegating session. `token-sinks`, `lib/quota.mjs` and
+`lib/turns.mjs` are fixed. **Shape.** `cache-health`, `cold-cache`, `context-growth`, `fleet-stats`,
+`quota-report`, `lib/parse.mjs`: on a repeat row add `lateOutput(msg, seen)` to the record already
+counted. One fixture (bench §5a) with growing output pins all of them. **Size:** small.
+
+## 19. Cost lab round 6: score the post-lab fixes on a fresh held-out
+
+**Why.** Five fixes landed after the held-out judge and no consumer has read them (see the
+2026-09-19 cost-lab pass in CONTINUE). The held-out key's summary also reached the author, so
+take a NEW held-out session. **Shape.** One round per `lab-cards/cost.md`: two consumers per tuning
+session, one per render, plus the new held-out with its key built before the round; brief its key
+builder to reply with the path only. **Size:** ~10 agents.
+
+## 20. Size the fixed prefix from the measured floor, not chars ÷ 4
+
+**Why.** Prose is sized at chars ÷ 4 and the calibration factor (measured on tool output) oversized
+it by a third when applied (r4). Sessions A and H show the named parts 20–26% under their keys.
+**Shape.** Split the first call's measured size (cache read + write) across the named parts and a
+"system prompt + tools" remainder, by character share with a per-kind ratio; the named parts must
+never add up to more than the floor. **Size:** small. **Depends on:** nothing.
+
+## 21. `ctx` leaves out the call's own cache write
+
+**Why.** `lib/turns.mjs` defines a call's context as input + cache_read. On a call that writes a
+large prefix (the first call, the call after a compaction) the real context is larger by the cache
+write: the first call of one session read 32k and wrote 61k. Peak and median are close; the floor
+was 2x off until the lens added the write. **Shape.** Decide one definition for every tool
+(input + cache_read + cache_creation), with a test. **Size:** small, but it moves published numbers.
+
+## 22. A fleet-level cost page
+
+**Why.** The cost lens answers for one session; "what cost most this fortnight, and why" is still
+`token-sinks` text. **Shape.** The same lens pattern over a window: the sessions ranked, each linking
+to its `session-dashboard --lens cost` page, and `--md` beside it. Tune with the fleet row of the
+lab catalogue. **Size:** medium. **Depends on:** 18.
 
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in
 [`docs/archive/BACKLOG-landed.md`](docs/archive/BACKLOG-landed.md).
 
+- ~~17. Run the integrated lab on a second target~~ — **DONE** (2026-09-19, the cost target)
 - ~~6. Tier-0 and SKILL.md fixes from the 2026-09-18 analysis~~ — **DONE** (2026-09-18)
