@@ -41,6 +41,7 @@
 
 import { readFileSync } from "fs";
 import { reach } from "./lib/reach.mjs";
+import { declareUnsupported } from "./lib/harness.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -72,6 +73,7 @@ let totalPremium = 0, totalColdWrite = 0;
 
 const all = discover("claude");
 reach.begin("cold-cache", { days, project: projectQ });
+declareUnsupported("cold-cache", reach);
 for (const s of all) {
   reach.found(s.provider, s.profile, s.sessionId);
   if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }

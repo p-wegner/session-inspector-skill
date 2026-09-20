@@ -39,6 +39,7 @@
 
 import { readFileSync } from "fs";
 import { reach } from "./lib/reach.mjs";
+import { declareUnsupported } from "./lib/harness.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -68,6 +69,7 @@ let totalCompacts = 0, totalTurns = 0, totalCacheRead = 0, cacheReadAbove = 0, t
 
 const sessions = discover("claude");
 reach.begin("context-growth", { days, project: projectQ });
+declareUnsupported("context-growth", reach);
 for (const s of sessions) {
   reach.found(s.provider, s.profile, s.sessionId);
   if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }

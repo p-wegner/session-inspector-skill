@@ -48,11 +48,13 @@ import { homedir } from "os";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { firstRowOf, lateOutput, apiProvider } from "./lib/usage.mjs";
 import { priceFor, isPriced } from "./lib/quota.mjs";
+import { refuse } from "./lib/harness.mjs";
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : d; };
 const flag = (k) => argv.includes(k);
 const agent = opt("--agent", "claude").toLowerCase();
+refuse("cache-health --session", agent); // a known agent that records no cache tokens: one honest line, exit 3
 if (!["claude", "codex", "opencode"].includes(agent)) { console.error(`--agent must be claude, codex or opencode (got ${agent})`); process.exit(2); }
 const projectQ = (opt("--project", "") || "").toLowerCase();
 const sessionQ = opt("--session", "");

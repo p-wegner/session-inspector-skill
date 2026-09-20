@@ -4,6 +4,41 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-20 — the agent feature matrix becomes data the tools read
+
+**Why.** The skill is not agent-agnostic and never will be: Claude Code records things Codex and
+Copilot do not. `docs/agent-feature-matrix.md` said so in prose, maintained by hand off the script
+headers, and told its reader to "re-check a cell against the script before relying on it" — a doc
+that asks not to be trusted.
+
+**What changed.** `scripts/lib/harness.mjs` states, per agent, what its TRANSCRIPT carries (18
+facts: per-call usage, cache read/write, tool io, subagents, hooks, compaction, rate limits, …),
+each absent fact carrying the sentence explaining why. A tool declares which facts it `needs` and
+which agents it is `wired` for; a cell is derived (`y` / `cand` / `n/a`), so a tool cannot claim an
+agent whose data is missing — `cell()` throws and the generator refuses. Two consumers:
+
+- **`scripts/harness-matrix.mjs --write`** regenerates `docs/agent-feature-matrix.md`;
+  `--check` and `test/harness.test.mjs` fail when the checked-in file drifts.
+- **Tools refuse instead of printing zeros.** `refuse(tool, agent)` prints one line naming the
+  missing field and its reason and exits 3 (wired in `token-sinks`, `cache-health`), and
+  `declareUnsupported(tool, reach)` puts the skipped agents in the `reach:` line of the
+  Claude-only fleet tools (`fleet-stats`, `context-growth`, `cold-cache`, `waste`).
+
+Claude Code stays the reference implementation and the Claude-only concepts (subagent transcripts,
+the attachment prefix, compaction rows, cache pricing, hooks) are deliberately **not** abstracted.
+The adapter split of `lib/sessions.mjs` / `lib/parse.mjs` into one module per agent is written down
+in the matrix's "Adding an agent" section and deliberately not done: three verbs, when a second
+agent needs one.
+
+**Verified:** `node --test test/*.test.mjs` → 155 pass, 0 fail (5 new); `harness-matrix.mjs --check`
+green; `cache-health --agent copilot` and `token-sinks --provider copilot` both exit 3 with the
+reason; `cold-cache --days 2` prints "codex/copilot not read" with a line each. **Unverified:** the
+fact table is read off the parsers and the old hand matrix, not re-measured against a rollout per
+fact — a wrong `true` would show up as a tool claiming an agent it cannot serve.
+
+**SKILL.md description narrowed** to what is true per agent (it used to list all three at equal
+weight, which the old matrix itself flagged as over-promising).
+
 ## 2026-09-19 — cost lab: a `cost` lens on `session-dashboard`, as a page and as `--md`
 
 **Why.** Asked for: tune session-inspector for the token / cost use case in five rounds, and build

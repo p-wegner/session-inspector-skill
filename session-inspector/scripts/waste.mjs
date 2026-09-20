@@ -28,6 +28,7 @@
 
 import { readFileSync } from "fs";
 import { reach } from "./lib/reach.mjs";
+import { declareUnsupported } from "./lib/harness.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
 import { classifyHumanText, shortPath } from "./lib/chunk-kind.mjs";
@@ -51,6 +52,7 @@ let totalTok = 0, totalWtok = 0, sessions = 0, nmLeakTok = 0, nmLeakN = 0;
 
 const all = discover("claude");
 reach.begin("waste", { days, project: projectQ });
+declareUnsupported("waste, context-spikes, reread-causes, read-patterns", reach);
 for (const s of all) {
   reach.found(s.provider, s.profile, s.sessionId);
   if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }

@@ -34,6 +34,7 @@ import { readFileSync } from "fs";
 import { basename, dirname } from "path";
 import { discover } from "./lib/sessions.mjs";
 import { reach } from "./lib/reach.mjs";
+import { refuse, declareUnsupported } from "./lib/harness.mjs";
 import { costUsdTotals } from "./lib/quota.mjs";
 import { firstRowOf, lateOutput } from "./lib/usage.mjs";
 import { padTail } from "./lib/chunk-kind.mjs";
@@ -136,7 +137,7 @@ function slugOf(d) {
 function collect(provider, cutoffMs) {
   const out = [];
   for (const d of discover(provider)) {
-    if (d.provider === "copilot") continue; // no usage records; see docs/agent-feature-matrix.md
+    if (d.provider === "copilot") continue; // no usage records - the reach line names it (lib/harness.mjs)
     reach.found(d.provider, d.profile, d.kind === "main" ? d.sessionId : d.parentSessionId);
     if (d.mtime.getTime() < cutoffMs) { reach.exclude(`outside --days ${days}`); continue; }
     reach.file(d.path);
@@ -181,7 +182,9 @@ const jsonOut = args.includes("--json");
 
 const cutoffMs = Date.now() - days * 24 * 60 * 60 * 1000;
 
+if (provider !== "all") refuse("token-sinks", provider);
 reach.begin("token-sinks", { days, provider, by, project: undefined });
+if (provider === "all") declareUnsupported("token-sinks", reach);
 const sessions = collect(provider === "all" ? "all" : provider, cutoffMs);
 
 // attach per-session cost (codex left at 0 — different provider/pricing)

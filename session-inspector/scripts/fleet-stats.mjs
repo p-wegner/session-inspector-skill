@@ -36,6 +36,7 @@
 
 import { readFileSync } from "fs";
 import { reach } from "./lib/reach.mjs";
+import { declareUnsupported } from "./lib/harness.mjs";
 import { firstRowOf } from "./lib/usage.mjs";
 import { basename, dirname } from "path";
 import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
@@ -62,6 +63,7 @@ function ctxOf(u) {
 
 const rows = [];
 reach.begin("fleet-stats", { days, project: projectQ });
+declareUnsupported("fleet-stats", reach);
 for (const s of discover("claude")) {
   reach.found(s.provider, s.profile, s.sessionId);
   if (windowStartMs && s.mtime.getTime() < windowStartMs) { reach.exclude("outside the --days window"); continue; }

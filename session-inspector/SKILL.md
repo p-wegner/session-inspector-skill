@@ -1,7 +1,7 @@
 ---
 name: session-inspector
 for-tier: B
-description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude and Codex fleet-wide, Copilot per session. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
+description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude Code in full, Codex fleet-wide except cost, cache and context, Copilot one session at a time. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
 argument-hint: [session-id | keyword | --codex <path> | --copilot | edit]
 ---
 
@@ -82,6 +82,11 @@ list with every flag: [fleet-tools](references/fleet-tools.md).
   found, how many transcripts were read and why the rest were excluded, how many unparseable lines
   were skipped, whether a table is a `--top` slice, and whether this session is included. `--json`
   carries the same as `reach`. Quote a number together with its population.
+- **Claude Code is the reference agent; the others are partial and say so.** A tool that
+  cannot answer for an agent refuses with one line naming the missing transcript field and
+  exits 3 — it never prints a zero. A fleet tool's `reach:` line names the agents it skipped
+  and why. Which tool reads which agent: `docs/agent-feature-matrix.md`, generated from
+  `scripts/lib/harness.mjs` (`node scripts/harness-matrix.mjs --write`, pinned by a test).
 - **Before fanning out subagents**, ask `fleet capacity` — not `headroomProcesses`
   (that counts whole sessions; subagents are in-process).
 - Statusline showing the current session id: [statusline](references/statusline.md).

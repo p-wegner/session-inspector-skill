@@ -41,6 +41,7 @@ function fresh() {
     dupUsageRows: new Map(), // file -> repeated usage rows folded on its latest read
     ownSession: null, // { id, included }
     rows: null,       // { shown, total }
+    unsupported: {},  // agent -> why this tool cannot read it (lib/harness.mjs)
     notes: [],
   };
 }
@@ -92,6 +93,12 @@ export const reach = {
   badLine() { const f = currentFile || "-"; r.badLines.set(f, (r.badLines.get(f) || 0) + 1); },
   dupUsageRow() { const f = currentFile || "-"; r.dupUsageRows.set(f, (r.dupUsageRows.get(f) || 0) + 1); },
   shown(shown, total) { r.rows = { shown: Math.min(shown, total), total }; },
+  /**
+   * An agent this tool did NOT look at, and why, from lib/harness.mjs rather than by hand.
+   * A Claude-only tool that simply calls discover("claude") is honest about what it read
+   * and silent about what it skipped, which reads the same as an agent having no sessions.
+   */
+  unsupported(agent, why) { if (agent && why) r.unsupported[agent] = why; },
   note(s) { if (s && !r.notes.includes(s)) r.notes.push(s); },
 
   toJSON() {
@@ -110,6 +117,7 @@ export const reach = {
       duplicateUsageRowsFolded: mapTotal(r.dupUsageRows),
       ownSession: r.ownSession,
       rows: r.rows,
+      unsupported: r.unsupported,
       notes: r.notes,
     };
   },
@@ -137,7 +145,10 @@ export const reach = {
     if (dup) parts.push(`${fmt(dup)} repeated usage rows folded`);
     if (r.rows && r.rows.shown < r.rows.total) parts.push(`showing ${fmt(r.rows.shown)} of ${fmt(r.rows.total)} rows (--top)`);
     if (r.ownSession) parts.push(r.ownSession.included ? "includes this session" : "this session not included");
+    const un = Object.keys(r.unsupported);
+    if (un.length) parts.push(`${un.join("/")} not read`);
     let s = `reach: ${parts.join(" · ")}`;
+    for (const [a, why] of Object.entries(r.unsupported)) s += `\n       ${a} not read: ${why}`;
     for (const n of r.notes) s += `\n       note: ${n}`;
     return s;
   },

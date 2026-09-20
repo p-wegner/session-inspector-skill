@@ -141,6 +141,23 @@ human approved reads as a bypass). **Shape.** Read shell redirections and `cp`/`
 outside the repo; drop a bypass whose flag the human named in a prompt before it ran. **Size:**
 small. **Depends on:** nothing.
 
+## 23. Split `lib/sessions.mjs` and `lib/parse.mjs` into one module per agent
+
+**Why.** Discovery, meta, events and summarize branch on `provider ===` in two long files. The
+registry (`lib/harness.mjs`) already carries the capability half, so only the reader half is left.
+**Shape.** `lib/harness/{claude,codex,copilot}.mjs`, each exporting an optional subset of
+`{discover, meta, events, usage}`; a missing verb means the agent has no such concept and the
+caller degrades — the contract `claude-pick/lib/adapters.ps1` already runs on. **Do it when a
+second agent needs a verb, not before.** **Size:** medium, mechanical.
+
+## 24. Measure the fact table against real rollouts
+
+**Why.** `HARNESS` is read off our parsers and the old hand matrix. A fact wrongly marked `true`
+lets a tool claim an agent it cannot serve; wrongly marked absent hides a `cand` nobody will build.
+**Shape.** One tiny fixture per agent per contested fact (codex `cacheRead`, `rateLimits`,
+`toolIo`; copilot `skills`), asserted in `test/harness.test.mjs` against the parser rather than
+against the registry. **Size:** small. **Depends on:** nothing.
+
 ## 19. Cost lab round 6: score the post-lab fixes on a fresh held-out
 
 **Why.** Five fixes landed after the held-out judge and no consumer has read them (see the
