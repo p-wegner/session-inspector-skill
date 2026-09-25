@@ -1,7 +1,7 @@
 ---
 name: session-inspector
 for-tier: B
-description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude Code in full, Codex fleet-wide except cost, cache and context, Copilot one session at a time. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
+description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude Code in full (CLI, Claude Desktop's Code tab and Cowork tasks, subscription or gateway), Codex fleet-wide except cost, cache and context, Copilot one session at a time. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
 argument-hint: [session-id | keyword | --codex <path> | --copilot | edit]
 ---
 
@@ -65,9 +65,15 @@ list with every flag: [fleet-tools](references/fleet-tools.md).
 
 ## Rules that are easy to get wrong
 
-- **Session ids resolve across all `~/.claude*` profiles by default**; `--profile` is a
-  preference, not a filter. Just pass the id — don't `find` the file. Layout, profiles,
+- **Session ids resolve across all `~/.claude*` profiles by default**, and across Claude
+  Desktop's Cowork task homes; `--profile` is a preference, not a filter. Just pass the id — don't `find` the file. Layout, profiles,
   `stop_reason` meanings: [profiles-and-layout](references/profiles-and-layout.md).
+- **Claude Desktop sessions are Claude Code sessions.** Cowork keeps one home per task in the
+  app's data dir, found automatically (profile `cowork`, or `cowork-3p` when Desktop runs on a
+  gateway; `COWORK_APP_DIRS` overrides, `none` turns it off). The Desktop Code tab writes into
+  `~/.claude` beside the CLI, so its FOLDER says nothing: the transcript's `entrypoint` does, as
+  `surface` (`cli`, `sdk`, `desktop`, `desktop-3p`, `cowork`, `cowork-3p`) in
+  `analyze-claude-session` and `cache-health` (`--surface cowork` filters by prefix).
 - **Resume is usually wrong.** `--resume` is pinned to the (exhausted) profile and pays a
   cold-cache rewrite (~20× a warm turn). Hand off via the sibling launcher
   `../spawn-session/spawn.cmd <cwd> -p auto -handoff -from <id>`; the tools already say so.

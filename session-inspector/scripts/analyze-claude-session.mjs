@@ -21,11 +21,13 @@ import { join, resolve, basename, dirname } from "path";
 import { homedir } from "os";
 import { parseClaude as parseClaudeSession, fmtDuration, fmtTokens, runEventsMode, runFrictionMode } from "./lib/parse.mjs";
 import { runHandoffMode } from "./lib/handoff.mjs";
-import { claudeProjectDirs } from "./lib/config.mjs";
-import { locatorCandidates } from "./lib/sessions.mjs";
+import { claudeProjectDirs, isCoworkPath, profileOfProjectsDir } from "./lib/config.mjs";
+import { locatorCandidates, surfaceOf, sessionSurface, coworkTask } from "./lib/sessions.mjs";
 
 /** Short tag for the Claude home a projects dir belongs to (".claude", ".claude-team_5x", …). */
+// A Cowork task's home is always named ".claude": tag it cowork[-3p]/<task> instead.
 function homeTag(projectsDir) {
+  if (isCoworkPath(projectsDir)) return `${profileOfProjectsDir(projectsDir)}/${basename(dirname(dirname(projectsDir)))}`;
   return basename(dirname(projectsDir));
 }
 
@@ -66,6 +68,7 @@ function printSummary(s) {
 
   console.log(`\nSession:    ${(s.sessionId || "?").slice(0, 8)}…`);
   console.log(`Model:      ${s.model}`);
+  if (s.surface) console.log(`Surface:    ${s.surface}${s.coworkTitle ? `  ("${s.coworkTitle}")` : ""}`);
   console.log(`CWD:        ${s.cwd}`);
   console.log(`Duration:   ${fmtDuration(s.durationSec)}`);
   console.log(`Asst turns: ${s.assistantTurns}${s.compactions ? `  (${s.compactions} compaction${s.compactions > 1 ? "s" : ""})` : ""}`);
@@ -260,8 +263,11 @@ if (args.includes("--handoff")) {
   console.log(runFrictionMode("claude", content, args));
 } else if (args.includes("--events")) {
   console.log(runEventsMode("claude", content, args));
-} else if (jsonOut) {
-  console.log(JSON.stringify(parseClaudeSession(content.split("\n")), null, 2));
 } else {
-  printSummary(parseClaudeSession(content.split("\n")));
+  const s = parseClaudeSession(content.split("\n"));
+  s.surface = sessionSurface(targetPath, { surface: surfaceOf(s.entrypoint) });
+  const task = coworkTask(targetPath);
+  if (task) s.coworkTitle = task.title;
+  if (jsonOut) console.log(JSON.stringify(s, null, 2));
+  else printSummary(s);
 }

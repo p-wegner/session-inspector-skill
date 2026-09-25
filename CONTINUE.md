@@ -4,6 +4,37 @@ Repo-wide pick-up notes. Three sibling skills since 2026-08-26: `session-inspect
 `token-budget/`, `spawn-session/`. Candidate work is in [`BACKLOG.md`](BACKLOG.md) (new today),
 the per-agent tool coverage in [`docs/agent-feature-matrix.md`](docs/agent-feature-matrix.md).
 
+## 2026-09-25 — Claude Desktop sessions: Cowork task homes and a `surface`
+
+**Why.** Claude Desktop runs Claude Code in two places no tool here saw correctly. Cowork keeps
+one config home per task inside the app's data dir
+(`<app>/local-agent-mode-sessions/<account>/<org>/<task>/.claude/projects/`), so its
+transcripts were invisible. The Code tab writes into `~/.claude` beside the CLI, so it was
+visible but indistinguishable, even when the app ran on a gateway.
+
+**What changed.**
+- `lib/config.mjs`: `coworkAppDirs()` / `coworkProjectDirs()` (subscription app dir and the
+  third-party `Claude-3p` one, Windows and macOS; `COWORK_APP_DIRS` overrides, `none` disables),
+  appended to `claudeProjectDirs()`, so every tool and the locator find them.
+  `profileOfProjectsDir` says `cowork` / `cowork-3p`; `authProfiles()` skips both (not a billed
+  account of their own).
+- `lib/sessions.mjs`: `surfaceOf(entrypoint)` (`cli`, `sdk`, `desktop`, `desktop-3p`, `cowork`),
+  `sessionSurface(path, meta)` (`cowork-3p` by folder), `coworkTask(path)` (title, model, first
+  message from the task's `local_<task>*.json`); `extractMeta` carries `entrypoint`/`surface`.
+- `cache-health`: `surface` in the header, JSON and fleet line, Cowork tasks named
+  `cowork: <title>`, `--surface <prefix>` filter. `analyze-claude-session`: a `Surface:` line
+  and `surface` in `--json`; list labels `cowork-3p/<task>` instead of `.claude`.
+- SKILL.md description and a rule, `references/profiles-and-layout.md` has the layout table.
+
+**Verified:** `node --test test/*.test.mjs` → 160 pass (5 new in `cowork.test.mjs`, synthetic
+fixture); `harness-matrix.mjs --check` current; live on a box with one gateway Cowork task and
+Code-tab sessions: `cache-health --days 1 --surface cowork` lists it as `[cowork-3p] cowork:
+<title>`, `--surface desktop` finds a subscription Code-tab session, `analyze-claude-session
+<id>` prints `Surface: desktop-3p` for a gateway Code-tab one; `quota-multi` totals unchanged
+with Cowork discovery on vs `COWORK_APP_DIRS=none` (the profile shows in `reach:`, excluded with
+a note). **Not covered:** subscription Cowork (no transcript on the box), macOS paths (read from
+the app's code, not run), the other fleet tools' project naming (BACKLOG 25). Not committed.
+
 ## 2026-09-20 — the agent feature matrix becomes data the tools read
 
 **Why.** The skill is not agent-agnostic and never will be: Claude Code records things Codex and

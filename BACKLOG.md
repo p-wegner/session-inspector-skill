@@ -215,6 +215,20 @@ chars/4 estimate that overstates the saving. Three separable pieces, in value or
 Also untested: where Claude Code's time-based microcompact fires (it did not at 99.5k), which
 would make the tool redundant past that point. **Depends on:** nothing.
 
+## 25. Claude Desktop sessions in the other fleet tools
+
+**Why**: since 2026-09-25 discovery includes Cowork task homes and `surface` comes from the
+transcript's `entrypoint`, but only `cache-health` and `analyze-claude-session` use it. The rest
+group a Cowork task under its slug, which is always `session` (`token-sinks --by project` shows
+one row `session` for every Cowork task), and cannot split the Desktop Code tab from the CLI,
+since both write into `~/.claude`.
+
+**Shape**: `coworkTask(path).title` as the project name wherever `projectIdentity` is used, and
+`--by surface` / `--surface` on `token-sinks`, `fleet-stats` and `context-growth`. The
+`reach:` line could count transcripts per surface.
+
+**Size**: small per tool. **Depends on**: nothing.
+
 ## Landed
 
 Pointer only, newest first — the struck sections live verbatim in
@@ -223,3 +237,16 @@ Pointer only, newest first — the struck sections live verbatim in
 - ~~18. `lateOutput` in the six tools that still count output from the first row~~ — **DONE** (2026-09-19)
 - ~~17. Run the integrated lab on a second target~~ — **DONE** (2026-09-19, the cost target)
 - ~~6. Tier-0 and SKILL.md fixes from the 2026-09-18 analysis~~ — **DONE** (2026-09-18)
+
+## 26. Extra Claude homes that are not `~/.claude*` siblings
+
+**Why**: tools that give Claude Code its own `CLAUDE_CONFIG_DIR` elsewhere (a per-key gateway
+profile, a Desktop Code tab started with one) put transcripts where discovery never looks.
+`CLAUDE_PROJECT_DIRS` finds them but REPLACES discovery, so a fleet view then loses every normal
+profile; today such a session is reachable only by passing its path to `--session`.
+
+**Shape**: `CLAUDE_EXTRA_PROJECT_DIRS` (path-separator list, globs allowed such as
+`~/some-tool/profiles/*/claude/projects`), appended in `claudeProjectDirs()` after the sibling
+homes; `profileOfProjectsDir` labels them by the parent of the home dir.
+
+**Size**: small. **Depends on**: nothing.

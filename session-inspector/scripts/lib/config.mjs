@@ -1,5 +1,5 @@
 /** Shared config for the session-sync server + clients. Host-agnostic. */
-import { join, basename, dirname } from "path";
+import { join, basename, dirname, delimiter } from "path";
 import { homedir, hostname, userInfo } from "os";
 import { existsSync, readdirSync, statSync } from "fs";
 
@@ -44,8 +44,65 @@ export function claudeProjectDirs() {
     }
   } catch { /* home unreadable — ignore */ }
 
+  for (const d of coworkProjectDirs()) push(d);
   return out;
 }
+
+/**
+ * Claude Desktop's Cowork runs Claude Code with one config home PER TASK, inside the
+ * app's data dir, so its transcripts are under neither ~/.claude nor a sibling profile:
+ *
+ *   <app>/local-agent-mode-sessions/<account>/<org>/<task>/.claude/projects/<slug>/<uuid>.jsonl
+ *
+ * <app> is the subscription app's dir (%APPDATA%\Claude, ~/Library/Application Support/Claude)
+ * or the third-party one (%LOCALAPPDATA%\Claude-3p, .../Claude-3p) when Desktop runs on a
+ * gateway. The Desktop Code tab is different: it writes to the ordinary ~/.claude home, and
+ * only the transcript's `entrypoint` (claude-desktop / claude-desktop-3p) tells it apart —
+ * see surfaceOf() in sessions.mjs.
+ *
+ * $COWORK_APP_DIRS (os-pathsep list of app dirs) overrides the defaults; `none` turns
+ * Cowork discovery off. $CLAUDE_PROJECT_DIRS bypasses all discovery, this included.
+ */
+export function coworkAppDirs() {
+  const explicit = (process.env.COWORK_APP_DIRS || "").trim();
+  if (explicit) return explicit.toLowerCase() === "none" ? [] : explicit.split(delimiter).map((s) => s.trim()).filter(Boolean);
+  const home = homedir();
+  if (process.platform === "win32") {
+    return [
+      process.env.APPDATA ? join(process.env.APPDATA, "Claude") : null,
+      process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Claude-3p") : null,
+    ].filter(Boolean);
+  }
+  if (process.platform === "darwin") {
+    const support = join(home, "Library", "Application Support");
+    return [join(support, "Claude"), join(support, "Claude-3p")];
+  }
+  return [];
+}
+
+export function coworkProjectDirs() {
+  const out = [];
+  for (const app of coworkAppDirs()) {
+    const root = join(app, "local-agent-mode-sessions");
+    for (const account of subdirs(root)) {
+      for (const org of subdirs(join(root, account))) {
+        for (const task of subdirs(join(root, account, org))) {
+          const projects = join(root, account, org, task, ".claude", "projects");
+          if (existsSync(projects)) out.push(projects);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function subdirs(dir) {
+  try { return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); }
+  catch { return []; }
+}
+
+/** Is this a Cowork task's projects dir (or a path inside one)? */
+export const isCoworkPath = (p) => /[\\/]local-agent-mode-sessions[\\/]/.test(String(p || ""));
 
 /**
  * Which auth profile a Claude projects dir belongs to — the config-dir name with
@@ -59,6 +116,8 @@ export function claudeProjectDirs() {
  * $CLAUDE_PROJECT_DIRS that don't follow the convention fall back to the dir name.
  */
 export function profileOfProjectsDir(dir) {
+  // A Cowork task: "cowork" on the subscription app, "cowork-3p" on a gateway (Claude-3p).
+  if (isCoworkPath(dir)) return /[\\/]Claude-3p[\\/]/i.test(dir) ? "cowork-3p" : "cowork";
   const home = basename(dirname(dir));
   if (home === ".claude") return "default";
   const m = home.match(/^\.claude[-_](.+)$/);
@@ -91,6 +150,9 @@ export function authProfiles({ includeDefault = false } = {}) {
   for (const dir of claudeProjectDirs()) {
     const p = profileOfProjectsDir(dir);
     if (p === "default" && !includeDefault) continue;
+    // Cowork tasks are not an account of their own: the subscription app's run on the
+    // claude.ai login, the -3p ones on a gateway key. The quota views must not list them.
+    if (p.startsWith("cowork")) continue;
     if (!out.includes(p)) out.push(p);
   }
   return out.sort((a, b) => a.length - b.length || a.localeCompare(b));

@@ -169,14 +169,67 @@ function firstLast(arr) {
   return { first: arr[0], last: arr[arr.length - 1] };
 }
 
+/**
+ * Where a Claude Code session ran, from the `entrypoint` every transcript row carries.
+ * The folder cannot say it: the Desktop Code tab writes into the ordinary ~/.claude home
+ * next to CLI sessions, subscription or gateway alike. Measured values (2026-09-25):
+ *
+ *   cli                 the terminal CLI                          -> "cli"
+ *   sdk-cli, sdk-ts     driven through the Agent SDK (claude -p)  -> "sdk"
+ *   claude-desktop      Desktop's Code tab, claude.ai login       -> "desktop"
+ *   claude-desktop-3p   Desktop's Code tab, gateway (3P) mode     -> "desktop-3p"
+ *   local-agent         Desktop's Cowork                          -> "cowork"
+ *
+ * A Cowork transcript does not say whether the app ran on the login or a gateway; its
+ * folder does (profileOfProjectsDir: cowork / cowork-3p).
+ */
+export function surfaceOf(entrypoint) {
+  const e = String(entrypoint || "");
+  if (!e) return "";
+  if (e === "local-agent") return "cowork";
+  if (e === "claude-desktop") return "desktop";
+  if (e === "claude-desktop-3p") return "desktop-3p";
+  if (e.startsWith("sdk")) return "sdk";
+  return e;
+}
+
+/**
+ * A Cowork task's own record, beside its config home:
+ *   <org>/<task>/.claude/projects/<slug>/<uuid>.jsonl  ->  <org>/local_<task>*.json
+ * It carries the title the app shows (the transcript's slug is always "session", and its
+ * cwd a VM path), the model and the first message. null for anything else.
+ */
+export function coworkTask(transcriptPath) {
+  const m = String(transcriptPath || "").match(/^(.*[\\/]local-agent-mode-sessions[\\/][^\\/]+[\\/][^\\/]+)[\\/]([^\\/]+)[\\/]\.claude[\\/]/);
+  if (!m) return null;
+  const [, orgDir, task] = m;
+  let file;
+  try { file = readdirSync(orgDir).find((f) => f.startsWith(`local_${task}`) && f.endsWith(".json")); } catch { return null; }
+  if (!file) return null;
+  try {
+    const j = JSON.parse(readFileSync(join(orgDir, file), "utf-8"));
+    return { id: j.sessionId || "", title: j.title || "", model: j.model || "", firstMessage: j.initialMessage || "", createdAt: j.createdAt || null };
+  } catch { return null; }
+}
+
+/**
+ * The surface of one transcript, with the one thing the entrypoint cannot say: a Cowork
+ * task under the third-party app dir (Claude-3p) ran on a gateway, so it is "cowork-3p".
+ */
+export function sessionSurface(path, meta) {
+  const s = meta?.surface || "";
+  return s === "cowork" && /[\\/]Claude-3p[\\/]/i.test(String(path || "")) ? "cowork-3p" : s;
+}
+
 function extractClaudeMeta(lines) {
-  const m = { sessionId: "", cwd: "", model: "", startTime: "", endTime: "" };
+  const m = { sessionId: "", cwd: "", model: "", startTime: "", endTime: "", entrypoint: "", surface: "" };
   const prompts = [];
   for (const line of lines) {
     const t = line.trim();
     if (!t) continue;
     let o; try { o = JSON.parse(t); } catch { continue; }
     if (o.timestamp) { if (!m.startTime) m.startTime = o.timestamp; m.endTime = o.timestamp; }
+    if (o.entrypoint && !m.entrypoint) { m.entrypoint = o.entrypoint; m.surface = surfaceOf(o.entrypoint); }
     if (o.sessionId && !m.sessionId) m.sessionId = o.sessionId;
     if (o.cwd && !m.cwd) m.cwd = o.cwd;
     if (o.type === "assistant" && o.message?.model) m.model = o.message.model;

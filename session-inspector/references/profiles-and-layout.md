@@ -32,6 +32,40 @@ home's matches first. When a match resolves from a *different* profile than the 
 named, both scripts print a one-line `ℹ … (profile switch)` note so the switch is
 visible. Don't pre-`find` the `.jsonl` path or guess the profile — just pass the id.
 
+## Claude Desktop: Cowork task homes and the Code tab
+
+Claude Desktop runs Claude Code in two places, and neither looks like a CLI session on disk.
+Measured on Desktop 2.9939.2 (Windows, 2026-09-25).
+
+| Surface | Transcript lives in | `entrypoint` | `surface` / profile |
+|---|---|---|---|
+| Cowork, claude.ai login | `%APPDATA%\Claude\local-agent-mode-sessions\<account>\<org>\<task>\.claude\projects\<slug>\<uuid>.jsonl` | `local-agent` | `cowork` / `cowork` |
+| Cowork, gateway (3P mode) | the same under `%LOCALAPPDATA%\Claude-3p\` | `local-agent` | `cowork-3p` / `cowork-3p` |
+| Code tab, claude.ai login | `~/.claude/projects/<cwd-slug>/<uuid>.jsonl`, beside CLI sessions | `claude-desktop` | `desktop` / `default` |
+| Code tab, gateway (3P mode) | the same, `~/.claude` | `claude-desktop-3p` | `desktop-3p` / `default` |
+| the CLI, the SDK | `~/.claude*` as usual | `cli`, `sdk-cli`, `sdk-ts` | `cli`, `sdk` |
+
+macOS: `~/Library/Application Support/Claude` and `.../Claude-3p`.
+
+- **One home per Cowork task.** The slug is always `session` and the recorded cwd a VM or
+  `host-cwd` path, so neither names the work. The task's own record beside its home,
+  `<org>\local_<task>-….json`, carries the title the app shows, the model id as the app
+  names it, the first message and (large) the rendered system prompt; `coworkTask()` in
+  `lib/sessions.mjs` reads the first three, and `cache-health` names the session
+  `cowork: <title>`.
+- **The Code tab's profile is `default` even on a gateway.** It writes to `~/.claude`
+  whatever the app is signed in to, so a folder- or profile-based split mixes subscription
+  and gateway sessions. Filter on `surface` instead. The app's own record of a Code-tab
+  session is `<app>\claude-code-sessions\<account>\<org>\local_<id>.json`, whose
+  `cliSessionId` is the transcript's uuid.
+- **Discovery** (`coworkProjectDirs()` in `lib/config.mjs`) walks exactly four levels under
+  `local-agent-mode-sessions` and keeps a directory only if it has `.claude/projects`.
+  `COWORK_APP_DIRS` (path-separator list of app dirs) replaces the defaults, `none` disables
+  it, and `CLAUDE_PROJECT_DIRS` still bypasses all discovery. Cowork profiles never appear
+  in `authProfiles()`: they are not a separately billed account.
+- Cowork sessions caught on 2026-09-25: the app requests the **1-hour** cache itself; the
+  Code tab in 3P mode used the **5-minute** one (the subscription Code tab: 1 hour).
+
 ## Directory naming convention (Claude)
 
 Each working directory maps to a session dir by replacing path separators with `--`:

@@ -40,12 +40,14 @@
  *   node scripts/cache-health.mjs --agent opencode --days 3           # every opencode session of three days
  *   ... --min-ctx 20000                                               # what counts as a "big" call (default
  *                                                                      #   100k for claude, 20k for the others)
+ *   ... --surface cowork|desktop|cli|sdk                             # only sessions from that surface (claude);
+ *                                                                      #   a prefix: cowork also takes cowork-3p
  *   ... --json
  */
 import { readFileSync, existsSync } from "fs";
 import { basename, dirname, join } from "path";
 import { homedir } from "os";
-import { discover, extractMeta, projectIdentity } from "./lib/sessions.mjs";
+import { discover, extractMeta, projectIdentity, coworkTask, sessionSurface } from "./lib/sessions.mjs";
 import { firstRowOf, lateOutput, apiProvider } from "./lib/usage.mjs";
 import { priceFor, isPriced } from "./lib/quota.mjs";
 import { refuse } from "./lib/harness.mjs";
@@ -58,6 +60,7 @@ refuse("cache-health --session", agent); // a known agent that records no cache 
 if (!["claude", "codex", "opencode"].includes(agent)) { console.error(`--agent must be claude, codex or opencode (got ${agent})`); process.exit(2); }
 const projectQ = (opt("--project", "") || "").toLowerCase();
 const sessionQ = opt("--session", "");
+const surfaceQ = (opt("--surface", "") || "").toLowerCase();
 const days = parseInt(opt("--days", "0"), 10);
 const asJson = flag("--json");
 const minCtx = parseInt(opt("--min-ctx", agent === "claude" ? "100000" : "20000"), 10);
@@ -103,7 +106,10 @@ function readClaude(path) {
     });
     if (o.message.id) byId.set(o.message.id, calls[calls.length - 1]);
   }
-  return { meta: { id: (sessionId || basename(path, ".jsonl")).slice(0, 8), path, project: id.project || basename(dirname(path)), version, client: "Claude Code" }, calls };
+  // A Cowork task's slug is always "session" and its cwd a VM path: name it by the app's title.
+  const task = coworkTask(path);
+  const project = task ? `cowork: ${task.title || task.id}` : (id.project || basename(dirname(path)));
+  return { meta: { id: (sessionId || basename(path, ".jsonl")).slice(0, 8), path, project, surface: sessionSurface(path, meta), version, client: "Claude Code" }, calls };
 }
 
 function readCodex(path) {
@@ -206,7 +212,7 @@ function assess({ meta, calls }) {
 
 // ── collect ───────────────────────────────────────────────────────────────────
 const results = [];
-const push = (r) => { if (r) results.push(r); };
+const push = (r) => { if (r && (!surfaceQ || String(r.surface || "").startsWith(surfaceQ))) results.push(r); };
 if (agent === "opencode") {
   const db = await openOpencode();
   const sessions = db.prepare("select id, title, directory, version, time_created from session order by time_created desc").all();
@@ -250,7 +256,7 @@ const writesNote = (r) => (r.agent === "opencode" && r.tot.cw === 0 && r.tot.cr 
 if (sessionQ) {
   for (const r of results) {
     console.log("═".repeat(96));
-    console.log(`CACHE HEALTH — ${r.id}  ${r.project}  ·  ${r.model} via ${r.provider}  ·  ${r.client} ${r.version}`);
+    console.log(`CACHE HEALTH — ${r.id}  ${r.project}  ·  ${r.model} via ${r.provider}  ·  ${r.client} ${r.version}${r.surface ? `  ·  ${r.surface}` : ""}`);
     console.log("═".repeat(96));
     console.log(`verdict: ${r.verdict}`);
     console.log(`API calls ${r.calls}${r.subagentCalls ? ` (${r.subagentCalls} subagent)` : ""} · ${r.start.slice(0, 16)}Z · ${r.durationMin.toFixed(0)} min · cache TTL ${r.ttl}`);
@@ -280,13 +286,13 @@ if (sessionQ) {
   }
 } else {
   console.log("═".repeat(110));
-  console.log(`CACHE HEALTH — ${results.length} ${agent} sessions${days ? `  ·  ${days}d` : ""}${projectQ ? `  ·  project~${projectQ}` : ""}  ·  big call = >${k(minCtx)} context  ·  worst first`);
+  console.log(`CACHE HEALTH — ${results.length} ${agent} sessions${days ? `  ·  ${days}d` : ""}${projectQ ? `  ·  project~${projectQ}` : ""}${surfaceQ ? `  ·  surface~${surfaceQ}` : ""}  ·  big call = >${k(minCtx)} context  ·  worst first`);
   console.log("═".repeat(110));
   const counts = {}; for (const r of results) counts[r.verdict] = (counts[r.verdict] || 0) + 1;
   console.log(Object.entries(counts).map(([v, n]) => `${v} ${n}`).join("  ·  "));
   console.log(`\nverdict     session       calls  peakCtx  cacheRead%  ttl  gaps>ttl  cold  cost$   healthy$  model/provider           project`);
   for (const r of results.filter((r) => r.verdict !== "SHORT").slice(0, 40)) {
-    console.log(`${r.verdict.padEnd(11)} ${r.id.padEnd(12)}  ${String(r.calls).padStart(5)}  ${k(r.maxCtx).padStart(7)}  ${(r.callsAboveMin ? pct(r.crShare) : "-").padStart(10)}  ${r.ttl.padStart(3)}  ${String(r.gapsOverTtl).padStart(8)}  ${String(r.coldRewrites).padStart(4)}  ${cost$(r, "costList").padStart(5)}  ${cost$(r, "costHealthy").padStart(8)}  ${(r.model.replace(/^claude-/, "") + "/" + r.provider).slice(0, 24).padEnd(24)} ${String(r.project).slice(0, 30)}`);
+    console.log(`${r.verdict.padEnd(11)} ${r.id.padEnd(12)}  ${String(r.calls).padStart(5)}  ${k(r.maxCtx).padStart(7)}  ${(r.callsAboveMin ? pct(r.crShare) : "-").padStart(10)}  ${r.ttl.padStart(3)}  ${String(r.gapsOverTtl).padStart(8)}  ${String(r.coldRewrites).padStart(4)}  ${cost$(r, "costList").padStart(5)}  ${cost$(r, "costHealthy").padStart(8)}  ${(r.model.replace(/^claude-/, "") + "/" + r.provider).slice(0, 24).padEnd(24)} ${(r.surface && r.surface !== "cli" ? `[${r.surface}] ` : "") + String(r.project).slice(0, 30)}`);
   }
   console.log(`\nSHORT sessions (never above ${k(minCtx)}) are hidden: ${counts.SHORT || 0}. Details: --session <id>.`);
 }

@@ -85,7 +85,7 @@ export function parseClaude(lines) {
   const seenUsage = new Set(); // token sums count each API call once; assistantTurns still counts rows
   const stats = {
     provider: "claude",
-    model: "", sessionId: "", cwd: "", startTime: "", endTime: "", durationSec: 0,
+    model: "", sessionId: "", cwd: "", entrypoint: "", startTime: "", endTime: "", durationSec: 0,
     assistantTurns: 0, apiCalls: 0, toolCalls: 0, failedToolCalls: 0,
     inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, totalCostUsd: 0,
     stopReason: "",
@@ -111,6 +111,7 @@ export function parseClaude(lines) {
     if (obj.timestamp) { if (!stats.startTime) stats.startTime = obj.timestamp; stats.endTime = obj.timestamp; }
     if (obj.sessionId && !stats.sessionId) stats.sessionId = obj.sessionId;
     if (obj.cwd && !stats.cwd) stats.cwd = obj.cwd;
+    if (obj.entrypoint && !stats.entrypoint) stats.entrypoint = obj.entrypoint;
     // Goal signal: the agent-generated session title (latest wins).
     if (obj.type === "ai-title" && obj.aiTitle) stats.aiTitle = obj.aiTitle;
     // Auto-compact boundary — the context safety valve fired here.
