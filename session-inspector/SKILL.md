@@ -1,8 +1,8 @@
 ---
 name: session-inspector
 for-tier: B
-description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude Code in full (CLI, Claude Desktop's Code tab and Cowork tasks, subscription or gateway), Codex fleet-wide except cost, cache and context, Copilot one session at a time. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
-argument-hint: [session-id | keyword | --codex <path> | --copilot | edit]
+description: 'Inspect, aggregate and edit coding-agent session transcripts — Claude Code in full (CLI, Claude Desktop''s Code tab and Cowork tasks, subscription or gateway), Codex fleet-wide except cost, cache and context, Copilot one session at a time. One session: why it stopped, what it did, friction, what it left running, stranded subagent results. A fleet: token sinks, context waste, tool failures, dead skills, hook latency, quota. Now: which sessions run, how many subagents fit, which repo to pick up next. ALWAYS use instead of hand-reading or grepping .jsonl transcripts — for any "session X", "what burned tokens", "which skills never fire", "are hooks slow", "what should we continue", or "edit what a session says" question.'
+argument-hint: '[session-id | keyword | --codex <path> | --copilot | edit]'
 ---
 
 # Session Inspector
